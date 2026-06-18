@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "antcrew"
+version = "1.0.0"
+description = "Multi-agent framework for software development teams, built on LangGraph"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Iago Pueyo", email = "iago.pueyo99@gmail.com" }]
+keywords = ["ai", "agents", "llm", "multi-agent", "langgraph", "anthropic", "openai", "devteam"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "anthropic>=0.30",
+    "groq>=0.9",
+    "httpx>=0.27",
+    "langgraph>=0.2",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "typer>=0.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/iagop99/antcrew"
+Repository = "https://github.com/iagop99/antcrew"
+"Bug Tracker" = "https://github.com/iagop99/antcrew/issues"
+
+[project.optional-dependencies]
+telegram  = ["python-telegram-bot>=20.0"]
+gemini    = []  # GeminiModel uses httpx (already a core dep) — no extra packages needed
+openai    = ["openai>=1.30"]
+slack     = ["slack-sdk>=3.19", "slack-bolt>=1.18"]
+server    = ["fastapi>=0.111", "uvicorn[standard]>=0.30"]
+memory    = ["chromadb>=0.5"]
+dashboard = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "aiofiles>=23.0"]
+dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0"]
+all       = ["python-telegram-bot>=20.0", "openai>=1.30",
+             "slack-sdk>=3.19", "slack-bolt>=1.18",
+             "fastapi>=0.111", "uvicorn[standard]>=0.30", "aiofiles>=23.0",
+             "chromadb>=0.5"]
+
+[project.scripts]
+antcrew = "antcrew.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["antcrew"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"antcrew/py.typed" = "antcrew/py.typed"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"

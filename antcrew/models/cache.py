@@ -1,0 +1,183 @@
+"""LLMCache — in-memory and SQLite-backed prompt-level cache for LLM responses.
+
+Caches the full text response keyed by SHA-256 of (model_name, messages).
+Streaming calls are never cached.
+
+Usage:
+    from antcrew.models.cache import LLMCache, FileLLMCache
+    from antcrew.models.anthropic_model import AnthropicModel
+
+    # In-memory (resets on restart)
+    llm = AnthropicModel("claude-haiku-4-5-20251001").with_cache()
+
+    # Persistent (survives restarts) — pass a path string or Path
+    llm = AnthropicModel("claude-haiku-4-5-20251001").with_cache("~/.antcrew/cache.db")
+
+    team = DevTeam(model=llm)
+    team.run("Build login")   # fills the cache
+    team.run("Build login")   # instant — 0 API calls
+
+    print(llm.cache.stats())
+    # {"hits": 6, "misses": 6, "hit_rate": 0.5, "size": 6, "max_size": 512}
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import time
+from pathlib import Path
+from typing import Optional
+
+
+class LLMCache:
+    """Thread-safe (GIL) in-memory cache keyed by SHA-256 of messages + model.
+
+    When the cache is full the oldest entry is evicted (insertion-order FIFO
+    via Python's dict ordering guarantee, Python 3.7+).
+    """
+
+    def __init__(self, max_size: int = 1024) -> None:
+        self._store: dict[str, str] = {}
+        self._max_size = max_size
+        self.hits = 0
+        self.misses = 0
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
+    def get(self, messages: list, model_name: str) -> Optional[str]:
+        """Return cached response if present, else None (and record miss)."""
+        key = self._make_key(messages, model_name)
+        if key in self._store:
+            self.hits += 1
+            return self._store[key]
+        self.misses += 1
+        return None
+
+    def set(self, messages: list, model_name: str, response: str) -> None:
+        """Store a response. Evicts the oldest entry when max_size is reached."""
+        if len(self._store) >= self._max_size:
+            oldest = next(iter(self._store))
+            del self._store[oldest]
+        self._store[self._make_key(messages, model_name)] = response
+
+    def clear(self) -> None:
+        """Remove all cached entries. Does not reset hit/miss counters."""
+        self._store.clear()
+
+    def reset_stats(self) -> None:
+        """Reset hit/miss counters to zero."""
+        self.hits = 0
+        self.misses = 0
+
+    @property
+    def size(self) -> int:
+        return len(self._store)
+
+    def stats(self) -> dict:
+        """Return hit/miss/hit_rate/size/max_size summary."""
+        total = self.hits + self.misses
+        return {
+            "hits":      self.hits,
+            "misses":    self.misses,
+            "hit_rate":  round(self.hits / total, 3) if total else 0.0,
+            "size":      self.size,
+            "max_size":  self._max_size,
+        }
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_key(messages: list, model_name: str) -> str:
+        payload = json.dumps(
+            [{"role": m.role, "content": m.content} for m in messages],
+            sort_keys=True,
+        )
+        return hashlib.sha256(f"{model_name}:{payload}".encode()).hexdigest()
+
+
+class FileLLMCache(LLMCache):
+    """LLMCache backed by SQLite — entries survive process restarts.
+
+    On startup the most recent ``max_size`` entries are loaded from disk
+    into memory so hot responses are still served from RAM.  Every new
+    ``set()`` call is immediately flushed to the database.
+
+    The SQLite file is created (including parent directories) automatically.
+
+    Usage::
+
+        llm = AnthropicModel().with_cache("~/.antcrew/cache.db")
+        # equivalently:
+        llm.cache = FileLLMCache("~/.antcrew/cache.db", max_size=2048)
+    """
+
+    def __init__(self, path: str | Path, *, max_size: int = 4096) -> None:
+        super().__init__(max_size=max_size)
+        self._db_path = Path(path).expanduser().resolve()
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        self._init_db()
+        self._load_from_disk()
+
+    # ------------------------------------------------------------------
+    # Overrides
+    # ------------------------------------------------------------------
+
+    def set(self, messages: list, model_name: str, response: str) -> None:
+        """Store in memory and persist to SQLite atomically."""
+        super().set(messages, model_name, response)
+        key = self._make_key(messages, model_name)
+        self._conn.execute(
+            "INSERT OR REPLACE INTO llm_cache (key, response, created_at) VALUES (?, ?, ?)",
+            (key, response, time.time()),
+        )
+        self._conn.commit()
+
+    def clear(self) -> None:
+        """Clear both the in-memory store and the SQLite table."""
+        super().clear()
+        self._conn.execute("DELETE FROM llm_cache")
+        self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def close(self) -> None:
+        """Close the SQLite connection explicitly."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def __del__(self) -> None:
+        self.close()
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _init_db(self) -> None:
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS llm_cache (
+                key        TEXT PRIMARY KEY,
+                response   TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+        """)
+        self._conn.commit()
+
+    def _load_from_disk(self) -> None:
+        """Warm the in-memory store from the most recent DB entries."""
+        rows = self._conn.execute(
+            "SELECT key, response FROM llm_cache ORDER BY created_at DESC LIMIT ?",
+            (self._max_size,),
+        ).fetchall()
+        # Insert oldest-first so FIFO eviction stays correct
+        for key, response in reversed(rows):
+            self._store[key] = response
