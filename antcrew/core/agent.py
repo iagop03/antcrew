@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Optional
 
@@ -12,15 +13,18 @@ if TYPE_CHECKING:
     from antcrew.memory.repo_index import RepoIndex
 
 
+_FENCE_RE = re.compile(r'^```[a-zA-Z]*[ \t]*\n?([\s\S]*)```[ \t]*$')
+
+
 def _strip_fences(text: str) -> str:
-    """Remove markdown code fences from LLM JSON output."""
+    """Remove outermost markdown code fences from LLM JSON output.
+
+    Uses greedy matching so triple backticks inside string values
+    (e.g. code examples in ticket descriptions) are preserved correctly.
+    """
     text = text.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
-    return text
+    m = _FENCE_RE.match(text)
+    return m.group(1).strip() if m else text
 
 
 class BaseAgent(ABC):
