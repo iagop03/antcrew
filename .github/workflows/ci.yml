@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[dev,server]"
+        run: pip install -e ".[dev,server,telegram]"
 
       - name: Run tests
         run: pytest --tb=short -q

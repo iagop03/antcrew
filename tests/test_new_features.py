@@ -7,10 +7,18 @@ Tests for 4 new features:
 """
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# Telegram tests are skipped when python-telegram-bot is not installed
+_telegram_available = importlib.util.find_spec("telegram") is not None
+skip_no_telegram = pytest.mark.skipif(
+    not _telegram_available,
+    reason="python-telegram-bot not installed (pip install antcrew[telegram])",
+)
 
 from antcrew.core.artifacts import (
     CodeArtifact,
@@ -123,6 +131,7 @@ class TestProjectArtifactTracking:
 # 2. TelegramChannel -- notify parameter
 # ===========================================================================
 
+@skip_no_telegram
 class TestTelegramChannelNotify:
     def _ch(self, **kwargs):
         from antcrew.integrations.telegram.integration import TelegramChannel
@@ -201,6 +210,7 @@ class TestTelegramChannelNotify:
 # 3. TelegramChannel -- HITL buttons + feedback
 # ===========================================================================
 
+@skip_no_telegram
 class TestTelegramHITLFeedback:
     def _ch(self):
         from antcrew.integrations.telegram.integration import TelegramChannel

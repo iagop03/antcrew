@@ -126,7 +126,7 @@ class TestProjectRun:
     def test_project_shows_run_number(self, tmp_path):
         proj = _make_project(tmp_path, runs=1)
         result = cli.invoke(app, ["project", "run", str(proj), "Second"])
-        assert "run #2" in result.output
+        assert "run #2" in result.output.replace("\n", " ")
 
     def test_project_shows_accumulated_counts(self, tmp_path):
         proj = _make_project(tmp_path, runs=1)
