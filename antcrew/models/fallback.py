@@ -98,7 +98,7 @@ class FallbackLLM(BaseLLM):
 
         raise last_exc
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 4096) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
         """Try each model's complete() in order (no per-model retries here).
 
         In normal operation BaseAgent calls llm.system(), not complete() directly.

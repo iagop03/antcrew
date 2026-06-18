@@ -27,7 +27,7 @@ class AnthropicModel(BaseLLM):
             )
         self._client = anthropic.Anthropic(api_key=key)
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 4096) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
         system_parts = [m.content for m in messages if m.role == "system"]
         chat_messages = [
             {"role": m.role, "content": m.content}
@@ -51,10 +51,24 @@ class AnthropicModel(BaseLLM):
                 for text in stream.text_stream:
                     self.on_token(text)
                     chunks.append(text)
-                usage = stream.get_final_message().usage
-                self._record_usage(usage.input_tokens, usage.output_tokens)
+                final = stream.get_final_message()
+                self._record_usage(final.usage.input_tokens, final.usage.output_tokens)
+                if final.stop_reason == "max_tokens":
+                    u = final.usage
+                    raise RuntimeError(
+                        f"Response truncated: hit max_tokens={max_tokens} "
+                        f"(input={u.input_tokens}, output={u.output_tokens}). "
+                        "Increase max_tokens or shorten the input."
+                    )
             return "".join(chunks)
 
         response = self._client.messages.create(**kwargs)
         self._record_usage(response.usage.input_tokens, response.usage.output_tokens)
+        if response.stop_reason == "max_tokens":
+            u = response.usage
+            raise RuntimeError(
+                f"Response truncated: hit max_tokens={max_tokens} "
+                f"(input={u.input_tokens}, output={u.output_tokens}). "
+                "Increase max_tokens or shorten the input."
+            )
         return response.content[0].text

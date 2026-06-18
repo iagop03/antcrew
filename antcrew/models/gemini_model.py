@@ -51,7 +51,7 @@ class GeminiModel(BaseLLM):
             body["systemInstruction"] = {"parts": [{"text": "\n\n".join(system_parts)}]}
         return body
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 4096) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
         import json as _json
 
         body = self._build_body(messages, max_tokens)
