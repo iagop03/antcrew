@@ -490,6 +490,46 @@ def setup(
     agent.run_wizard(name=name, output_dir=output, filename=filename)
 
 
+cache_app = typer.Typer(help="Manage the LLM response cache.")
+app.add_typer(cache_app, name="cache")
+
+
+@cache_app.command("clear")
+def cache_clear(
+    db: Path = typer.Argument(
+        ...,
+        help="Path to the SQLite cache file (e.g. ~/.antcrew/cache.db)",
+    ),
+) -> None:
+    """Delete all entries from a persistent cache file."""
+    from antcrew.models.cache import FileLLMCache
+    db = Path(db).expanduser()
+    if not db.exists():
+        console.print(f"[yellow]Cache file not found:[/] {db}")
+        raise typer.Exit(1)
+    c = FileLLMCache(db)
+    size = c.size
+    c.clear()
+    console.print(f"[green]Cleared[/] {size} entr{'y' if size == 1 else 'ies'} from [cyan]{db}[/]")
+
+
+@cache_app.command("stats")
+def cache_stats(
+    db: Path = typer.Argument(
+        ...,
+        help="Path to the SQLite cache file (e.g. ~/.antcrew/cache.db)",
+    ),
+) -> None:
+    """Show the number of entries stored in a cache file."""
+    from antcrew.models.cache import FileLLMCache
+    db = Path(db).expanduser()
+    if not db.exists():
+        console.print(f"[yellow]Cache file not found:[/] {db}")
+        raise typer.Exit(1)
+    c = FileLLMCache(db)
+    console.print(f"[cyan]{db}[/] — [bold]{c.size}[/] entries")
+
+
 @app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),

@@ -47,12 +47,26 @@ class LLMCache:
     # Public interface
     # ------------------------------------------------------------------
 
-    def get(self, messages: list, model_name: str) -> Optional[str]:
-        """Return cached response if present, else None (and record miss)."""
+    def get(
+        self,
+        messages: list,
+        model_name: str,
+        validate=None,
+    ) -> Optional[str]:
+        """Return cached response if present and valid, else None.
+
+        If *validate* is provided it is called with the cached string; a False
+        return evicts the entry and records a miss so the caller re-fetches.
+        """
         key = self._make_key(messages, model_name)
         if key in self._store:
+            value = self._store[key]
+            if validate is not None and not validate(value):
+                del self._store[key]
+                self.misses += 1
+                return None
             self.hits += 1
-            return self._store[key]
+            return value
         self.misses += 1
         return None
 
@@ -127,6 +141,16 @@ class FileLLMCache(LLMCache):
     # ------------------------------------------------------------------
     # Overrides
     # ------------------------------------------------------------------
+
+    def get(self, messages: list, model_name: str, validate=None) -> Optional[str]:
+        """Like LLMCache.get() but also removes the SQLite row when invalid."""
+        key = self._make_key(messages, model_name)
+        value = super().get(messages, model_name, validate=validate)
+        if value is None and key not in self._store:
+            # Parent evicted the in-memory entry — purge from DB too
+            self._conn.execute("DELETE FROM llm_cache WHERE key = ?", (key,))
+            self._conn.commit()
+        return value
 
     def set(self, messages: list, model_name: str, response: str) -> None:
         """Store in memory and persist to SQLite atomically."""

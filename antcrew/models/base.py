@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Callable, Literal, Optional
@@ -7,6 +8,26 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from antcrew.models.cache import LLMCache
+
+
+def _is_complete_response(text: str) -> bool:
+    """Return False for responses that look truncated mid-JSON.
+
+    A cached response that ends inside an unterminated string or mid-object
+    was almost certainly cut off by a max_tokens limit.  Rejecting it forces
+    a fresh API call so the caller gets the full response.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    # Only validate if the response looks like JSON (starts with { or [)
+    if stripped[0] not in ("{", "["):
+        return True
+    try:
+        json.loads(stripped)
+        return True
+    except json.JSONDecodeError:
+        return False
 
 
 class Message(BaseModel):
@@ -167,7 +188,7 @@ class BaseLLM(ABC):
             return self.complete(messages, **kwargs)
         cache = getattr(self, "cache", None)
         if cache is not None:
-            hit = cache.get(messages, type(self).__name__)
+            hit = cache.get(messages, type(self).__name__, validate=_is_complete_response)
             if hit is not None:
                 return hit
             result = self._with_retry(self.complete, messages, **kwargs)
