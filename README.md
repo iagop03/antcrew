@@ -761,7 +761,7 @@ pip install groq               # GroqModel       (GROQ_API_KEY)
 ### Install from source
 
 ```bash
-git clone https://github.com/iagop99/antcrew.git
+git clone https://github.com/iagop03/antcrew.git
 cd antcrew
 pip install -e ".[dev]"
 ```
