@@ -46,6 +46,7 @@ class CodeArtifact(BaseModel):
     description: str
     content: str
     language: Optional[str] = None
+    created_at_run: int = 0
 
 
 # ── QA artifacts ─────────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ class TestArtifact(BaseModel):
     content: str
     language: Optional[str] = None
     coverage_areas: list[str] = Field(default_factory=list)
+    created_at_run: int = 0
 
 
 # ── Code-review artifacts ─────────────────────────────────────────────────────
@@ -101,6 +103,7 @@ class DevOpsArtifact(BaseModel):
     description: str
     language: str   # "dockerfile" | "yaml" | "hcl" | "shell" | etc.
     content: str
+    created_at_run: int = 0
 
 
 # ── Documentation artifacts ──────────────────────────────────────────────────
@@ -112,6 +115,7 @@ class DocumentationArtifact(BaseModel):
     doc_type: str   # "readme" | "architecture" | "api" | "user_guide" | "adr"
     format: str = "markdown"
     content: str
+    created_at_run: int = 0
 
 
 # ── Content artifacts ─────────────────────────────────────────────────────────

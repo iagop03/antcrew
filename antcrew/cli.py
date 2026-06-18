@@ -478,6 +478,18 @@ def init(
 
 
 @app.command()
+def setup(
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Project name (skips the prompt)"),
+    output: Path = typer.Option(Path("."), "--output", "-o", help="Output directory"),
+    filename: str = typer.Option("agentteam.yaml", "--filename", "-f", help="YAML filename"),
+) -> None:
+    """Conversational wizard that generates an agentteam.yaml for your project."""
+    from antcrew.agents.setup import SetupAgent
+    agent = SetupAgent()
+    agent.run_wizard(name=name, output_dir=output, filename=filename)
+
+
+@app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
     port: int = typer.Option(8000, "--port", "-p", help="Bind port"),

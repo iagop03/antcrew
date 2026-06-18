@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Coroutine, Literal, Optional
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -45,6 +45,15 @@ BotMode = Literal["single", "per_agent"]
 
 PipelineHandler = Callable[[str, int], Coroutine]
 
+# Button label and callback action per option name
+_BUTTON_MAP: dict[str, tuple[str, str]] = {
+    "approve":  ("✅ Aprobar",          "approve"),
+    "reject":   ("❌ Rechazar",         "reject"),
+    "feedback": ("✏️ Sugerir cambios",  "feedback"),
+    "edit":     ("📝 Editar JSON",      "edit"),
+}
+_DEFAULT_OPTIONS = ["approve", "feedback", "reject"]
+
 
 @dataclass
 class AgentBotConfig:
@@ -53,17 +62,20 @@ class AgentBotConfig:
 
     token:   Bot token (from @BotFather).
     chat_id: Telegram user/group ID of the person who reviews this agent's output.
+    notify:  Additional chat_ids that receive status broadcasts (not HITL).
     """
     token: str
     chat_id: int | str
+    notify: list[int | str] = field(default_factory=list)
 
 
-def _approval_keyboard(session_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Approve", callback_data=f"approve:{session_id}"),
-        InlineKeyboardButton("✏️ Edit",    callback_data=f"edit:{session_id}"),
-        InlineKeyboardButton("❌ Reject",  callback_data=f"reject:{session_id}"),
-    ]])
+def _build_keyboard(session_id: str, options: list[str]) -> InlineKeyboardMarkup:
+    buttons = []
+    for opt in options:
+        if opt in _BUTTON_MAP:
+            label, action = _BUTTON_MAP[opt]
+            buttons.append(InlineKeyboardButton(label, callback_data=f"{action}:{session_id}"))
+    return InlineKeyboardMarkup([buttons])
 
 
 class TelegramChannel(BaseChannel):
@@ -73,20 +85,21 @@ class TelegramChannel(BaseChannel):
     Single mode (one bot for all agents):
         TelegramChannel(token="BOT_TOKEN", chat_id=CHAT_ID)
 
+    Notify multiple recipients (broadcasts, HITL goes to first):
+        TelegramChannel(token="BOT_TOKEN", notify=[MARIA_ID, JUAN_ID])
+
     Per-agent mode (each agent has its own bot + reviewer):
         TelegramChannel(
             mode="per_agent",
             agent_configs={
-                "business_analyst": AgentBotConfig(token="T1", chat_id=PM_CHAT_ID),
-                "pm":               AgentBotConfig(token="T2", chat_id=TECH_LEAD_ID),
-                "backend_dev":      AgentBotConfig(token="T3", chat_id=CTO_CHAT_ID),
+                "pm":          AgentBotConfig(token="T1", chat_id=MARIA_ID),
+                "backend_dev": AgentBotConfig(token="T2", chat_id=JUAN_ID),
             },
         )
 
     Per-agent on a single agent:
-        BackendDevAgent(
-            llm=AnthropicModel(),
-            channel=TelegramChannel(token="T3", chat_id=CTO_CHAT_ID),
+        PMAgent(
+            channel=TelegramChannel(token="T1", notify=[MARIA_ID]),
             approval_required=True,
         )
     """
@@ -96,6 +109,7 @@ class TelegramChannel(BaseChannel):
         mode: BotMode = "single",
         token: Optional[str] = None,
         chat_id: Optional[int | str] = None,
+        notify: Optional[list[int | str]] = None,
         agent_configs: Optional[dict[str, AgentBotConfig]] = None,
     ) -> None:
         if mode == "single" and not token:
@@ -105,7 +119,13 @@ class TelegramChannel(BaseChannel):
 
         self.mode = mode
         self._token = token
-        self._chat_id = chat_id
+        # notify sets the primary chat_id and stores all ids for broadcasts
+        if notify:
+            self._chat_id: Optional[int | str] = notify[0]
+            self._notify_all: list[int | str] = notify
+        else:
+            self._chat_id = chat_id
+            self._notify_all = [chat_id] if chat_id else []
         self._agent_configs: dict[str, AgentBotConfig] = agent_configs or {}
         self.hitl = HitlManager()
 
@@ -125,26 +145,51 @@ class TelegramChannel(BaseChannel):
         cfg = self._agent_configs.get(agent_name or "")
         return cfg.chat_id if cfg else next(iter(self._agent_configs.values())).chat_id
 
+    def _get_notify_list(self, agent_name: Optional[str] = None) -> list[int | str]:
+        """Return all chat_ids to receive status broadcasts for this agent."""
+        if self.mode == "single":
+            return self._notify_all
+        cfg = self._agent_configs.get(agent_name or "")
+        if cfg:
+            ids = [cfg.chat_id] + cfg.notify
+            return ids
+        primary = self._get_chat_id(agent_name)
+        return [primary] if primary else []
+
     def set_chat_id(self, chat_id: int | str) -> None:
         """Set the chat_id dynamically (captured from first incoming message)."""
         self._chat_id = chat_id
+        if not self._notify_all:
+            self._notify_all = [chat_id]
 
     # ------------------------------------------------------------------
     # Sending artifacts with HITL
     # ------------------------------------------------------------------
 
     async def send_for_review(
-        self, artifact, agent_name: str, session_id: str
+        self,
+        artifact,
+        agent_name: str,
+        session_id: str,
+        options: Optional[list[str]] = None,
     ) -> dict:
         """
-        Format `artifact`, send it to the agent's configured reviewer with
-        Approve / Edit / Reject buttons, and wait for their decision.
+        Format `artifact`, send it to the agent's reviewer with action buttons,
+        and wait for their decision.
 
-        If "Edit" is pressed, sends a follow-up prompt and waits for a JSON reply.
+        Buttons are controlled by `options` (default: approve / sugerir cambios / rechazar).
+
+        If "Sugerir cambios" is pressed, the bot asks for free-text feedback and
+        passes it to agent.refine() via {"decision": "feedback", "feedback": text}.
+
+        If "Editar JSON" is pressed (only when "edit" in options), the bot asks for
+        the corrected JSON payload.
 
         Returns:
-            {"decision": "approve" | "reject" | "edit", "edited": str | None}
+            {"decision": "approve" | "reject" | "feedback" | "edit",
+             "feedback": str | None, "edited": str | None}
         """
+        effective_options = options or _DEFAULT_OPTIONS
         bot = Bot(token=self._get_token(agent_name))
         chat_id = self._get_chat_id(agent_name)
 
@@ -155,36 +200,54 @@ class TelegramChannel(BaseChannel):
         else:
             text = str(artifact)[:4000]
 
-        # Create checkpoint BEFORE sending to avoid race condition
         self.hitl.create(session_id)
 
         await bot.send_message(
             chat_id=chat_id,
             text=text,
             parse_mode="HTML",
-            reply_markup=_approval_keyboard(session_id),
+            reply_markup=_build_keyboard(session_id, effective_options),
         )
 
         result = await self.hitl.wait(session_id)
+        decision = result["decision"]
 
-        # If user chose Edit, prompt for the JSON and wait for the reply
-        if result["decision"] == "edit":
+        if decision == "feedback":
             await bot.send_message(
                 chat_id=chat_id,
-                text="✏️ Send the edited JSON to continue (or send /cancel to reject):",
+                text="✏️ ¿Cuál es tu sugerencia? (o envía /cancel para rechazar):",
             )
             self.hitl.set_edit_waiting(session_id)
             self.hitl.create(session_id)
-            result = await self.hitl.wait(session_id)
+            text_result = await self.hitl.wait(session_id)
+            feedback_text = text_result.get("edited") or ""
+            return {"decision": "feedback", "feedback": feedback_text, "edited": None}
 
-        return result
+        if decision == "edit":
+            await bot.send_message(
+                chat_id=chat_id,
+                text="📝 Envía el JSON corregido para continuar (o /cancel para rechazar):",
+            )
+            self.hitl.set_edit_waiting(session_id)
+            self.hitl.create(session_id)
+            json_result = await self.hitl.wait(session_id)
+            return {"decision": "edit", "edited": json_result.get("edited"), "feedback": None}
+
+        return {"decision": decision, "feedback": None, "edited": None}
+
+    async def notify(self, message: str, **kwargs) -> None:
+        """BaseChannel.notify — delegates to send_status."""
+        agent_name = kwargs.get("agent_name")
+        await self.send_status(message, agent_name=agent_name)
 
     async def send_status(self, text: str, agent_name: Optional[str] = None) -> None:
-        """Send a plain status message to the appropriate chat."""
+        """Send a plain status message to all configured recipients for this agent."""
         bot = Bot(token=self._get_token(agent_name))
-        await bot.send_message(
-            chat_id=self._get_chat_id(agent_name), text=text, parse_mode="HTML"
-        )
+        for cid in (self._get_notify_list(agent_name) or [self._get_chat_id(agent_name)]):
+            try:
+                await bot.send_message(chat_id=cid, text=text, parse_mode="HTML")
+            except Exception:
+                log.warning("Failed to send status to chat_id=%s", cid)
 
     async def send_code_artifacts(
         self, artifacts: list[CodeArtifact], agent_name: str = "backend_dev"
@@ -236,7 +299,7 @@ class TelegramChannel(BaseChannel):
     async def _on_message(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle incoming text — either a new request or an edit JSON reply."""
+        """Handle incoming text — either a new request or a feedback / edit reply."""
         chat_id = update.effective_chat.id
         text = update.message.text
         session_id = str(chat_id)
@@ -247,7 +310,7 @@ class TelegramChannel(BaseChannel):
                 await self.hitl.resolve(session_id, "reject")
             return
 
-        # Waiting for edit JSON reply
+        # Waiting for feedback/edit text reply
         if self.hitl.pop_edit_waiting(session_id):
             await self.hitl.resolve(session_id, "edit", text)
             return
@@ -255,6 +318,8 @@ class TelegramChannel(BaseChannel):
         # New pipeline request
         if self.mode == "single":
             self._chat_id = chat_id
+            if not self._notify_all:
+                self._notify_all = [chat_id]
 
         handler: Optional[PipelineHandler] = context.bot_data.get("pipeline_handler")
         if handler:
@@ -265,7 +330,7 @@ class TelegramChannel(BaseChannel):
     async def _on_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Handle inline button presses (Approve / Edit / Reject)."""
+        """Handle inline button presses."""
         query = update.callback_query
         await query.answer()
         await query.edit_message_reply_markup(reply_markup=None)
@@ -280,9 +345,9 @@ class TelegramChannel(BaseChannel):
 
         if action in ("approve", "reject"):
             await self.hitl.resolve(session_id, action)
-        elif action == "edit":
+        elif action in ("edit", "feedback"):
             # resolve first wait; send_for_review handles the follow-up prompt
-            await self.hitl.resolve(session_id, "edit")
+            await self.hitl.resolve(session_id, action)
 
 
 # ---------------------------------------------------------------------------

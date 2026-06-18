@@ -272,7 +272,9 @@ class Project:
 
     def _merge(self, new_state: dict, original_request: str) -> None:
         """Merge a run's output into the accumulated project state."""
+        run_number = len(self._history) + 1
         entry: dict = {
+            "run_number":    run_number,
             "request":       original_request,
             "timestamp":     time.time(),
             "new_tickets":   0,
@@ -284,7 +286,13 @@ class Project:
             existing  = self._state.get(key) or []
             new_items = new_state.get(key)   or []
             if new_items:
-                self._state[key] = existing + list(new_items)
+                # tag artifacts that support run tracking
+                tagged = []
+                for item in new_items:
+                    if hasattr(item, "created_at_run") and item.created_at_run == 0:
+                        item = item.model_copy(update={"created_at_run": run_number})
+                    tagged.append(item)
+                self._state[key] = existing + tagged
                 if key == "tickets":
                     entry["new_tickets"] = len(new_items)
                 elif key == "code_artifacts":
