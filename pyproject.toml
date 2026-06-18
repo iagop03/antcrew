@@ -34,9 +34,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/iagop99/antcrew"
-Repository = "https://github.com/iagop99/antcrew"
-"Bug Tracker" = "https://github.com/iagop99/antcrew/issues"
+Homepage = "https://github.com/iagop03/antcrew"
+Repository = "https://github.com/iagop03/antcrew"
+"Bug Tracker" = "https://github.com/iagop03/antcrew/issues"
 
 [project.optional-dependencies]
 telegram  = ["python-telegram-bot>=20.0"]

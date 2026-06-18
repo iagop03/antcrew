@@ -25,7 +25,9 @@ Key ideas:
 - **Retry + resilience.** Automatic exponential-backoff retry on timeouts, rate limits, and transient errors.
 - **Token tracking.** Per-agent input/output counts and estimated cost shown after every run.
 - **Web dashboard.** React SPA served from `antcrew serve` — start runs, watch the pipeline live, browse artifacts.
-- **Integrations.** Push tickets to Jira, open PRs on GitHub, publish docs to Confluence, send reviews to Slack or Telegram.
+- **Artifact tracking.** Every code file, test, and DevOps artifact is tagged with the run number that created it — full provenance across multi-run projects.
+- **Interactive setup.** `antcrew setup` wizard generates a ready-to-use `agentteam.yaml` through a guided conversation — no YAML knowledge needed.
+- **Integrations.** Push tickets to Jira, open PRs on GitHub, publish docs to Confluence, send reviews to Slack or Telegram (with per-agent recipients and free-text feedback buttons).
 
 ---
 
@@ -124,6 +126,7 @@ team = DevTeam(model=llm)
 ## CLI
 
 ```
+antcrew setup        Interactive wizard — generate agentteam.yaml from scratch
 antcrew run          Run a pipeline autonomously
 antcrew interactive  Run with human-in-the-loop review after every agent
 antcrew project      Manage persistent project sessions
@@ -132,6 +135,41 @@ antcrew serve        Start the REST API + web dashboard
 antcrew show         Display a previously saved state file
 antcrew init         Generate a starter agentteam.yaml + main.py
 antcrew flow         Validate and inspect flow config files
+```
+
+### `antcrew setup`
+
+Conversational wizard for non-developers. Asks questions and generates a ready-to-use `agentteam.yaml`:
+
+```bash
+antcrew setup                              # interactive (output: ./agentteam.yaml)
+antcrew setup --name auth-service          # skip the name question
+antcrew setup --output ./myproject/        # write to a specific directory
+antcrew setup --filename team.yaml         # custom filename
+```
+
+```
+? What do you want to build? > A booking app for my restaurant
+? What type of project?
+  > 1  Software (API / backend / web app)
+    2  Full-stack (frontend + backend)
+    3  Research (analysis, reports)
+    4  Content (blog, marketing)
+? Which AI model?
+  > 1  Claude  → ANTHROPIC_API_KEY
+    2  GPT-4o  → OPENAI_API_KEY
+    3  Gemini  → GOOGLE_API_KEY
+    4  Ollama  → local, no API key
+    5  Simulated → no API key (testing)
+? Save persistent sessions between runs? [y/N]
+? Enable LLM cache? [y/N]
+? Test runner sandbox?
+  > 1  None
+    2  Local (pytest / npm test)
+    3  Docker
+
+Generated agentteam.yaml ✅
+Run with: antcrew run "A booking app for my restaurant" --config agentteam.yaml
 ```
 
 ### `antcrew run`
@@ -396,6 +434,18 @@ llm.with_cache("~/.antcrew/cache.db")        # reuse API responses across runs
 project = Project(DevTeam(model=llm), path="auth.json")
 project.run("Build JWT auth")   # makes API calls, caches responses
 project.run("Add OAuth")        # cache hits for unchanged prompts → cheaper + faster
+```
+
+Every artifact is tagged with the run number that created it:
+
+```python
+project.run("Build JWT auth")    # run 1
+project.run("Add OAuth")         # run 2
+
+for a in project.state["code_artifacts"]:
+    print(a.file_path, "→ run", a.created_at_run)
+# auth/jwt.py      → run 1
+# auth/oauth.py    → run 2
 ```
 
 ---
@@ -695,7 +745,7 @@ confluence.publish_prd(state, space_key="ENG")
 confluence.publish_docs(state, space_key="ENG", parent_title="Projects")
 ```
 
-### Slack / Telegram
+### Slack
 
 ```python
 from antcrew.integrations import SlackChannel
@@ -711,6 +761,44 @@ team = DevTeam(
 )
 state = team.run_interactive("Build feature X")
 ```
+
+### Telegram
+
+Each agent can have its own bot and its own reviewer. Requires `pip install antcrew[telegram]`.
+
+```python
+from antcrew import TelegramChannel, AgentBotConfig
+from antcrew.agents import PMAgent, BackendDevAgent
+
+# Single bot, one reviewer
+channel = TelegramChannel(token=os.environ["BOT_TOKEN"], chat_id=REVIEWER_CHAT_ID)
+
+# Single bot, notify multiple recipients (HITL goes to first, all get status)
+channel = TelegramChannel(
+    token=os.environ["BOT_TOKEN"],
+    notify=[MARIA_CHAT_ID, JUAN_CHAT_ID],
+)
+
+# Per-agent: each agent notifies a different person
+pm = PMAgent(
+    channel=TelegramChannel(token=TOKEN, notify=[MARIA_CHAT_ID]),
+    approval_required=True,
+)
+dev = BackendDevAgent(
+    channel=TelegramChannel(token=TOKEN, notify=[JUAN_CHAT_ID]),
+    approval_required=False,
+)
+```
+
+HITL review buttons sent after each artifact:
+
+```
+🤖 PMAgent has completed the PRD
+
+[✅ Aprobar]  [✏️ Sugerir cambios]  [❌ Rechazar]
+```
+
+If "Sugerir cambios" is pressed, the bot asks for free-text feedback and passes it to `agent.refine()` — the agent revises its output in place and re-sends for review.
 
 ---
 
@@ -775,7 +863,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The full suite uses `SimulatedLLM` — no API keys required. 742 tests, no live network calls.
+The full suite uses `SimulatedLLM` — no API keys required. 803 tests, no live network calls.
 
 ---
 
