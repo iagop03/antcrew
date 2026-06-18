@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from antcrew.core.agent import BaseAgent, _strip_fences
-from antcrew.core.artifacts import Ticket, Priority, TicketStatus
+from antcrew.core.artifacts import Ticket, TicketStatus
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\

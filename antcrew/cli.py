@@ -162,7 +162,6 @@ def _print_test_results(tr) -> None:
         success  = tr.success
         summary  = tr.summary()
         output   = tr.output or ""
-        rc       = tr.returncode
     else:
         passed   = int(tr.get("passed", 0))
         failed   = int(tr.get("failed", 0))
@@ -170,12 +169,14 @@ def _print_test_results(tr) -> None:
         success  = bool(tr.get("success", failed == 0 and errors == 0))
         ms       = float(tr.get("duration_ms", 0))
         parts    = []
-        if passed:  parts.append(f"{passed} passed")
-        if failed:  parts.append(f"{failed} failed")
-        if errors:  parts.append(f"{errors} error{'s' if errors != 1 else ''}")
-        summary  = (", ".join(parts) or "no tests ran") + f" in {ms:.0f}ms"
-        output   = str(tr.get("output", ""))
-        rc       = int(tr.get("returncode", 0))
+        if passed:
+            parts.append(f"{passed} passed")
+        if failed:
+            parts.append(f"{failed} failed")
+        if errors:
+            parts.append(f"{errors} error{'s' if errors != 1 else ''}")
+        summary = (", ".join(parts) or "no tests ran") + f" in {ms:.0f}ms"
+        output  = str(tr.get("output", ""))
 
     colour  = "green" if success else "red"
     icon    = "✓" if success else "✗"
@@ -469,7 +470,7 @@ def init(
     yaml_path.write_text(yaml_content, encoding="utf-8")
     main_path.write_text(main_content, encoding="utf-8")
 
-    console.print(f"\n[bold green]Generated:[/]")
+    console.print("\n[bold green]Generated:[/]")
     console.print(f"  [cyan]{yaml_path}[/]  — team configuration")
     console.print(f"  [cyan]{main_path}[/]  — entry point\n")
     console.print("Run with:")
@@ -509,7 +510,7 @@ def serve(
     _has_dashboard = _static_index.exists()
 
     display_host = "localhost" if host in ("0.0.0.0", "::") else host
-    console.print(f"\n[bold green]AntCrew[/] v0.4")
+    console.print("\n[bold green]AntCrew[/] v0.4")
     console.print(f"  API    → [cyan]http://{display_host}:{port}[/]")
     console.print(f"  Docs   → [dim]http://{display_host}:{port}/docs[/dim]")
     if _has_dashboard:
@@ -612,7 +613,6 @@ def eval_cmd(
     """
     from antcrew.config import build_llm
     from antcrew.eval import EvalCase, EvalRunner
-    from rich.progress import Progress, SpinnerColumn, TextColumn
     from rich.table import Table
 
     # ── Load cases ────────────────────────────────────────────────────────────

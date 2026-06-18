@@ -444,7 +444,10 @@ def _parse_counts(output: str) -> tuple[int, int, int]:
     for m in re.finditer(r"(\d+)\s+(passed|failed|error)", output):
         n    = int(m.group(1))
         kind = m.group(2)
-        if kind == "passed":   passed  = n
-        elif kind == "failed": failed  = n
-        elif kind == "error":  errors  = n
+        if kind == "passed":
+            passed = n
+        elif kind == "failed":
+            failed = n
+        elif kind == "error":
+            errors = n
     return passed, failed, errors

@@ -27,7 +27,6 @@ Or using the fluent helper on any model:
 from __future__ import annotations
 
 import logging
-from typing import Callable, Optional
 
 from antcrew.models.base import BaseLLM, Message
 

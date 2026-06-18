@@ -31,8 +31,6 @@ Usage — parallel fan-out / fan-in:
 """
 from __future__ import annotations
 
-from typing import Any
-
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver

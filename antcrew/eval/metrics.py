@@ -5,7 +5,7 @@ A score of 1.0 means the artifact fully met the structural quality bar.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from antcrew.eval.case import AgentScore, EvalCase
 
