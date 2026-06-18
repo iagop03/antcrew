@@ -7,12 +7,19 @@ for dynamic LLM-driven routing between agents.
 """
 from __future__ import annotations
 
+import os
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 
 from antcrew.core.agent import BaseAgent
 from antcrew.core.state import TeamState
+
+# Must be set before the first checkpoint restore (checked at deserialize time)
+os.environ.setdefault(
+    "LANGGRAPH_ALLOWED_MSGPACK_MODULES",
+    "antcrew.core.artifacts,antcrew.core.state",
+)
 
 
 def build_pipeline(

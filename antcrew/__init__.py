@@ -1,12 +1,3 @@
-import os as _os
-# Register antcrew's Pydantic models with LangGraph's msgpack serializer so
-# checkpoints survive restarts without deprecation warnings.
-_os.environ.setdefault(
-    "LANGGRAPH_ALLOWED_MSGPACK_MODULES",
-    "antcrew.core.artifacts,antcrew.core.state",
-)
-del _os
-
 from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.research_team import ResearchTeam
 from antcrew.teams.content_team import ContentTeam
