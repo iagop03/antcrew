@@ -136,15 +136,15 @@ def test_llm_cache_returns_same_response():
     r2 = llm.system("You are a PM. Output JSON tickets array.", "Build login")
     assert r1 == r2
 
-def test_llm_streaming_not_cached():
-    """on_token set → cache is bypassed (tokens delivered live, can't replay)."""
+def test_llm_streaming_cached_on_second_call():
+    """First streaming call hits backend and caches; second call is a cache hit."""
     tokens: list[str] = []
     llm = CountCallsLLM()
     llm.cache = LLMCache()
     llm.on_token = tokens.append
     llm.system("You are a PM. Output JSON tickets array.", "Build x")
     llm.system("You are a PM. Output JSON tickets array.", "Build x")
-    assert llm.call_count == 2  # streaming → no cache, both hit backend
+    assert llm.call_count == 1  # second call served from cache
 
 def test_llm_no_cache_when_none():
     llm = CountCallsLLM()
