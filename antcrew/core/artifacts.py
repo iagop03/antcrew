@@ -43,7 +43,7 @@ class Ticket(BaseModel):
 class CodeArtifact(BaseModel):
     ticket_id: str
     file_path: str
-    description: str
+    description: str = ""
     content: str
     language: Optional[str] = None
     created_at_run: int = 0
@@ -54,7 +54,7 @@ class CodeArtifact(BaseModel):
 class TestArtifact(BaseModel):
     ticket_id: str
     file_path: str
-    description: str
+    description: str = ""
     content: str
     language: Optional[str] = None
     coverage_areas: list[str] = Field(default_factory=list)
@@ -100,7 +100,7 @@ class ResearchDocument(BaseModel):
 class DevOpsArtifact(BaseModel):
     """A single infrastructure / deployment file (Dockerfile, CI YAML, Terraform, etc.)."""
     file_path: str
-    description: str
+    description: str = ""
     language: str   # "dockerfile" | "yaml" | "hcl" | "shell" | etc.
     content: str
     created_at_run: int = 0
