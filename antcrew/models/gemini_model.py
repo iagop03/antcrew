@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 from typing import Optional
@@ -12,7 +12,7 @@ _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 class GeminiModel(BaseLLM):
     """
-    Google Gemini model via REST API (no extra SDK required — uses httpx).
+    Google Gemini model via REST API (no extra SDK required â€” uses httpx).
 
     Default model: gemini-1.5-flash
 
@@ -51,7 +51,7 @@ class GeminiModel(BaseLLM):
             body["systemInstruction"] = {"parts": [{"text": "\n\n".join(system_parts)}]}
         return body
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
         import json as _json
 
         body = self._build_body(messages, max_tokens)

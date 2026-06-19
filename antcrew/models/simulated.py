@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from antcrew.models.base import BaseLLM, Message
@@ -9,11 +9,11 @@ from antcrew.models.base import BaseLLM, Message
 
 _PRD_FIXTURE = {
     "title": "[Simulated] Feature Module",
-    "summary": "Simulated PRD for testing — no real LLM called.",
+    "summary": "Simulated PRD for testing â€” no real LLM called.",
     "goals": ["Deliver the requested feature", "Maintain code quality"],
     "out_of_scope": ["Third-party integrations"],
     "functional_requirements": ["Core feature implementation"],
-    "non_functional_requirements": ["< 200 ms P99", "Unit test coverage ≥ 80 %"],
+    "non_functional_requirements": ["< 200 ms P99", "Unit test coverage â‰¥ 80 %"],
     "open_questions": [],
 }
 
@@ -186,10 +186,10 @@ _DOCS_FIXTURE = [
         "content": (
             "# Architecture\n\n"
             "## Components\n\n"
-            "- **API Layer** — FastAPI REST endpoints\n"
-            "- **Business Logic** — core feature implementation\n"
-            "- **Data Layer** — persistence and models\n\n"
-            "## Data Flow\n\nClient → API → Business Logic → Data Layer\n"
+            "- **API Layer** â€” FastAPI REST endpoints\n"
+            "- **Business Logic** â€” core feature implementation\n"
+            "- **Data Layer** â€” persistence and models\n\n"
+            "## Data Flow\n\nClient â†’ API â†’ Business Logic â†’ Data Layer\n"
         ),
     },
 ]
@@ -215,7 +215,7 @@ _EDIT_FIXTURE = {
 def _pick_fixture(system: str) -> str:
     s = system.lower()
 
-    # LLM-as-judge prompts — checked first (contain unique score/reasoning format)
+    # LLM-as-judge prompts â€” checked first (contain unique score/reasoning format)
     if any(phrase in s for phrase in (
         "evaluating a product requirements document",
         "evaluating development tickets",
@@ -237,7 +237,7 @@ def _pick_fixture(system: str) -> str:
         return json.dumps(_DEVOPS_FIXTURE)
 
     # ----------------------------------------------------------------
-    # Refine prompts — checked first; they share keywords with run()
+    # Refine prompts â€” checked first; they share keywords with run()
     # prompts but include agent-specific phrases not present elsewhere.
     # ----------------------------------------------------------------
     if "reviewer provided feedback on the prd" in s:
@@ -266,7 +266,7 @@ def _pick_fixture(system: str) -> str:
         return json.dumps(_DOCS_FIXTURE)
 
     # ----------------------------------------------------------------
-    # Normal run() prompts — most specific first to avoid false matches.
+    # Normal run() prompts â€” most specific first to avoid false matches.
     # ----------------------------------------------------------------
     if "prd" in s and ("functional_requirements" in s or "business analyst" in s):
         return json.dumps(_PRD_FIXTURE)
@@ -297,7 +297,7 @@ def _pick_fixture(system: str) -> str:
 
 class SimulatedLLM(BaseLLM):
     """
-    Drop-in replacement for any real LLM — returns fixture JSON without API calls.
+    Drop-in replacement for any real LLM â€” returns fixture JSON without API calls.
 
     Perfect for demos, CI pipelines, and development without spending credits.
 
@@ -306,7 +306,7 @@ class SimulatedLLM(BaseLLM):
         state = team.run("Build a login module")  # instant, no API calls
     """
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
         system = next((m.content for m in messages if m.role == "system"), "")
         result = _pick_fixture(system)
         if self.on_token:

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import httpx
 
@@ -25,7 +25,7 @@ class OllamaModel(BaseLLM):
         self.base_url = base_url.rstrip("/")
         self._timeout = timeout
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
         import json as _json
 
         payload = {

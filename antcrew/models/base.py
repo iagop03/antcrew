@@ -166,7 +166,7 @@ class BaseLLM(ABC):
     # ── Abstract interface ────────────────────────────────────────────────────
 
     @abstractmethod
-    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
         """Send messages and return the full reply as a string.
 
         When ``self.on_token`` is set, stream the response and call

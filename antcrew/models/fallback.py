@@ -1,4 +1,4 @@
-"""FallbackLLM — try models in order, falling back on any error.
+﻿"""FallbackLLM â€” try models in order, falling back on any error.
 
 When the primary model fails (rate-limit, API outage, quota exceeded), the
 next model in the chain is tried automatically.  Each model's own retry logic
@@ -98,7 +98,7 @@ class FallbackLLM(BaseLLM):
 
         raise last_exc
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
         """Try each model's complete() in order (no per-model retries here).
 
         In normal operation BaseAgent calls llm.system(), not complete() directly.
@@ -113,7 +113,7 @@ class FallbackLLM(BaseLLM):
         raise last_exc
 
     # ------------------------------------------------------------------
-    # Usage tracking — aggregate across all models
+    # Usage tracking â€” aggregate across all models
     # ------------------------------------------------------------------
 
     def get_usage_summary(self) -> dict:

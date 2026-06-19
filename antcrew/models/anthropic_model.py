@@ -27,7 +27,7 @@ class AnthropicModel(BaseLLM):
             )
         self._client = anthropic.Anthropic(api_key=key)
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 8192) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
         system_parts = [m.content for m in messages if m.role == "system"]
         chat_messages = [
             {"role": m.role, "content": m.content}
