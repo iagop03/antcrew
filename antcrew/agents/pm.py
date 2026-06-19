@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from antcrew.core.agent import BaseAgent, _strip_fences
+
+_log = logging.getLogger(__name__)
 from antcrew.core.artifacts import Ticket, TicketStatus
 from antcrew.core.state import TeamState
 
@@ -55,7 +58,10 @@ class PMAgent(BaseAgent):
 
         context = self._recall(prd.title + " " + prd.summary)
         raw = self.system(_SYSTEM + context, f"PRD:\n{prd.model_dump_json(indent=2)}")
-        raw_tickets: list[dict] = json.loads(_strip_fences(raw))
+        _log.debug("PMAgent raw response (len=%d): %r", len(raw), raw[:500])
+        stripped = _strip_fences(raw)
+        _log.debug("PMAgent stripped (len=%d): %r", len(stripped), stripped[:200])
+        raw_tickets: list[dict] = json.loads(stripped)
         tickets = [
             Ticket(
                 id=f"TICKET-{i + 1:03d}",

@@ -19,12 +19,23 @@ _FENCE_RE = re.compile(r'^```[a-zA-Z]*[ \t]*\n?([\s\S]*)```[ \t]*$')
 def _strip_fences(text: str) -> str:
     """Remove outermost markdown code fences from LLM JSON output.
 
-    Uses greedy matching so triple backticks inside string values
-    (e.g. code examples in ticket descriptions) are preserved correctly.
+    Handles three cases:
+    - No fence → return as-is
+    - Full fence (```lang ... ```) → strip both fences, return content
+    - Opening fence only (truncated response) → strip first line, return rest
+      so that json.loads at least sees the JSON content (even if truncated)
+      rather than failing immediately on the backtick character.
     """
     text = text.strip()
+    if not text.startswith("```"):
+        return text
     m = _FENCE_RE.match(text)
-    return m.group(1).strip() if m else text
+    if m:
+        return m.group(1).strip()
+    # Opening fence without closing fence (truncated response):
+    # strip the "```lang" first line and return whatever content follows.
+    _, _, rest = text.partition('\n')
+    return rest.strip()
 
 
 class BaseAgent(ABC):
