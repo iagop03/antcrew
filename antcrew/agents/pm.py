@@ -57,7 +57,7 @@ class PMAgent(BaseAgent):
             return {"errors": ["PMAgent: no PRD found in state"]}
 
         context = self._recall(prd.title + " " + prd.summary)
-        raw = self.system(_SYSTEM + context, f"PRD:\n{prd.model_dump_json(indent=2)}")
+        raw = self.system(_SYSTEM + context, f"PRD:\n{prd.model_dump_json(indent=2)}", max_tokens=16384)
         _log.debug("PMAgent raw response (len=%d): %r", len(raw), raw[:500])
         stripped = _strip_fences(raw)
         _log.debug("PMAgent stripped (len=%d): %r", len(stripped), stripped[:200])
@@ -85,6 +85,7 @@ class PMAgent(BaseAgent):
                 feedback=feedback,
             ),
             "Revise the tickets based on the feedback.",
+            max_tokens=16384,
         )
         raw_tickets: list[dict] = json.loads(_strip_fences(raw))
         tickets = [
