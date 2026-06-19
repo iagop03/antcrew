@@ -97,7 +97,7 @@ class BaseLLM(ABC):
     # Retry / timeout
     max_retries: int = 3
     retry_delay: float = 1.0
-    timeout: float = 120.0
+    timeout: float = 600.0
 
     # Prompt cache (opt-in — assign an LLMCache instance to enable)
     cache: "Optional[LLMCache]" = None

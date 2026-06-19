@@ -119,8 +119,35 @@ class InteractiveMixin:
         app = self._supervisor.build(self._agents, interrupt_before=interrupt_nodes)
         config = {"configurable": {"thread_id": thread_id}}
 
+        # Enable streaming so long agent responses don't hit HTTP timeout.
+        llm = next(
+            (getattr(a, "llm", None) for a in self._agents.values()),
+            None,
+        )
+        _current: dict = {"agent": "", "text": ""}
+
+        def _on_token(token: str) -> None:
+            agent_name = getattr(llm, "current_agent", "") if llm else ""
+            if agent_name != _current["agent"]:
+                if _current["text"]:
+                    _rc.print()
+                _current["agent"] = agent_name
+                _current["text"] = ""
+                if agent_name:
+                    _rc.print(f"\n[bold cyan]{agent_name}[/bold cyan]", end=" ")
+            _current["text"] += token
+            _rc.print(token, end="", highlight=False)
+
+        if llm is not None:
+            llm.on_token = _on_token
+
         _rc.print("\n[bold green]AntCrew[/] — starting pipeline.\n")
         app.invoke(self._initial_state(request), config=config)  # type: ignore[attr-defined]
+
+        if llm is not None:
+            llm.on_token = None
+        if _current["text"]:
+            _rc.print()
 
         while True:  # outer: one iteration per pipeline step
             snapshot = app.get_state(config)
@@ -196,7 +223,15 @@ class InteractiveMixin:
 
             next_node = snapshot.next[0]
             _rc.print(f"\n[bold]{next_node}[/] running…")
+            _current["agent"] = ""
+            _current["text"] = ""
+            if llm is not None:
+                llm.on_token = _on_token
             app.invoke(None, config=config)
+            if llm is not None:
+                llm.on_token = None
+            if _current["text"]:
+                _rc.print()
 
         return app.get_state(config).values
 
