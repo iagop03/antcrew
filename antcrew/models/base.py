@@ -178,19 +178,24 @@ class BaseLLM(ABC):
         """
 
     def system(self, prompt: str, user: str, **kwargs) -> str:
-        """One system + one user message, with retry when not streaming."""
+        """One system + one user message, with cache and optional streaming."""
         messages = [
             Message(role="system", content=prompt),
             Message(role="user", content=user),
         ]
-        if self.on_token is not None:
-            # Streaming: never cache — tokens are delivered live to the caller
-            return self.complete(messages, **kwargs)
         cache = getattr(self, "cache", None)
+        # Check cache first, even in streaming mode — a cache hit skips the API entirely.
         if cache is not None:
             hit = cache.get(messages, type(self).__name__, validate=_is_complete_response)
             if hit is not None:
                 return hit
+        if self.on_token is not None:
+            # Streaming path: call complete() live, then persist result to cache.
+            result = self.complete(messages, **kwargs)
+            if cache is not None:
+                cache.set(messages, type(self).__name__, result)
+            return result
+        if cache is not None:
             result = self._with_retry(self.complete, messages, **kwargs)
             cache.set(messages, type(self).__name__, result)
             return result
