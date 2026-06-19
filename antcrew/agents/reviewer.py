@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import CodeReview, ReviewFinding
 from antcrew.core.state import TeamState
 
@@ -74,7 +74,7 @@ class ReviewerAgent(BaseAgent):
             f"Code Artifacts:\n{json.dumps([a.model_dump() for a in code_artifacts], indent=2)}"
         )
         raw = self.system(_SYSTEM + memory_context + repo_context, context)
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         findings = [
             ReviewFinding(**{k: v for k, v in f.items() if k in ReviewFinding.model_fields})
             for f in data.get("findings", [])
@@ -111,7 +111,7 @@ class ReviewerAgent(BaseAgent):
             ),
             "Revise the code review based on the feedback.",
         )
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         findings = [
             ReviewFinding(**{k: v for k, v in f.items() if k in ReviewFinding.model_fields})
             for f in data.get("findings", [])

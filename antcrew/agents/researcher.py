@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import ResearchDocument, ResearchSection
 from antcrew.core.state import TeamState
 
@@ -54,7 +54,7 @@ class ResearcherAgent(BaseAgent):
     def run(self, state: TeamState) -> dict:
         request = state.get("request") or ""
         raw = self.system(_SYSTEM, f"Research topic:\n{request}")
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         sections = [
             ResearchSection(heading=s["heading"], content=s["content"])
             for s in data.get("sections", [])
@@ -89,7 +89,7 @@ class ResearcherAgent(BaseAgent):
             ),
             "Revise the research document based on the feedback.",
         )
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         sections = [
             ResearchSection(heading=s["heading"], content=s["content"])
             for s in data.get("sections", [])

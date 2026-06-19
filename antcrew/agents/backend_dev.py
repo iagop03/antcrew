@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import CodeArtifact, TicketStatus
 from antcrew.core.state import TeamState
 
@@ -65,7 +65,7 @@ class BackendDevAgent(BaseAgent):
 
         for ticket in open_tickets:
             raw = self.system(system_prompt, f"Ticket:\n{ticket.model_dump_json(indent=2)}")
-            raw_artifacts: list[dict] = json.loads(_strip_fences(raw))
+            raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
             artifacts = [
                 CodeArtifact(
                     ticket_id=ticket.id,
@@ -100,7 +100,7 @@ class BackendDevAgent(BaseAgent):
             ),
             "Revise the code based on the feedback.",
         )
-        raw_artifacts: list[dict] = json.loads(_strip_fences(raw))
+        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             CodeArtifact(
                 **{k: v for k, v in a.items() if k in CodeArtifact.model_fields}

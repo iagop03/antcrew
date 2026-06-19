@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import DocumentationArtifact
 from antcrew.core.state import TeamState
 
@@ -89,7 +89,7 @@ class DocWriterAgent(BaseAgent):
             context_parts.append(f"DevOps files:\n{json.dumps(summaries, indent=2)}")
 
         raw = self.system(_SYSTEM, "\n\n".join(context_parts))
-        raw_artifacts: list[dict] = json.loads(_strip_fences(raw))
+        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         doc_artifacts = [
             DocumentationArtifact(
                 **{k: v for k, v in a.items() if k in DocumentationArtifact.model_fields}
@@ -119,7 +119,7 @@ class DocWriterAgent(BaseAgent):
             ),
             "Revise the documentation based on the feedback.",
         )
-        raw_artifacts: list[dict] = json.loads(_strip_fences(raw))
+        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             DocumentationArtifact(
                 **{k: v for k, v in a.items() if k in DocumentationArtifact.model_fields}

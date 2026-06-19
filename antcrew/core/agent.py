@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json as _json
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Optional
@@ -14,6 +15,16 @@ if TYPE_CHECKING:
 
 
 _FENCE_RE = re.compile(r'^```[a-zA-Z]*[ \t]*\n?([\s\S]*)```[ \t]*$')
+
+
+def _json_loads(text: str):
+    """json.loads with fallback to strict=False for LLM output containing raw newlines."""
+    try:
+        return _json.loads(text)
+    except _json.JSONDecodeError as exc:
+        if "Invalid control character" in str(exc) or "control character" in str(exc).lower():
+            return _json.loads(text, strict=False)
+        raise
 
 
 def _strip_fences(text: str) -> str:

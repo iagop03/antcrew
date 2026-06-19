@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import DevOpsArtifact
 from antcrew.core.state import TeamState
 
@@ -74,7 +74,7 @@ class DevOpsAgent(BaseAgent):
             f"Code Artifacts:\n{json.dumps([a.model_dump() for a in code_artifacts], indent=2)}"
         )
         raw = self.system(_SYSTEM, context)
-        raw_artifacts: list[dict] = json.loads(_strip_fences(raw))
+        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         devops_artifacts = [
             DevOpsArtifact(
                 **{k: v for k, v in a.items() if k in DevOpsArtifact.model_fields}
@@ -104,7 +104,7 @@ class DevOpsAgent(BaseAgent):
             ),
             "Revise the DevOps configuration based on the feedback.",
         )
-        raw_artifacts: list[dict] = json.loads(_strip_fences(raw))
+        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             DevOpsArtifact(
                 **{k: v for k, v in a.items() if k in DevOpsArtifact.model_fields}

@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\
@@ -62,7 +62,7 @@ class CopywriterAgent(BaseAgent):
                     "current_agent": self.name,
                 }
         raw = self.system(_SYSTEM, f"Content brief:\n{piece.model_dump_json(indent=2)}")
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         updated = piece.model_copy(
             update={
                 "body": data.get("body", ""),
@@ -91,7 +91,7 @@ class CopywriterAgent(BaseAgent):
             ),
             "Revise the content based on the feedback.",
         )
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         updated = artifact.model_copy(update={
             "body": data.get("body", artifact.body),
             "word_count": data.get("word_count", artifact.word_count),

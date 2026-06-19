@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import ContentPiece
 from antcrew.core.state import TeamState
 
@@ -50,7 +50,7 @@ class IdeaAgent(BaseAgent):
     def run(self, state: TeamState) -> dict:
         request = state.get("request") or ""
         raw = self.system(_SYSTEM, f"Content request:\n{request}")
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         brief = ContentPiece(
             title=data.get("title", request[:80]),
             target_audience=data.get("target_audience", "general audience"),
@@ -79,7 +79,7 @@ class IdeaAgent(BaseAgent):
             ),
             "Revise the content brief based on the feedback.",
         )
-        data: dict = json.loads(_strip_fences(raw))
+        data: dict = _json_loads(_strip_fences(raw))
         updated = ContentPiece(
             title=data.get("title", artifact.title),
             target_audience=data.get("target_audience", artifact.target_audience),

@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import TestArtifact
 from antcrew.core.state import TeamState
 
@@ -82,7 +82,7 @@ class QAAgent(BaseAgent):
         system_prompt = _SYSTEM + self._search_repo(repo_query)
 
         raw = self.system(system_prompt, context)
-        raw_tests: list[dict] = json.loads(_strip_fences(raw))
+        raw_tests: list[dict] = _json_loads(_strip_fences(raw))
         test_artifacts = [
             TestArtifact(
                 **{k: v for k, v in t.items() if k in TestArtifact.model_fields}
@@ -93,7 +93,7 @@ class QAAgent(BaseAgent):
         bug_raw = self.system(
             _BUG_DETECTOR_SYSTEM, f"Code Artifacts:\n{artifacts_json}"
         )
-        bug_result: dict = json.loads(_strip_fences(bug_raw))
+        bug_result: dict = _json_loads(_strip_fences(bug_raw))
         has_critical = bool(bug_result.get("has_critical_bugs", False))
 
         return {
@@ -123,7 +123,7 @@ class QAAgent(BaseAgent):
             ),
             "Revise the tests based on the feedback.",
         )
-        raw_tests: list[dict] = json.loads(_strip_fences(raw))
+        raw_tests: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             TestArtifact(
                 **{k: v for k, v in t.items() if k in TestArtifact.model_fields}

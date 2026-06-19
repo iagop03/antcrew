@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
-from antcrew.core.agent import BaseAgent, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import PRD
 from antcrew.core.state import TeamState
 
@@ -44,7 +44,7 @@ class BusinessAnalystAgent(BaseAgent):
     def run(self, state: TeamState) -> dict:
         context = self._recall(state["request"])
         raw = self.system(_SYSTEM + context, state["request"])
-        prd = PRD.model_validate(json.loads(_strip_fences(raw)))
+        prd = PRD.model_validate(_json_loads(_strip_fences(raw)))
         return {
             "prd": prd,
             "current_agent": self.name,
@@ -59,5 +59,5 @@ class BusinessAnalystAgent(BaseAgent):
             ),
             "Revise the PRD based on the feedback.",
         )
-        prd = PRD.model_validate(json.loads(_strip_fences(raw)))
+        prd = PRD.model_validate(_json_loads(_strip_fences(raw)))
         return {"prd": prd}
