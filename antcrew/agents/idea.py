@@ -1,7 +1,5 @@
 ﻿from __future__ import annotations
 
-import json
-
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import ContentPiece
 from antcrew.core.state import TeamState

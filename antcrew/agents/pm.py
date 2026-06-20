@@ -4,10 +4,10 @@ import json
 import logging
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
-
-_log = logging.getLogger(__name__)
 from antcrew.core.artifacts import Ticket, TicketStatus
 from antcrew.core.state import TeamState
+
+_log = logging.getLogger(__name__)
 
 _SYSTEM = """\
 You are a Product Manager on a software development team.
