@@ -819,6 +819,64 @@ def show(
     console.print()
 
 
+@app.command()
+def extract(
+    path: Path = typer.Argument(..., help="JSON state file (--save output) or project JSON"),
+    output: Path = typer.Option(
+        Path("output"), "--output", "-o", help="Directory to write files into"
+    ),
+    include_tests: bool = typer.Option(True, "--tests/--no-tests", help="Also write test artifacts"),
+    include_devops: bool = typer.Option(True, "--devops/--no-devops", help="Also write devops artifacts"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List files that would be written without writing"),
+) -> None:
+    """Write generated code artifacts from a saved state to disk as real files."""
+    from antcrew.utils.persistence import load_state
+
+    if not path.exists():
+        console.print(f"[red]File not found:[/] {path}")
+        raise typer.Exit(1)
+
+    raw = load_state(path)
+
+    # Support both plain state files and project files (which nest state under "state").
+    if "state" in raw and isinstance(raw["state"], dict):
+        raw = raw["state"]
+
+    artifacts: list[tuple[str, str]] = []  # (rel_path, content)
+
+    for a in raw.get("code_artifacts") or []:
+        if isinstance(a, dict) and a.get("file_path") and a.get("content") is not None:
+            artifacts.append((a["file_path"], a["content"]))
+
+    if include_tests:
+        for a in raw.get("test_artifacts") or []:
+            if isinstance(a, dict) and a.get("file_path") and a.get("content") is not None:
+                artifacts.append((a["file_path"], a["content"]))
+
+    if include_devops:
+        for a in raw.get("devops_artifacts") or []:
+            if isinstance(a, dict) and a.get("file_path") and a.get("content") is not None:
+                artifacts.append((a["file_path"], a["content"]))
+
+    if not artifacts:
+        console.print("[yellow]No artifacts found in the state file.[/]")
+        raise typer.Exit(0)
+
+    console.print(f"\n[bold green]AntCrew extract[/] — {len(artifacts)} file(s) → [cyan]{output}/[/]\n")
+
+    for rel, content in artifacts:
+        dest = output / rel.lstrip("/")
+        if dry_run:
+            console.print(f"  [dim](dry-run)[/] {dest}")
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+            console.print(f"  [green]✓[/] {dest}")
+
+    if not dry_run:
+        console.print(f"\n[bold green]Done![/] {len(artifacts)} file(s) written to [cyan]{output}/[/]\n")
+
+
 def _print_state_raw(raw: dict, team: str) -> None:
     """Like _print_state but works on plain dicts from load_state."""
     from antcrew.core.artifacts import (
