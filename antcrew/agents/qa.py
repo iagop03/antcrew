@@ -8,7 +8,7 @@ from antcrew.core.state import TeamState
 
 _SYSTEM = """\
 You are a QA Engineer on a software development team.
-Given a list of code artifacts and their corresponding tickets, write comprehensive tests.
+Given the code artifacts for ONE ticket, write comprehensive tests.
 
 Respond ONLY with a valid JSON array of test artifact objects (no markdown fences, no prose):
 [
@@ -19,12 +19,10 @@ Respond ONLY with a valid JSON array of test artifact objects (no markdown fence
     "language": "python",
     "content": "...full test file content...",
     "coverage_areas": ["unit", "integration"]
-  },
-  ...
+  }
 ]
 
 Rules:
-- Write tests for EVERY ticket that has code artifacts.
 - Cover happy paths AND edge cases AND error conditions.
 - Use pytest for Python code, Vitest/Jest for TypeScript/JavaScript.
 - Mock external services and databases.
@@ -73,23 +71,29 @@ class QAAgent(BaseAgent):
                 "metadata": {"has_critical_bugs": False, "no_critical_bugs": True},
             }
 
-        artifacts_json = json.dumps([a.model_dump() for a in code_artifacts], indent=2)
-        tickets_json = json.dumps([t.model_dump() for t in tickets], indent=2)
-        context = f"Tickets:\n{tickets_json}\n\nCode Artifacts:\n{artifacts_json}"
+        # Group artifacts by ticket so each LLM call stays small
+        by_ticket: dict[str, list] = {}
+        for a in code_artifacts:
+            by_ticket.setdefault(a.ticket_id, []).append(a)
 
-        # Search for existing test patterns in the repo (e.g. fixtures, factories, helpers)
+        ticket_map = {t.id: t for t in tickets}
         repo_query = "tests fixtures " + " ".join(a.file_path for a in code_artifacts[:4])
         system_prompt = _SYSTEM + self._search_repo(repo_query)
 
-        raw = self.system(system_prompt, context)
-        raw_tests: list[dict] = _json_loads(_strip_fences(raw))
-        test_artifacts = [
-            TestArtifact(
-                **{k: v for k, v in t.items() if k in TestArtifact.model_fields}
+        test_artifacts: list[TestArtifact] = []
+        for ticket_id, arts in by_ticket.items():
+            ticket = ticket_map.get(ticket_id)
+            ticket_ctx = f"Ticket:\n{ticket.model_dump_json(indent=2)}\n\n" if ticket else ""
+            arts_json = json.dumps([a.model_dump() for a in arts], indent=2)
+            context = f"{ticket_ctx}Code Artifacts:\n{arts_json}"
+            raw = self.system(system_prompt, context)
+            raw_tests: list[dict] = _json_loads(_strip_fences(raw))
+            test_artifacts.extend(
+                TestArtifact(**{k: v for k, v in t.items() if k in TestArtifact.model_fields})
+                for t in raw_tests
             )
-            for t in raw_tests
-        ]
 
+        artifacts_json = json.dumps([a.model_dump() for a in code_artifacts], indent=2)
         bug_raw = self.system(
             _BUG_DETECTOR_SYSTEM, f"Code Artifacts:\n{artifacts_json}"
         )
