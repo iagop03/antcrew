@@ -65,7 +65,11 @@ class BackendDevAgent(BaseAgent):
 
         for ticket in open_tickets:
             raw = self.system(system_prompt, f"Ticket:\n{ticket.model_dump_json(indent=2)}")
-            raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
+            stripped = _strip_fences(raw)
+            try:
+                raw_artifacts: list[dict] = _json_loads(stripped) if stripped else []
+            except Exception:
+                raw_artifacts = []
             artifacts = [
                 CodeArtifact(
                     ticket_id=ticket.id,
