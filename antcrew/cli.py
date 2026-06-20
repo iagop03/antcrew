@@ -582,7 +582,7 @@ def interactive(
     ),
     thread: str = typer.Option("default", "--thread", help="Thread ID for checkpointing"),
     save: Optional[Path] = typer.Option(
-        None, "--save", "-s", help="Save final state to a JSON file"
+        None, "--save", "-s", help="Save final state to a JSON file (default: antcrew-output.json)"
     ),
 ) -> None:
     """Run a pipeline with human-in-the-loop review after each agent.
@@ -591,6 +591,9 @@ def interactive(
     edit (open JSON editor), or type free-text feedback to trigger
     conversational refinement (agents that support it will revise
     their output in-place before the pipeline moves on).
+
+    The final state is always saved to antcrew-output.json (or --save path)
+    so you can run `antcrew extract antcrew-output.json` afterwards.
     """
     console.print(
         f"\n[bold green]AntCrew interactive[/]  —  "
@@ -617,10 +620,10 @@ def interactive(
     console.print()
     _print_state(state, team)
 
-    if save:
-        from antcrew.utils.persistence import save_state
-        save_state(state, save)
-        console.print(f"\n[dim]State saved → [cyan]{save}[/][/dim]")
+    out_path = save or Path("antcrew-output.json")
+    from antcrew.utils.persistence import save_state
+    save_state(state, out_path)
+    console.print(f"\n[dim]State saved → [cyan]{out_path}[/]  (run [bold]antcrew extract {out_path}[/] to write files to disk)[/dim]")
 
     console.print("\n[bold green]Done![/]\n")
 
