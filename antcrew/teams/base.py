@@ -12,6 +12,8 @@ import concurrent.futures
 import functools
 import json
 import logging
+import re
+import time
 from typing import TYPE_CHECKING
 
 from antcrew.core.artifacts import (
@@ -25,23 +27,23 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+_FILE_PATH_RE = re.compile(r'"file_path"\s*:\s*"([^"]+)"')
+
+
+def _fmt_time(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m:02d}:{s:02d}"
+
 
 def _sync_run(coro):
-    """Run an async coroutine synchronously, safe in any context.
-
-    Works in plain scripts (no event loop), Jupyter notebooks, and FastAPI
-    handlers (all of which have a running event loop that asyncio.run() would
-    refuse to nest into).
-    """
+    """Run an async coroutine synchronously, safe in any context."""
     try:
         asyncio.get_running_loop()
-        # Already inside a running event loop — delegate to a fresh thread so
-        # we don't block the loop and can still use asyncio.run() there.
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             return pool.submit(asyncio.run, coro).result()
     except RuntimeError:
-        # No running loop — just use asyncio.run() directly.
         return asyncio.run(coro)
+
 
 # Maps every agent name to (state_key, Pydantic class used for manual edits)
 AGENT_ARTIFACT: dict[str, tuple[str, type | None]] = {
@@ -52,7 +54,6 @@ AGENT_ARTIFACT: dict[str, tuple[str, type | None]] = {
     "qa":               ("test_artifacts",    TestArtifact),
     "reviewer":         ("review",            CodeReview),
     "researcher":       ("research_document", ResearchDocument),
-    # ResearchTeam uses "writer" as alias for copywriter
     "devops":           ("devops_artifacts",  DevOpsArtifact),
     "doc_writer":       ("doc_artifacts",     DocumentationArtifact),
     "writer":           ("content_piece",     ContentPiece),
@@ -60,6 +61,112 @@ AGENT_ARTIFACT: dict[str, tuple[str, type | None]] = {
     "copywriter":       ("content_piece",     ContentPiece),
     "editor":           ("content_piece",     ContentPiece),
 }
+
+# Friendly labels shown in the progress panel instead of raw agent names.
+_AGENT_LABEL = {
+    "business_analyst": "Business Analyst",
+    "pm":               "Product Manager",
+    "sprint_planner":   "Sprint Planner",
+    "backend_dev":      "Backend Dev",
+    "frontend_dev":     "Frontend Dev",
+    "qa":               "QA",
+    "reviewer":         "Reviewer",
+    "devops":           "DevOps",
+    "doc_writer":       "Doc Writer",
+}
+
+
+class _ProgressPanel:
+    """Tracks agent execution and renders a Rich Panel for Live display."""
+
+    def __init__(self) -> None:
+        self._completed: list[tuple[str, float, str]] = []  # (name, secs, hint)
+        self._cur = ""
+        self._cur_start = 0.0
+        self._cur_hint = ""
+        self._total_start = time.monotonic()
+        self._buf = ""
+
+    # ------------------------------------------------------------------
+    # Called from on_token
+    # ------------------------------------------------------------------
+
+    def update(self, token: str, agent_name: str) -> None:
+        if agent_name and agent_name != self._cur:
+            self._flush()
+            self._cur = agent_name
+            self._cur_start = time.monotonic()
+            self._cur_hint = ""
+            self._buf = ""
+
+        self._buf = (self._buf + token)[-800:]
+        m = _FILE_PATH_RE.search(self._buf)
+        if m:
+            self._cur_hint = m.group(1)
+
+    def flush_current(self) -> None:
+        """Call after app.invoke() returns to finalise the last agent."""
+        self._flush()
+
+    # ------------------------------------------------------------------
+    # Render
+    # ------------------------------------------------------------------
+
+    def render(self):
+        from rich.panel import Panel
+        from rich.table import Table
+
+        t = Table.grid(padding=(0, 2))
+        t.add_column(width=2)    # icon
+        t.add_column(width=22)   # agent label
+        t.add_column(width=7)    # time
+        t.add_column()           # hint
+
+        for name, secs, hint in self._completed:
+            label = _AGENT_LABEL.get(name, name)
+            t.add_row(
+                "[green]✓[/green]",
+                f"[dim]{label}[/dim]",
+                f"[dim]{_fmt_time(secs)}[/dim]",
+                f"[dim]{hint}[/dim]" if hint else "",
+            )
+
+        if self._cur:
+            elapsed = time.monotonic() - self._cur_start
+            label = _AGENT_LABEL.get(self._cur, self._cur)
+            t.add_row(
+                "[bold yellow]⠸[/bold yellow]",
+                f"[bold cyan]{label}[/bold cyan]",
+                f"[yellow]{_fmt_time(elapsed)}[/yellow]",
+                f"[dim]↳ {self._cur_hint}[/dim]" if self._cur_hint else "[dim]working…[/dim]",
+            )
+
+        total = time.monotonic() - self._total_start
+        avg = self._avg_per_agent()
+        subtitle = f"[dim]elapsed {_fmt_time(total)}"
+        if avg and self._cur:
+            subtitle += f"  ·  avg {_fmt_time(avg)}/agent"
+        subtitle += "[/dim]"
+
+        return Panel(t, title="[bold green]AntCrew[/bold green]", subtitle=subtitle, border_style="green", padding=(0, 1))
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _flush(self) -> None:
+        if self._cur:
+            secs = time.monotonic() - self._cur_start
+            hint = self._cur_hint
+            self._completed.append((self._cur, secs, hint))
+            self._cur = ""
+            self._cur_hint = ""
+            self._buf = ""
+
+    def _avg_per_agent(self) -> float:
+        if not self._completed:
+            return 0.0
+        return sum(s for _, s, _ in self._completed) / len(self._completed)
 
 
 class InteractiveMixin:
@@ -75,17 +182,7 @@ class InteractiveMixin:
     _agents: dict[str, "BaseAgent"]
 
     async def run_async(self, request: str, *, thread_id: str = "default") -> dict:
-        """Non-blocking version of run() — safe to await from FastAPI or any async context.
-
-        Runs the synchronous LangGraph pipeline in a thread-pool executor so it
-        does not block the event loop.  All kwargs accepted by run() are forwarded.
-
-        Example (FastAPI):
-            @app.post("/run")
-            async def create_run(body: RunRequest):
-                state = await team.run_async(body.request)
-                return state
-        """
+        """Non-blocking version of run() — safe to await from FastAPI or any async context."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
@@ -106,6 +203,7 @@ class InteractiveMixin:
         from antcrew.integrations.console import _display_artifact, _prompt_decision
         from antcrew.console import edit_artifact_in_editor
         from rich.console import Console as _RC
+        from rich.live import Live
 
         _rc = _RC()
 
@@ -119,40 +217,37 @@ class InteractiveMixin:
         app = self._supervisor.build(self._agents, interrupt_before=interrupt_nodes)
         config = {"configurable": {"thread_id": thread_id}}
 
-        # Enable streaming so long agent responses don't hit HTTP timeout.
         llm = next(
             (getattr(a, "llm", None) for a in self._agents.values()),
             None,
         )
-        _current: dict = {"agent": "", "text": ""}
+        progress = _ProgressPanel()
+        _live_ref: list = [None]
 
         def _on_token(token: str) -> None:
             agent_name = getattr(llm, "current_agent", "") if llm else ""
-            if agent_name != _current["agent"]:
-                if _current["text"]:
-                    _rc.print()
-                _current["agent"] = agent_name
-                _current["text"] = ""
-                if agent_name:
-                    _rc.print(f"\n[bold cyan]{agent_name}[/bold cyan]", end=" ")
-            _current["text"] += token
-            _rc.print(token, end="", highlight=False)
+            progress.update(token, agent_name)
+            if _live_ref[0] is not None:
+                _live_ref[0].update(progress.render())
 
-        if llm is not None:
-            llm.on_token = _on_token
+        def _invoke(state_or_none):
+            if llm is not None:
+                llm.on_token = _on_token
+            with Live(progress.render(), refresh_per_second=4, console=_rc) as live:
+                _live_ref[0] = live
+                app.invoke(state_or_none, config=config)
+                _live_ref[0] = None
+            if llm is not None:
+                llm.on_token = None
+            progress.flush_current()
 
-        _rc.print("\n[bold green]AntCrew[/] — starting pipeline.\n")
-        app.invoke(self._initial_state(request), config=config)  # type: ignore[attr-defined]
+        _rc.print(f"\n[bold green]AntCrew[/bold green] — [dim]{request[:80]}[/dim]\n")
+        _invoke(self._initial_state(request))
 
-        if llm is not None:
-            llm.on_token = None
-        if _current["text"]:
-            _rc.print()
-
-        while True:  # outer: one iteration per pipeline step
+        while True:
             snapshot = app.get_state(config)
             if not snapshot.next:
-                _rc.print("\n[bold green]Done![/]\n")
+                _rc.print("\n[bold green]Done![/bold green]\n")
                 break
 
             prev_agent_name = snapshot.values.get("current_agent", "")
@@ -165,7 +260,7 @@ class InteractiveMixin:
             options = getattr(agent, "response_options", None) or ["approve", "edit", "reject"]
             pipeline_stopped = False
 
-            while True:  # inner: conversational refinement
+            while True:
                 if channel is not None:
                     result = _sync_run(
                         channel.send_for_review(artifact, prev_agent_name, thread_id, options)
@@ -195,7 +290,7 @@ class InteractiveMixin:
                     self._apply_edit(app, config, prev_agent_name, result["edited"])
                     snapshot = app.get_state(config)
                     artifact = snapshot.values.get(state_key) if state_key else None
-                    break  # treat manual edit as implicit approve
+                    break
 
                 if decision == "feedback":
                     feedback = result.get("feedback") or ""
@@ -221,17 +316,7 @@ class InteractiveMixin:
             if pipeline_stopped:
                 break
 
-            next_node = snapshot.next[0]
-            _rc.print(f"\n[bold]{next_node}[/] running…")
-            _current["agent"] = ""
-            _current["text"] = ""
-            if llm is not None:
-                llm.on_token = _on_token
-            app.invoke(None, config=config)
-            if llm is not None:
-                llm.on_token = None
-            if _current["text"]:
-                _rc.print()
+            _invoke(None)
 
         return app.get_state(config).values
 
