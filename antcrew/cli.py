@@ -572,6 +572,36 @@ def serve(
     uvicorn.run("antcrew.server:app", host=host, port=port, reload=reload)
 
 
+def _extract_state_to_dir(state: dict, output_dir: "Path") -> None:
+    """Write code/test/devops artifacts from a state dict to real files on disk."""
+    from pathlib import Path as _P
+
+    output_dir = _P(output_dir)
+    artifacts: list[tuple[str, str]] = []
+
+    def _collect(key: str):
+        for a in state.get(key) or []:
+            raw = a if isinstance(a, dict) else (a.model_dump() if hasattr(a, "model_dump") else {})
+            if raw.get("file_path") and raw.get("content") is not None:
+                artifacts.append((raw["file_path"], raw["content"]))
+
+    _collect("code_artifacts")
+    _collect("test_artifacts")
+    _collect("devops_artifacts")
+
+    if not artifacts:
+        console.print("[yellow]No artifacts to write.[/]")
+        return
+
+    console.print(f"\n[bold green]Writing {len(artifacts)} file(s) → [cyan]{output_dir}/[/][/bold green]\n")
+    for rel, content in artifacts:
+        dest = output_dir / rel.lstrip("/")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(content, encoding="utf-8")
+        console.print(f"  [green]✓[/] {dest}")
+    console.print()
+
+
 @app.command()
 def interactive(
     request: str = typer.Argument(..., help="Task or topic for the team"),
@@ -584,16 +614,19 @@ def interactive(
     save: Optional[Path] = typer.Option(
         None, "--save", "-s", help="Save final state to a JSON file (default: antcrew-output.json)"
     ),
+    output_dir: Optional[Path] = typer.Option(
+        Path("generated"), "--output-dir", "-o",
+        help="Write generated files to this directory (default: ./generated). Pass 'none' to skip.",
+    ),
 ) -> None:
     """Run a pipeline with human-in-the-loop review after each agent.
 
-    After every agent you can: approve (continue), reject (stop),
-    edit (open JSON editor), or type free-text feedback to trigger
-    conversational refinement (agents that support it will revise
-    their output in-place before the pipeline moves on).
+    After every agent you can: approve (continue), reject (stop), fix (send
+    back to backend_dev for targeted fixes), edit (open JSON editor), or type
+    free-text feedback to trigger conversational refinement.
 
-    The final state is always saved to antcrew-output.json (or --save path)
-    so you can run `antcrew extract antcrew-output.json` afterwards.
+    Generated files are written to ./generated/ automatically (or --output-dir).
+    The raw state is saved to antcrew-output.json (or --save).
     """
     console.print(
         f"\n[bold green]AntCrew interactive[/]  —  "
@@ -620,10 +653,16 @@ def interactive(
     console.print()
     _print_state(state, team)
 
+    # Always save state JSON.
     out_path = save or Path("antcrew-output.json")
     from antcrew.utils.persistence import save_state
     save_state(state, out_path)
-    console.print(f"\n[dim]State saved → [cyan]{out_path}[/]  (run [bold]antcrew extract {out_path}[/] to write files to disk)[/dim]")
+    console.print(f"\n[dim]State saved → [cyan]{out_path}[/][/dim]")
+
+    # Auto-extract files to disk unless the user opted out.
+    skip_extract = str(output_dir).lower() == "none"
+    if not skip_extract and output_dir is not None:
+        _extract_state_to_dir(state, output_dir)
 
     console.print("\n[bold green]Done![/]\n")
 

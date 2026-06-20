@@ -54,6 +54,20 @@ Respond ONLY with the complete updated JSON array of code artifact objects (no m
 Each object must include: ticket_id, file_path, description, language, content.
 """
 
+_FIX_SYSTEM = """\
+You are a Senior Backend Developer fixing a specific file after a code review.
+A reviewer flagged CRITICAL or ERROR issues in this file. Fix ONLY what is listed.
+Do not rewrite unrelated parts — keep the rest of the file intact.
+
+Respond ONLY with a valid JSON object (no markdown fences, no prose):
+{
+  "file_path": "src/...",
+  "description": "What this file does",
+  "language": "python",
+  "content": "...complete fixed file content..."
+}
+"""
+
 
 def _parse_list(raw: str) -> list[dict]:
     stripped = _strip_fences(raw)
@@ -86,7 +100,75 @@ class BackendDevAgent(BaseAgent):
     role_description = "Implements open tickets as code artifacts."
     conversational = True
 
+    def _fix_flagged_files(self, state: TeamState) -> dict | None:
+        """Fix-mode: re-generate only files with critical/error reviewer findings."""
+        meta = state.get("metadata") or {}
+        if not meta.get("reviewer_fix_requested"):
+            return None
+        review = state.get("review")
+        if not review:
+            return None
+
+        bad_paths = {
+            f.file_path for f in review.findings
+            if f.severity in ("critical", "error")
+        }
+        if not bad_paths:
+            return None
+
+        code_artifacts = list(state.get("code_artifacts") or [])
+        fixed: list[CodeArtifact] = []
+        fixed_count = 0
+
+        for art in code_artifacts:
+            if art.file_path not in bad_paths:
+                fixed.append(art)
+                continue
+
+            findings_text = "\n\n".join(
+                f"{f.severity.upper()}: {f.message}\nFix: {f.suggestion}"
+                for f in review.findings
+                if f.file_path == art.file_path and f.severity in ("critical", "error")
+            )
+            context = (
+                f"File to fix:\n{json.dumps(art.model_dump(), indent=2)}\n\n"
+                f"Issues to fix:\n{findings_text}\n\n"
+                f"Review summary: {review.summary}"
+            )
+            file_raw = self.system(_FIX_SYSTEM, context)
+            file_data = _parse_obj(file_raw)
+            if file_data.get("content") and file_data.get("file_path"):
+                fixed.append(
+                    CodeArtifact(
+                        ticket_id=art.ticket_id,
+                        **{k: v for k, v in file_data.items() if k in CodeArtifact.model_fields},
+                    )
+                )
+                fixed_count += 1
+            else:
+                fixed.append(art)  # keep original if fix failed
+
+        attempt = meta.get("fix_attempts", 1)
+        new_meta = {k: v for k, v in meta.items() if k != "reviewer_fix_requested"}
+        return {
+            "code_artifacts": fixed,
+            "current_agent": self.name,
+            "metadata": new_meta,
+            "messages": [{
+                "role": "assistant",
+                "content": (
+                    f"[Dev/Fix] Fixed {fixed_count}/{len(bad_paths)} flagged files "
+                    f"(attempt {attempt})."
+                ),
+            }],
+        }
+
     def run(self, state: TeamState) -> dict:
+        # Fix-mode: reviewer sent code back with critical findings to address.
+        fix_result = self._fix_flagged_files(state)
+        if fix_result is not None:
+            return fix_result
+
         tickets = state.get("tickets") or []
         open_tickets = [t for t in tickets if t.status == TicketStatus.OPEN]
 

@@ -34,7 +34,8 @@ _DEFAULT_FLOW = [
     ("frontend_dev",      "qa"),
     # QA always routes to reviewer — bug findings are surfaced there for HITL decision.
     ("qa",                "reviewer"),
-    # After each sprint review: loop back if backlog remains, else proceed to DevOps.
+    # After reviewer HITL: fix-mode takes priority; then sprint routing.
+    ("reviewer",          "backend_dev",    "reviewer_fix_requested"),
     ("reviewer",          "sprint_planner", "sprint_in_progress"),
     ("reviewer",          "devops",         "sprint_complete"),
     ("devops",            "doc_writer"),

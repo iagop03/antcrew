@@ -286,6 +286,23 @@ class InteractiveMixin:
                 if decision == "approve":
                     break
 
+                if decision == "fix":
+                    # Route back to backend_dev with fix_requested flag in metadata.
+                    current_meta = snapshot.values.get("metadata") or {}
+                    fix_count = current_meta.get("fix_attempts", 0) + 1
+                    app.update_state(config, {
+                        "metadata": {
+                            **current_meta,
+                            "reviewer_fix_requested": True,
+                            "fix_attempts": fix_count,
+                        }
+                    })
+                    _rc.print(
+                        f"\n[dim]↩ Routing back to backend_dev for targeted fixes "
+                        f"(attempt {fix_count}).[/dim]\n"
+                    )
+                    break
+
                 if decision == "edit" and result.get("edited"):
                     self._apply_edit(app, config, prev_agent_name, result["edited"])
                     snapshot = app.get_state(config)

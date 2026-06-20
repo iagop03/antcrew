@@ -53,6 +53,14 @@ class ReviewerAgent(BaseAgent):
     role_description = "Conducts a senior code review and produces a structured verdict."
     conversational = True
 
+    def __init__(self, llm, *, channel=None, approval_required=False, response_options=None):
+        super().__init__(
+            llm,
+            channel=channel,
+            approval_required=approval_required,
+            response_options=response_options or ["approve", "fix", "reject"],
+        )
+
     def run(self, state: TeamState) -> dict:
         code_artifacts = state.get("code_artifacts") or []
         tickets = state.get("tickets") or []
