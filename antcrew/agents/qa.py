@@ -1,16 +1,24 @@
 ﻿from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import TestArtifact
 from antcrew.core.state import TeamState
 
+# File extensions that are worth testing; everything else is skipped.
+_TESTABLE_EXTS = {
+    ".py", ".ts", ".tsx", ".js", ".jsx",
+    ".go", ".java", ".rs", ".rb", ".php", ".cs",
+}
+
 _SYSTEM = """\
 You are a QA Engineer on a software development team.
-Given the code artifacts for ONE ticket, write comprehensive tests.
+Given ONE source file, write a focused test file for it.
 
-Respond ONLY with a valid JSON array of test artifact objects (no markdown fences, no prose):
+Respond ONLY with a valid JSON array containing EXACTLY ONE test artifact object \
+(no markdown fences, no prose):
 [
   {
     "ticket_id": "TICKET-001",
@@ -23,8 +31,10 @@ Respond ONLY with a valid JSON array of test artifact objects (no markdown fence
 ]
 
 Rules:
-- Cover happy paths AND edge cases AND error conditions.
-- Use pytest for Python code, Vitest/Jest for TypeScript/JavaScript.
+- One test file per source file — do NOT combine multiple source files.
+- Cover the 3-5 most important behaviours: happy path, key edge cases, one error path.
+- Keep the test file under 120 lines.
+- Use pytest for Python, Vitest/Jest for TypeScript/JavaScript.
 - Mock external services and databases.
 - Each test must be independently runnable.
 """
@@ -79,23 +89,28 @@ class QAAgent(BaseAgent):
             else list(code_artifacts)
         )
 
-        # Group by ticket so each LLM call stays small.
-        by_ticket: dict[str, list] = {}
-        for a in sprint_artifacts:
-            by_ticket.setdefault(a.ticket_id, []).append(a)
+        # Skip non-testable files (CSS, JSON, markdown, configs, etc.).
+        testable = [
+            a for a in sprint_artifacts
+            if Path(a.file_path).suffix.lower() in _TESTABLE_EXTS
+        ]
 
         ticket_map = {t.id: t for t in tickets}
-        repo_query = "tests fixtures " + " ".join(a.file_path for a in sprint_artifacts[:4])
+        repo_query = "tests fixtures " + " ".join(a.file_path for a in testable[:4])
         system_prompt = _SYSTEM + self._search_repo(repo_query)
 
         new_tests: list[TestArtifact] = []
-        for ticket_id, arts in by_ticket.items():
-            ticket = ticket_map.get(ticket_id)
+        for a in testable:
+            ticket = ticket_map.get(a.ticket_id)
             ticket_ctx = f"Ticket:\n{ticket.model_dump_json(indent=2)}\n\n" if ticket else ""
-            arts_json = json.dumps([a.model_dump() for a in arts], indent=2)
-            context = f"{ticket_ctx}Code Artifacts:\n{arts_json}"
+            art_json = json.dumps([a.model_dump()], indent=2)
+            context = f"{ticket_ctx}Source file:\n{art_json}"
             raw = self.system(system_prompt, context)
-            raw_tests: list[dict] = _json_loads(_strip_fences(raw))
+            stripped = _strip_fences(raw)
+            try:
+                raw_tests: list[dict] = _json_loads(stripped) if stripped else []
+            except Exception:
+                raw_tests = []
             new_tests.extend(
                 TestArtifact(**{k: v for k, v in t.items() if k in TestArtifact.model_fields})
                 for t in raw_tests
