@@ -43,6 +43,14 @@ _CODE_ARTIFACTS_FIXTURE = [
     }
 ]
 
+# Single-object fixture for the "generate ONE file" phase (backend_dev phase 2).
+_CODE_FILE_FIXTURE = {
+    "file_path": "src/feature/core.py",
+    "description": "[Simulated] Core logic stub",
+    "language": "python",
+    "content": "def run():\n    \"\"\"Simulated implementation.\"\"\"\n    return {\"status\": \"ok\"}\n",
+}
+
 _FRONTEND_FIXTURE = [
     {
         "file_path": "src/components/Feature.tsx",
@@ -51,6 +59,14 @@ _FRONTEND_FIXTURE = [
         "content": "export default function Feature() {\n  return <div>Feature</div>;\n}\n",
     }
 ]
+
+# Single-object fixture for the "generate ONE file" phase (frontend_dev phase 2).
+_FRONTEND_FILE_FIXTURE = {
+    "file_path": "src/components/Feature.tsx",
+    "description": "[Simulated] Feature component",
+    "language": "typescript",
+    "content": "export default function Feature() {\n  return <div>Feature</div>;\n}\n",
+}
 
 _TESTS_FIXTURE = [
     {
@@ -276,6 +292,11 @@ def _pick_fixture(system: str) -> str:
         return json.dumps(_REVIEW_FIXTURE)
     if "test" in s and ("coverage" in s or "pytest" in s or "vitest" in s):
         return json.dumps(_TESTS_FIXTURE)
+    # Phase-2 (file-generation) prompts — must come before the broader list fixtures.
+    if "generate the complete content for exactly one frontend file" in s:
+        return json.dumps(_FRONTEND_FILE_FIXTURE)
+    if "generate the complete content for exactly one backend file" in s:
+        return json.dumps(_CODE_FILE_FIXTURE)
     if "frontend" in s or "react" in s or "typescript" in s:
         return json.dumps(_FRONTEND_FIXTURE)
     # "code artifact" before generic "ticket" to avoid false match on BackendDev
