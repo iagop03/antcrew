@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent, _extract_json, _json_loads, _strip_fences
 from antcrew.core.artifacts import TestArtifact
 from antcrew.core.state import TeamState
 
@@ -125,7 +125,7 @@ class QAAgent(BaseAgent):
         bug_raw = self.system(
             _BUG_DETECTOR_SYSTEM, f"Code Artifacts:\n{artifacts_json}"
         )
-        bug_result: dict = _json_loads(_strip_fences(bug_raw))
+        bug_result: dict = _json_loads(_extract_json(bug_raw))
         has_critical = bool(bug_result.get("has_critical_bugs", False))
 
         return {

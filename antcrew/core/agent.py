@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 
 _FENCE_RE = re.compile(r'^```[a-zA-Z]*[ \t]*\n?([\s\S]*)```[ \t]*$')
+_INLINE_FENCE_RE = re.compile(r'```[a-zA-Z]*[ \t]*\n?([\s\S]*?)```', re.MULTILINE)
 
 
 def _json_loads(text: str):
@@ -43,10 +44,52 @@ def _strip_fences(text: str) -> str:
     m = _FENCE_RE.match(text)
     if m:
         return m.group(1).strip()
-    # Opening fence without closing fence (truncated response):
-    # strip the "```lang" first line and return whatever content follows.
     _, _, rest = text.partition('\n')
     return rest.strip()
+
+
+def _extract_json(text: str) -> str:
+    """Extract JSON from a response that may contain surrounding prose.
+
+    Tries in order:
+    1. Plain strip_fences (response is already JSON or starts with a fence).
+    2. Any ```[lang] ... ``` block found anywhere in the text.
+    3. First '{' or '[' to end of string (prose prefix, raw JSON suffix).
+
+    Returns the best candidate; the caller is responsible for parsing.
+    """
+    # Fast path: already parseable after stripping fences.
+    candidate = _strip_fences(text)
+    try:
+        if candidate:
+            _json_loads(candidate)
+            return candidate
+    except Exception:
+        pass
+
+    # Look for a code fence anywhere in the text.
+    for m in _INLINE_FENCE_RE.finditer(text):
+        inner = m.group(1).strip()
+        if not inner:
+            continue
+        try:
+            _json_loads(inner)
+            return inner
+        except Exception:
+            continue
+
+    # Last resort: slice from the first JSON-like character.
+    for start in ('{', '['):
+        idx = text.find(start)
+        if idx != -1:
+            tail = text[idx:].strip()
+            try:
+                _json_loads(tail)
+                return tail
+            except Exception:
+                pass
+
+    return candidate  # return whatever we have; caller handles the error
 
 
 class BaseAgent(ABC):
