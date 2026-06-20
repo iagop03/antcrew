@@ -82,7 +82,7 @@ class FrontendDevAgent(BaseAgent):
                 for a in raw_artifacts
             )
 
-        # Accumulate — don't overwrite backend artifacts already in state
+        # Accumulate — keep backend artifacts already in state for this and past sprints.
         existing = state.get("code_artifacts") or []
         return {
             "code_artifacts": existing + new_artifacts,

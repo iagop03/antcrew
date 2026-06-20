@@ -71,16 +71,24 @@ class QAAgent(BaseAgent):
                 "metadata": {"has_critical_bugs": False, "no_critical_bugs": True},
             }
 
-        # Group artifacts by ticket so each LLM call stays small
+        # Filter to current sprint's tickets when available; otherwise process everything.
+        current_ticket_ids = {t.id for t in tickets}
+        sprint_artifacts = (
+            [a for a in code_artifacts if a.ticket_id in current_ticket_ids]
+            if current_ticket_ids
+            else list(code_artifacts)
+        )
+
+        # Group by ticket so each LLM call stays small.
         by_ticket: dict[str, list] = {}
-        for a in code_artifacts:
+        for a in sprint_artifacts:
             by_ticket.setdefault(a.ticket_id, []).append(a)
 
         ticket_map = {t.id: t for t in tickets}
-        repo_query = "tests fixtures " + " ".join(a.file_path for a in code_artifacts[:4])
+        repo_query = "tests fixtures " + " ".join(a.file_path for a in sprint_artifacts[:4])
         system_prompt = _SYSTEM + self._search_repo(repo_query)
 
-        test_artifacts: list[TestArtifact] = []
+        new_tests: list[TestArtifact] = []
         for ticket_id, arts in by_ticket.items():
             ticket = ticket_map.get(ticket_id)
             ticket_ctx = f"Ticket:\n{ticket.model_dump_json(indent=2)}\n\n" if ticket else ""
@@ -88,12 +96,17 @@ class QAAgent(BaseAgent):
             context = f"{ticket_ctx}Code Artifacts:\n{arts_json}"
             raw = self.system(system_prompt, context)
             raw_tests: list[dict] = _json_loads(_strip_fences(raw))
-            test_artifacts.extend(
+            new_tests.extend(
                 TestArtifact(**{k: v for k, v in t.items() if k in TestArtifact.model_fields})
                 for t in raw_tests
             )
 
-        artifacts_json = json.dumps([a.model_dump() for a in code_artifacts], indent=2)
+        # Preserve tests from previous sprints; replace current sprint's.
+        existing_tests = state.get("test_artifacts") or []
+        preserved_tests = [t for t in existing_tests if t.ticket_id not in current_ticket_ids]
+        test_artifacts = preserved_tests + new_tests
+
+        artifacts_json = json.dumps([a.model_dump() for a in sprint_artifacts], indent=2)
         bug_raw = self.system(
             _BUG_DETECTOR_SYSTEM, f"Code Artifacts:\n{artifacts_json}"
         )

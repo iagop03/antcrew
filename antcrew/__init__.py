@@ -7,6 +7,7 @@ from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import DevOpsArtifact, DocumentationArtifact
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
+from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.integrations.confluence import ConfluenceIntegration
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.models.gemini_model import GeminiModel
@@ -48,6 +49,7 @@ __all__ = [
     # Agents (commonly used standalone)
     "DevOpsAgent",
     "DocWriterAgent",
+    "SprintPlannerAgent",
     # Models
     "SimulatedLLM",
     "GeminiModel",

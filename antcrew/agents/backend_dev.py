@@ -77,8 +77,12 @@ class BackendDevAgent(BaseAgent):
             idx = next(i for i, t in enumerate(updated_tickets) if t.id == ticket.id)
             updated_tickets[idx] = ticket.model_copy(update={"status": TicketStatus.DONE})
 
+        # Preserve artifacts from other sprints; replace only the ones we just generated.
+        existing = state.get("code_artifacts") or []
+        current_ids = {t.id for t in open_tickets}
+        preserved = [a for a in existing if a.ticket_id not in current_ids]
         return {
-            "code_artifacts": all_artifacts,
+            "code_artifacts": preserved + all_artifacts,
             "tickets": updated_tickets,
             "current_agent": self.name,
             "messages": [

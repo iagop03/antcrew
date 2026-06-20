@@ -37,6 +37,10 @@ class TeamState(TypedDict):
     # Populated post-pipeline by SandboxRunner when injected into a team
     test_results: Optional[Any]
 
+    # Sprint-based iteration (FullStackTeam)
+    sprint_backlog: Optional[list[Ticket]]   # tickets not yet started
+    sprint_number: int                        # 1-based sprint counter
+
     # Workflow metadata
     current_agent: str
     errors: list[str]

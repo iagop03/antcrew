@@ -5,6 +5,7 @@ from typing import Optional
 
 from antcrew.agents.business import BusinessAnalystAgent
 from antcrew.agents.pm import PMAgent
+from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.agents.backend_dev import BackendDevAgent
 from antcrew.agents.frontend_dev import FrontendDevAgent
 from antcrew.agents.qa import QAAgent
@@ -26,14 +27,17 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _DEFAULT_FLOW = [
-    ("business_analyst", "pm"),
-    ("pm",               "backend_dev"),
-    ("backend_dev",      "frontend_dev"),
-    ("frontend_dev",     "qa"),
-    ("qa",               "reviewer",    "no_critical_bugs"),
-    ("qa",               "backend_dev", "has_critical_bugs"),
-    ("reviewer",         "devops"),
-    ("devops",           "doc_writer"),
+    ("business_analyst",  "pm"),
+    ("pm",                "sprint_planner"),
+    ("sprint_planner",    "backend_dev"),
+    ("backend_dev",       "frontend_dev"),
+    ("frontend_dev",      "qa"),
+    ("qa",                "reviewer",       "no_critical_bugs"),
+    ("qa",                "backend_dev",    "has_critical_bugs"),
+    # After each sprint review: loop back if backlog remains, else proceed to DevOps.
+    ("reviewer",          "sprint_planner", "sprint_in_progress"),
+    ("reviewer",          "devops",         "sprint_complete"),
+    ("devops",            "doc_writer"),
 ]
 
 
@@ -83,6 +87,7 @@ class FullStackTeam(InteractiveMixin):
         memory: Optional["BaseMemory"] = None,
         repo_path: Optional[str] = None,
         runner: "Optional[SandboxRunner]" = None,
+        sprint_size: int = 4,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
@@ -92,6 +97,7 @@ class FullStackTeam(InteractiveMixin):
         defaults = {
             "business_analyst": BusinessAnalystAgent(self.llm),
             "pm":               PMAgent(self.llm),
+            "sprint_planner":   SprintPlannerAgent(self.llm, sprint_size=sprint_size),
             "backend_dev":      BackendDevAgent(self.llm),
             "frontend_dev":     FrontendDevAgent(self.llm),
             "qa":               QAAgent(self.llm),
@@ -122,6 +128,8 @@ class FullStackTeam(InteractiveMixin):
             "messages": [{"role": "user", "content": request}],
             "prd": None,
             "tickets": None,
+            "sprint_backlog": None,
+            "sprint_number": 0,
             "code_artifacts": None,
             "test_artifacts": None,
             "test_results": None,
