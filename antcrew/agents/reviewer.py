@@ -56,6 +56,7 @@ class ReviewerAgent(BaseAgent):
     def run(self, state: TeamState) -> dict:
         code_artifacts = state.get("code_artifacts") or []
         tickets = state.get("tickets") or []
+        meta = state.get("metadata") or {}
 
         if not code_artifacts:
             return {
@@ -69,9 +70,18 @@ class ReviewerAgent(BaseAgent):
         ticket_summary = " ".join(t.title for t in tickets[:3])
         memory_context = self._recall(ticket_summary or "code review")
         repo_context   = self._search_repo(ticket_summary or "code conventions style")
+
+        qa_note = ""
+        if meta.get("has_critical_bugs"):
+            qa_note = (
+                f"\n\nQA Bug Report: CRITICAL BUGS DETECTED — {meta.get('qa_summary', '')}\n"
+                "Include these bugs as 'critical' severity findings and set verdict to 'reject'.\n"
+            )
+
         context = (
             f"Tickets:\n{json.dumps([t.model_dump() for t in tickets], indent=2)}\n\n"
             f"Code Artifacts:\n{json.dumps([a.model_dump() for a in code_artifacts], indent=2)}"
+            + qa_note
         )
         raw = self.system(_SYSTEM + memory_context + repo_context, context)
         data: dict = _json_loads(_strip_fences(raw))
