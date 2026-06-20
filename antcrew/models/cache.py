@@ -52,13 +52,14 @@ class LLMCache:
         messages: list,
         model_name: str,
         validate=None,
+        agent_name: str = "",
     ) -> Optional[str]:
         """Return cached response if present and valid, else None.
 
         If *validate* is provided it is called with the cached string; a False
         return evicts the entry and records a miss so the caller re-fetches.
         """
-        key = self._make_key(messages, model_name)
+        key = self._make_key(messages, model_name, agent_name)
         if key in self._store:
             value = self._store[key]
             if validate is not None and not validate(value):
@@ -70,16 +71,21 @@ class LLMCache:
         self.misses += 1
         return None
 
-    def set(self, messages: list, model_name: str, response: str) -> None:
+    def set(self, messages: list, model_name: str, response: str, agent_name: str = "") -> None:
         """Store a response. Evicts the oldest entry when max_size is reached."""
         if len(self._store) >= self._max_size:
             oldest = next(iter(self._store))
             del self._store[oldest]
-        self._store[self._make_key(messages, model_name)] = response
+        self._store[self._make_key(messages, model_name, agent_name)] = response
 
     def clear(self) -> None:
         """Remove all cached entries. Does not reset hit/miss counters."""
         self._store.clear()
+
+    def clear_agent(self, agent_name: str) -> int:
+        """Remove all entries for a specific agent. Returns the number removed."""
+        # In-memory cache has no agent_name metadata; subclasses override this.
+        return 0
 
     def reset_stats(self) -> None:
         """Reset hit/miss counters to zero."""
@@ -106,12 +112,12 @@ class LLMCache:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _make_key(messages: list, model_name: str) -> str:
+    def _make_key(messages: list, model_name: str, agent_name: str = "") -> str:
         payload = json.dumps(
             [{"role": m.role, "content": m.content} for m in messages],
             sort_keys=True,
         )
-        return hashlib.sha256(f"{model_name}:{payload}".encode()).hexdigest()
+        return hashlib.sha256(f"{agent_name}:{model_name}:{payload}".encode()).hexdigest()
 
 
 class FileLLMCache(LLMCache):
@@ -142,23 +148,23 @@ class FileLLMCache(LLMCache):
     # Overrides
     # ------------------------------------------------------------------
 
-    def get(self, messages: list, model_name: str, validate=None) -> Optional[str]:
+    def get(self, messages: list, model_name: str, validate=None, agent_name: str = "") -> Optional[str]:
         """Like LLMCache.get() but also removes the SQLite row when invalid."""
-        key = self._make_key(messages, model_name)
-        value = super().get(messages, model_name, validate=validate)
+        key = self._make_key(messages, model_name, agent_name)
+        value = super().get(messages, model_name, validate=validate, agent_name=agent_name)
         if value is None and key not in self._store:
             # Parent evicted the in-memory entry — purge from DB too
             self._conn.execute("DELETE FROM llm_cache WHERE key = ?", (key,))
             self._conn.commit()
         return value
 
-    def set(self, messages: list, model_name: str, response: str) -> None:
+    def set(self, messages: list, model_name: str, response: str, agent_name: str = "") -> None:
         """Store in memory and persist to SQLite atomically."""
-        super().set(messages, model_name, response)
-        key = self._make_key(messages, model_name)
+        super().set(messages, model_name, response, agent_name=agent_name)
+        key = self._make_key(messages, model_name, agent_name)
         self._conn.execute(
-            "INSERT OR REPLACE INTO llm_cache (key, response, created_at) VALUES (?, ?, ?)",
-            (key, response, time.time()),
+            "INSERT OR REPLACE INTO llm_cache (key, agent_name, response, created_at) VALUES (?, ?, ?, ?)",
+            (key, agent_name, response, time.time()),
         )
         self._conn.commit()
 
@@ -167,6 +173,20 @@ class FileLLMCache(LLMCache):
         super().clear()
         self._conn.execute("DELETE FROM llm_cache")
         self._conn.commit()
+
+    def clear_agent(self, agent_name: str) -> int:
+        """Delete all cached entries for a specific agent from disk and memory.
+
+        Returns the number of entries deleted.
+        """
+        cur = self._conn.execute(
+            "DELETE FROM llm_cache WHERE agent_name = ? RETURNING key", (agent_name,)
+        )
+        deleted_keys = {row[0] for row in cur.fetchall()}
+        self._conn.commit()
+        for key in deleted_keys:
+            self._store.pop(key, None)
+        return len(deleted_keys)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -190,10 +210,15 @@ class FileLLMCache(LLMCache):
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS llm_cache (
                 key        TEXT PRIMARY KEY,
+                agent_name TEXT NOT NULL DEFAULT '',
                 response   TEXT NOT NULL,
                 created_at REAL NOT NULL
             )
         """)
+        # Migrate older databases that lack the agent_name column.
+        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(llm_cache)")}
+        if "agent_name" not in cols:
+            self._conn.execute("ALTER TABLE llm_cache ADD COLUMN agent_name TEXT NOT NULL DEFAULT ''")
         self._conn.commit()
 
     def _load_from_disk(self) -> None:
@@ -202,6 +227,6 @@ class FileLLMCache(LLMCache):
             "SELECT key, response FROM llm_cache ORDER BY created_at DESC LIMIT ?",
             (self._max_size,),
         ).fetchall()
-        # Insert oldest-first so FIFO eviction stays correct
+        # Insert oldest-first so FIFO eviction stays correct.
         for key, response in reversed(rows):
             self._store[key] = response

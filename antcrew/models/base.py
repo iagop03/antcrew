@@ -184,20 +184,22 @@ class BaseLLM(ABC):
             Message(role="user", content=user),
         ]
         cache = getattr(self, "cache", None)
+        agent = getattr(self, "current_agent", "") or ""
+        model = type(self).__name__
         # Check cache first, even in streaming mode — a cache hit skips the API entirely.
         if cache is not None:
-            hit = cache.get(messages, type(self).__name__, validate=_is_complete_response)
+            hit = cache.get(messages, model, validate=_is_complete_response, agent_name=agent)
             if hit is not None:
                 return hit
         if self.on_token is not None:
             # Streaming path: call complete() live, then persist result to cache.
             result = self.complete(messages, **kwargs)
             if cache is not None:
-                cache.set(messages, type(self).__name__, result)
+                cache.set(messages, model, result, agent_name=agent)
             return result
         if cache is not None:
             result = self._with_retry(self.complete, messages, **kwargs)
-            cache.set(messages, type(self).__name__, result)
+            cache.set(messages, model, result, agent_name=agent)
             return result
         return self._with_retry(self.complete, messages, **kwargs)
 

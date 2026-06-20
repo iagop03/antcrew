@@ -500,17 +500,25 @@ def cache_clear(
         ...,
         help="Path to the SQLite cache file (e.g. ~/.antcrew/cache.db)",
     ),
+    agent: Optional[str] = typer.Option(
+        None, "--agent", "-a",
+        help="Clear only entries for this agent (e.g. frontend_dev). Omit to clear all.",
+    ),
 ) -> None:
-    """Delete all entries from a persistent cache file."""
+    """Delete entries from a persistent cache file (all, or just one agent)."""
     from antcrew.models.cache import FileLLMCache
     db = Path(db).expanduser()
     if not db.exists():
         console.print(f"[yellow]Cache file not found:[/] {db}")
         raise typer.Exit(1)
     c = FileLLMCache(db)
-    size = c.size
-    c.clear()
-    console.print(f"[green]Cleared[/] {size} entr{'y' if size == 1 else 'ies'} from [cyan]{db}[/]")
+    if agent:
+        n = c.clear_agent(agent)
+        console.print(f"[green]Cleared[/] {n} entr{'y' if n == 1 else 'ies'} for agent [cyan]{agent}[/] from [cyan]{db}[/]")
+    else:
+        size = c.size
+        c.clear()
+        console.print(f"[green]Cleared[/] {size} entr{'y' if size == 1 else 'ies'} from [cyan]{db}[/]")
 
 
 @cache_app.command("stats")
