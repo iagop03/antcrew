@@ -21,6 +21,7 @@ class TicketStatus(str, Enum):
 # ── Codebase analysis (produced by CodebaseScannerAgent) ─────────────────────
 
 class CodebaseAnalysis(BaseModel):
+    label: str = ""                                      # e.g. "frontend", "backend", "keycloak"
     tech_stack: list[str] = Field(default_factory=list)
     existing_modules: list[str] = Field(default_factory=list)
     entry_points: list[str] = Field(default_factory=list)

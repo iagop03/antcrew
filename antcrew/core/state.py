@@ -22,9 +22,11 @@ class TeamState(TypedDict):
     request: str
     messages: Annotated[list, add_messages]
 
-    # Codebase continuation context (set when --project-dir is provided)
-    project_dir: Optional[str]
-    codebase_analysis: Optional[CodebaseAnalysis]
+    # Codebase continuation context (set when --project-dir / project_dirs is provided)
+    project_dir: Optional[str]                          # single-dir shorthand
+    project_dirs: Optional[dict[str, str]]              # label → path (multi-component)
+    codebase_analysis: Optional[CodebaseAnalysis]       # single-dir result (backward compat)
+    codebase_analyses: Optional[list[CodebaseAnalysis]] # one per component
 
     # Dev-team artifacts
     prd: Optional[PRD]

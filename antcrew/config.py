@@ -188,11 +188,13 @@ def load(path: str | Path):
     if team_type == "fullstack":
         from antcrew.teams.fullstack_team import FullStackTeam
         project_dir = cfg.get("project_dir") or None
+        project_dirs = cfg.get("project_dirs") or None   # dict label→path
         sprint_size = int(cfg.get("sprint_size", 4))
         return FullStackTeam(
             model=default_llm, integrations=integrations,
             agents=agent_overrides, supervisor=supervisor, runner=runner,
-            project_dir=project_dir, sprint_size=sprint_size,
+            project_dir=project_dir, project_dirs=project_dirs,
+            sprint_size=sprint_size,
         )
 
     if team_type == "research":

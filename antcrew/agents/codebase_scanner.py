@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
@@ -10,32 +9,38 @@ from antcrew.core.state import TeamState
 _IGNORE_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv", "env",
     "dist", "build", ".next", ".nuxt", "coverage", ".cache",
-    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
+    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", "target",
+    ".gradle", ".idea", ".mvn",
 }
 _KEY_FILES = [
     "README.md", "readme.md", "README.rst",
-    "package.json", "requirements.txt", "pyproject.toml",
-    "setup.py", "setup.cfg", "tsconfig.json",
-    "vite.config.ts", "vite.config.js",
-    "docker-compose.yml", "docker-compose.yaml",
+    # JS / TS
+    "package.json", "tsconfig.json", "vite.config.ts", "vite.config.js",
+    "angular.json", "next.config.js", "nuxt.config.ts",
+    # Python
+    "requirements.txt", "pyproject.toml", "setup.py", "setup.cfg",
+    # Java / JVM
+    "pom.xml", "build.gradle", "build.gradle.kts",
+    # Infra
+    "docker-compose.yml", "docker-compose.yaml", "Dockerfile",
     ".env.example", "Makefile",
 ]
 _MAX_FILE_CHARS = 3_000
 _MAX_TREE_LINES = 200
 
 _SYSTEM = """\
-You are a Senior Software Architect analyzing an existing codebase before continuing development.
+You are a Senior Software Architect analyzing one component of an existing project.
 Given the directory tree and key file contents, produce a structured JSON analysis.
 
 Respond ONLY with a valid JSON object (no markdown fences, no prose):
 {
-  "tech_stack": ["Python 3.12", "FastAPI", "React 18", "TypeScript 5"],
-  "existing_modules": ["src/auth", "src/models/client.py", "frontend/components/InvoiceList.tsx"],
-  "entry_points": ["src/main.py", "frontend/src/main.tsx"],
-  "test_coverage_summary": "Tests exist for auth and models only",
-  "what_exists": "Full JWT auth system. Client CRUD endpoints. React frontend with invoice listing.",
-  "what_is_missing": "Billing module, PDF generation, email notifications, recurring scheduler.",
-  "continuation_context": "A garden services management system at MVP stage — auth and CRUD done, billing not started."
+  "tech_stack": ["Angular 17", "TypeScript 5", "RxJS 7"],
+  "existing_modules": ["src/auth", "src/clients", "src/invoices"],
+  "entry_points": ["src/main.ts", "src/app/app.module.ts"],
+  "test_coverage_summary": "Unit tests for auth service only",
+  "what_exists": "Full Keycloak-backed auth, client listing, basic invoice form",
+  "what_is_missing": "Billing summary page, PDF download, recurring invoice UI",
+  "continuation_context": "Angular frontend for a garden services SaaS — auth and CRUD done, billing UI not started"
 }
 """
 
@@ -74,54 +79,84 @@ def _read_key_files(root: Path) -> str:
     return "\n".join(parts)
 
 
+def _scan_one(agent: "CodebaseScannerAgent", label: str, path: str) -> CodebaseAnalysis | None:
+    """Scan a single directory and return a CodebaseAnalysis (or None on error)."""
+    root = Path(path).expanduser().resolve()
+    if not root.is_dir():
+        return None
+
+    tree = _build_tree(root)
+    key_files = _read_key_files(root)
+    context = f"Component: {label}\nPath: {root}\n\nFile tree:\n{tree}\n\n{key_files}".strip()
+
+    raw = agent.system(_SYSTEM, context)
+    try:
+        data: dict = _json_loads(_strip_fences(raw))
+    except Exception:
+        data = {}
+
+    return CodebaseAnalysis(
+        label=label,
+        **{k: v for k, v in data.items() if k in CodebaseAnalysis.model_fields and k != "label"},
+    )
+
+
 class CodebaseScannerAgent(BaseAgent):
-    """Scans an existing project directory and produces a CodebaseAnalysis for the BA."""
+    """Scans one or more project directories and produces CodebaseAnalysis artifacts."""
 
     name = "codebase_scanner"
-    role_description = "Analyzes an existing codebase to provide continuation context."
+    role_description = "Analyzes existing codebase components to provide continuation context."
 
     def run(self, state: TeamState) -> dict:
-        project_dir = state.get("project_dir") or ""
-        if not project_dir:
+        # Build the label → path mapping from whichever source is set.
+        dirs: dict[str, str] = {}
+
+        project_dirs = state.get("project_dirs") or {}
+        if project_dirs:
+            dirs = dict(project_dirs)
+        elif state.get("project_dir"):
+            pd = state["project_dir"]
+            dirs = {Path(pd).name: pd}
+
+        if not dirs:
             return {
                 "current_agent": self.name,
                 "codebase_analysis": None,
-                "messages": [{"role": "assistant", "content": "[Scanner] No project_dir — skipping."}],
+                "codebase_analyses": None,
+                "messages": [{"role": "assistant", "content": "[Scanner] No project dirs — skipping."}],
             }
 
-        root = Path(project_dir).expanduser().resolve()
-        if not root.is_dir():
+        analyses: list[CodebaseAnalysis] = []
+        skipped: list[str] = []
+
+        for label, path in dirs.items():
+            result = _scan_one(self, label, path)
+            if result is not None:
+                analyses.append(result)
+            else:
+                skipped.append(f"{label}:{path}")
+
+        if not analyses:
             return {
                 "current_agent": self.name,
                 "codebase_analysis": None,
+                "codebase_analyses": None,
                 "messages": [{
                     "role": "assistant",
-                    "content": f"[Scanner] Directory not found: {root} — skipping.",
+                    "content": f"[Scanner] No valid directories found: {skipped}",
                 }],
             }
 
-        tree = _build_tree(root)
-        key_files = _read_key_files(root)
-        context = f"Project root: {root}\n\nFile tree:\n{tree}\n\n{key_files}".strip()
-
-        raw = self.system(_SYSTEM, context)
-        try:
-            data: dict = _json_loads(_strip_fences(raw))
-        except Exception:
-            data = {}
-
-        analysis = CodebaseAnalysis(
-            **{k: v for k, v in data.items() if k in CodebaseAnalysis.model_fields}
-        )
+        summary_parts = [
+            f"[{a.label}] {', '.join(a.tech_stack[:2])} — {a.continuation_context}"
+            for a in analyses
+        ]
         return {
-            "codebase_analysis": analysis,
+            "codebase_analyses": analyses,
+            "codebase_analysis": analyses[0],       # backward-compat single alias
             "current_agent": self.name,
             "messages": [{
                 "role": "assistant",
-                "content": (
-                    f"[Scanner] {root.name}: "
-                    f"stack=[{', '.join(analysis.tech_stack[:3])}]  "
-                    f"{analysis.continuation_context}"
-                ),
+                "content": "[Scanner] " + " | ".join(summary_parts),
             }],
         }

@@ -618,9 +618,13 @@ def interactive(
         Path("generated"), "--output-dir", "-o",
         help="Write generated files to this directory (default: ./generated). Pass 'none' to skip.",
     ),
-    project_dir: Optional[Path] = typer.Option(
+    project_dir: Optional[list[str]] = typer.Option(
         None, "--project-dir", "-p",
-        help="Path to an existing project to continue (runs CodebaseScannerAgent first).",
+        help=(
+            "Existing project dir(s) to scan before the BA runs. "
+            "Single: --project-dir ./src  "
+            "Multi: --project-dir frontend:./fe --project-dir backend:./be"
+        ),
     ),
 ) -> None:
     """Run a pipeline with human-in-the-loop review after each agent.
@@ -647,8 +651,23 @@ def interactive(
 
         # CLI --project-dir overrides whatever is in the YAML.
         if project_dir and hasattr(active_team, "project_dir"):
-            active_team.project_dir = str(project_dir)
-            console.print(f"[dim]Scanning existing project: [cyan]{project_dir}[/][/dim]\n")
+            parsed: dict[str, str] = {}
+            for entry in project_dir:
+                if ":" in entry:
+                    label, _, path = entry.partition(":")
+                    parsed[label.strip()] = path.strip()
+                else:
+                    from pathlib import Path as _P
+                    parsed[_P(entry).name] = entry
+            if len(parsed) == 1:
+                active_team.project_dir = next(iter(parsed.values()))
+                active_team.project_dirs = None
+                console.print(f"[dim]Scanning project: [cyan]{active_team.project_dir}[/][/dim]\n")
+            elif parsed:
+                active_team.project_dirs = parsed
+                active_team.project_dir = None
+                labels = ", ".join(f"[cyan]{k}[/]" for k in parsed)
+                console.print(f"[dim]Scanning components: {labels}[/dim]\n")
 
         state = active_team.run_interactive(request, thread_id=thread)
 

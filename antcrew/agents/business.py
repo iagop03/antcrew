@@ -41,16 +41,34 @@ class BusinessAnalystAgent(BaseAgent):
 
     def run(self, state: TeamState) -> dict:
         memory_ctx = self._recall(state["request"])
-        analysis = state.get("codebase_analysis")
-        if analysis:
-            user_msg = (
-                "EXISTING CODEBASE CONTEXT — this is a continuation, not a greenfield project:\n"
-                f"Tech stack: {', '.join(analysis.tech_stack)}\n"
-                f"What already exists: {analysis.what_exists}\n"
-                f"What is missing / to build: {analysis.what_is_missing}\n"
-                f"Context: {analysis.continuation_context}\n\n"
-                f"REQUEST (extend the existing project):\n{state['request']}"
-            )
+
+        # Collect analyses — multi-component list takes priority over single alias.
+        analyses = state.get("codebase_analyses") or (
+            [state["codebase_analysis"]] if state.get("codebase_analysis") else []
+        )
+
+        if analyses:
+            if len(analyses) == 1:
+                a = analyses[0]
+                codebase_ctx = (
+                    "EXISTING CODEBASE — continuation, not greenfield:\n"
+                    f"Tech stack: {', '.join(a.tech_stack)}\n"
+                    f"What exists: {a.what_exists}\n"
+                    f"What is missing: {a.what_is_missing}\n"
+                    f"Context: {a.continuation_context}\n"
+                )
+            else:
+                lines = ["EXISTING MULTI-COMPONENT PROJECT — continuation, not greenfield:\n"]
+                for a in analyses:
+                    lines.append(
+                        f"[{a.label}]\n"
+                        f"  Tech: {', '.join(a.tech_stack)}\n"
+                        f"  Exists: {a.what_exists}\n"
+                        f"  Missing: {a.what_is_missing}\n"
+                        f"  Context: {a.continuation_context}\n"
+                    )
+                codebase_ctx = "\n".join(lines)
+            user_msg = codebase_ctx + f"\nREQUEST (extend the existing project):\n{state['request']}"
         else:
             user_msg = state["request"]
         raw = self.system(_SYSTEM + memory_ctx, user_msg)

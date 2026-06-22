@@ -92,12 +92,14 @@ class FullStackTeam(InteractiveMixin):
         runner: "Optional[SandboxRunner]" = None,
         sprint_size: int = 4,
         project_dir: Optional[str] = None,
+        project_dirs: Optional[dict] = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
         self.memory = memory
         self._runner = runner
         self.project_dir: Optional[str] = project_dir
+        self.project_dirs: Optional[dict] = project_dirs
 
         defaults = {
             "codebase_scanner": CodebaseScannerAgent(self.llm),
@@ -133,7 +135,9 @@ class FullStackTeam(InteractiveMixin):
             "request": request,
             "messages": [{"role": "user", "content": request}],
             "project_dir": self.project_dir or None,
+            "project_dirs": self.project_dirs or None,
             "codebase_analysis": None,
+            "codebase_analyses": None,
             "prd": None,
             "tickets": None,
             "sprint_backlog": None,
