@@ -687,10 +687,16 @@ def interactive(
     save_state(state, out_path)
     console.print(f"\n[dim]State saved → [cyan]{out_path}[/][/dim]")
 
-    # Auto-extract files to disk unless the user opted out.
-    skip_extract = str(output_dir).lower() == "none"
-    if not skip_extract and output_dir is not None:
-        _extract_state_to_dir(state, output_dir)
+    # Resolve output_dir: CLI flag > YAML > default ./generated
+    yaml_output_dir = getattr(active_team, "output_dir", None)
+    effective_output_dir = output_dir if str(output_dir).lower() != "none" else None
+    if effective_output_dir is None and yaml_output_dir:
+        effective_output_dir = Path(yaml_output_dir)
+    elif effective_output_dir is None:
+        effective_output_dir = Path("generated")
+
+    if str(effective_output_dir).lower() != "none":
+        _extract_state_to_dir(state, effective_output_dir)
 
     console.print("\n[bold green]Done![/]\n")
 

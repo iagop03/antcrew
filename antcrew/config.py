@@ -172,11 +172,14 @@ def load(path: str | Path):
     # Per-agent overrides
     agent_overrides: dict = {}
     for agent_name, agent_cfg in (cfg.get("agents") or {}).items():
-        agent_llm = build_llm(agent_cfg["model"]) if "model" in agent_cfg else default_llm
+        agent_llm = build_llm(
+            agent_cfg["model"],
+            prompt_caching=prompt_caching,
+        ) if "model" in agent_cfg else default_llm
         approval = bool(agent_cfg.get("approval_required", False))
         options = agent_cfg.get("response_options")
         agent_overrides[agent_name] = _resolve_agent(
-            agent_name, agent_llm, approval, options, channel
+            agent_name, agent_llm, approval, options, channel, agent_cfg
         )
 
     # Runner (optional — only applies to dev / fullstack teams)
@@ -186,20 +189,24 @@ def load(path: str | Path):
 
     if team_type == "dev":
         from antcrew.teams.dev_team import DevTeam
-        return DevTeam(model=default_llm, integrations=integrations,
+        team = DevTeam(model=default_llm, integrations=integrations,
                        agents=agent_overrides, supervisor=supervisor, runner=runner)
+        team.output_dir = cfg.get("output_dir") or None
+        return team
 
     if team_type == "fullstack":
         from antcrew.teams.fullstack_team import FullStackTeam
         project_dir = cfg.get("project_dir") or None
         project_dirs = cfg.get("project_dirs") or None   # dict label→path
         sprint_size = int(cfg.get("sprint_size", 4))
-        return FullStackTeam(
+        team = FullStackTeam(
             model=default_llm, integrations=integrations,
             agents=agent_overrides, supervisor=supervisor, runner=runner,
             project_dir=project_dir, project_dirs=project_dirs,
             sprint_size=sprint_size,
         )
+        team.output_dir = cfg.get("output_dir") or None
+        return team
 
     if team_type == "research":
         from antcrew.teams.research_team import ResearchTeam
@@ -309,7 +316,7 @@ def load_context(path: str | Path) -> TeamContext:
     return TeamContext(team=team, project=project)
 
 
-def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel):
+def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel, agent_cfg: dict):
     """Instantiate the right agent class by name."""
     from antcrew.agents.business import BusinessAnalystAgent
     from antcrew.agents.pm import PMAgent
@@ -322,19 +329,21 @@ def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel):
     from antcrew.agents.idea import IdeaAgent
     from antcrew.agents.copywriter import CopywriterAgent
     from antcrew.agents.editor import EditorAgent
+    from antcrew.agents.codebase_scanner import CodebaseScannerAgent
 
     registry = {
-        "business_analyst": BusinessAnalystAgent,
-        "pm":               PMAgent,
-        "backend_dev":      BackendDevAgent,
-        "frontend_dev":     FrontendDevAgent,
-        "qa":               QAAgent,
-        "reviewer":         ReviewerAgent,
-        "devops":           DevOpsAgent,
-        "researcher":       ResearcherAgent,
-        "idea":             IdeaAgent,
-        "copywriter":       CopywriterAgent,
-        "editor":           EditorAgent,
+        "business_analyst":  BusinessAnalystAgent,
+        "pm":                PMAgent,
+        "backend_dev":       BackendDevAgent,
+        "frontend_dev":      FrontendDevAgent,
+        "qa":                QAAgent,
+        "reviewer":          ReviewerAgent,
+        "devops":            DevOpsAgent,
+        "researcher":        ResearcherAgent,
+        "idea":              IdeaAgent,
+        "copywriter":        CopywriterAgent,
+        "editor":            EditorAgent,
+        "codebase_scanner":  CodebaseScannerAgent,
     }
     cls = registry.get(name)
     if cls is None:
@@ -346,4 +355,15 @@ def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel):
         kwargs["response_options"] = options
     if channel:
         kwargs["channel"] = channel
+
+    # Per-agent YAML knobs forwarded to BaseAgent.__init__
+    if "max_tokens" in agent_cfg:
+        kwargs["max_tokens"] = int(agent_cfg["max_tokens"])
+    if "system_prompt_suffix" in agent_cfg:
+        kwargs["system_prompt_suffix"] = str(agent_cfg["system_prompt_suffix"])
+
+    # codebase_scanner-specific extra: ignore_dirs
+    if name == "codebase_scanner" and "ignore_dirs" in agent_cfg:
+        kwargs["extra_ignore_dirs"] = list(agent_cfg["ignore_dirs"])
+
     return cls(**kwargs)

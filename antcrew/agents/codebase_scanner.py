@@ -45,7 +45,7 @@ Respond ONLY with a valid JSON object (no markdown fences, no prose):
 """
 
 
-def _build_tree(root: Path, max_depth: int = 4) -> str:
+def _build_tree(root: Path, ignore: set[str], max_depth: int = 4) -> str:
     lines: list[str] = []
 
     def _walk(path: Path, depth: int, prefix: str) -> None:
@@ -56,7 +56,7 @@ def _build_tree(root: Path, max_depth: int = 4) -> str:
         except PermissionError:
             return
         for entry in entries:
-            if entry.name in _IGNORE_DIRS or entry.name.startswith("."):
+            if entry.name in ignore or entry.name.startswith("."):
                 continue
             lines.append(f"{prefix}{entry.name}{'/' if entry.is_dir() else ''}")
             if entry.is_dir() and depth > 1:
@@ -85,7 +85,8 @@ def _scan_one(agent: "CodebaseScannerAgent", label: str, path: str) -> CodebaseA
     if not root.is_dir():
         return None
 
-    tree = _build_tree(root)
+    ignore = getattr(agent, "_ignore", _IGNORE_DIRS)
+    tree = _build_tree(root, ignore)
     key_files = _read_key_files(root)
     context = f"Component: {label}\nPath: {root}\n\nFile tree:\n{tree}\n\n{key_files}".strip()
 
@@ -106,6 +107,10 @@ class CodebaseScannerAgent(BaseAgent):
 
     name = "codebase_scanner"
     role_description = "Analyzes existing codebase components to provide continuation context."
+
+    def __init__(self, llm, *, extra_ignore_dirs: list[str] | None = None, **kwargs):
+        super().__init__(llm, **kwargs)
+        self._ignore = _IGNORE_DIRS | set(extra_ignore_dirs or [])
 
     def run(self, state: TeamState) -> dict:
         # Build the label → path mapping from whichever source is set.

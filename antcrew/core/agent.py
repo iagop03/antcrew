@@ -128,11 +128,15 @@ class BaseAgent(ABC):
         channel: Optional["BaseChannel"] = None,
         approval_required: bool = False,
         response_options: Optional[list[str]] = None,
+        max_tokens: Optional[int] = None,
+        system_prompt_suffix: Optional[str] = None,
     ) -> None:
         self.llm = llm
         self.channel = channel
         self.approval_required = approval_required
         self.response_options = response_options or ["approve", "edit", "reject"]
+        self.max_tokens = max_tokens                        # per-agent token cap
+        self.system_prompt_suffix = system_prompt_suffix   # appended to every system call
 
     @abstractmethod
     def run(self, state: TeamState) -> dict:
@@ -142,7 +146,16 @@ class BaseAgent(ABC):
         """
 
     def system(self, system_prompt: str, user: str, **kwargs) -> str:
-        """Call LLM with system + user messages, tagging the LLM with this agent's name."""
+        """Call LLM with system + user messages, tagging the LLM with this agent's name.
+
+        Applies per-agent overrides:
+        - system_prompt_suffix: appended to the system prompt on every call.
+        - max_tokens: overrides the LLM default when set.
+        """
+        if self.system_prompt_suffix:
+            system_prompt = system_prompt + "\n\n" + self.system_prompt_suffix
+        if self.max_tokens and "max_tokens" not in kwargs:
+            kwargs["max_tokens"] = self.max_tokens
         self.llm.current_agent = self.name
         return self.llm.system(system_prompt, user, **kwargs)
 
