@@ -236,6 +236,8 @@ def test_anthropic_model_records_usage():
     mock_usage = MagicMock()
     mock_usage.input_tokens = 100
     mock_usage.output_tokens = 200
+    mock_usage.cache_creation_input_tokens = 0
+    mock_usage.cache_read_input_tokens = 0
 
     mock_response = MagicMock()
     mock_response.content[0].text = "result"

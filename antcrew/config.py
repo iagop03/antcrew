@@ -54,7 +54,7 @@ def _expand_env(value: Any) -> Any:
     return value
 
 
-def build_llm(model_str: str) -> BaseLLM:
+def build_llm(model_str: str, *, prompt_caching: bool = False) -> BaseLLM:
     """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'simulated'."""
     s = model_str.strip().lower()
 
@@ -85,7 +85,10 @@ def build_llm(model_str: str) -> BaseLLM:
     if s in ("claude", "anthropic") or s.startswith("claude-"):
         from antcrew.models.anthropic_model import AnthropicModel
         model_id = None if s in ("claude", "anthropic") else s
-        return AnthropicModel(model=model_id) if model_id else AnthropicModel()
+        return AnthropicModel(
+            **({"model": model_id} if model_id else {}),
+            prompt_caching=prompt_caching,
+        )
 
     raise ValueError(
         f"Unknown model '{model_str}'. "
@@ -141,7 +144,8 @@ def load(path: str | Path):
         cfg: dict = _expand_env(_yaml.safe_load(raw))
 
     team_type = cfg.get("team", "dev").lower()
-    default_llm = build_llm(cfg.get("model", "claude"))
+    prompt_caching = bool(cfg.get("prompt_caching", False))
+    default_llm = build_llm(cfg.get("model", "claude"), prompt_caching=prompt_caching)
 
     # Cache: attach FileLLMCache when "cache:" key is present
     if "cache" in cfg:
