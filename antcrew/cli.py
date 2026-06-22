@@ -618,6 +618,10 @@ def interactive(
         Path("generated"), "--output-dir", "-o",
         help="Write generated files to this directory (default: ./generated). Pass 'none' to skip.",
     ),
+    project_dir: Optional[Path] = typer.Option(
+        None, "--project-dir", "-p",
+        help="Path to an existing project to continue (runs CodebaseScannerAgent first).",
+    ),
 ) -> None:
     """Run a pipeline with human-in-the-loop review after each agent.
 
@@ -640,6 +644,11 @@ def interactive(
             team = type(active_team).__name__.lower().replace("team", "")
         else:
             active_team = _build_team(team, model, integrations=[])
+
+        # CLI --project-dir overrides whatever is in the YAML.
+        if project_dir and hasattr(active_team, "project_dir"):
+            active_team.project_dir = str(project_dir)
+            console.print(f"[dim]Scanning existing project: [cyan]{project_dir}[/][/dim]\n")
 
         state = active_team.run_interactive(request, thread_id=thread)
 

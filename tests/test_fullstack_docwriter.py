@@ -182,8 +182,8 @@ def test_frontend_dev_processes_all_tickets():
 def test_fullstack_team_has_all_agents():
     team = FullStackTeam(model=_llm())
     expected = {
-        "business_analyst", "pm", "sprint_planner", "backend_dev", "frontend_dev",
-        "qa", "reviewer", "devops", "doc_writer",
+        "codebase_scanner", "business_analyst", "pm", "sprint_planner",
+        "backend_dev", "frontend_dev", "qa", "reviewer", "devops", "doc_writer",
     }
     assert set(team._agents.keys()) == expected
 

@@ -7,6 +7,7 @@ from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
 
 from antcrew.core.artifacts import (
+    CodebaseAnalysis,
     PRD, Ticket, CodeArtifact,
     TestArtifact, CodeReview,
     DevOpsArtifact, DocumentationArtifact,
@@ -20,6 +21,10 @@ class TeamState(TypedDict):
     # Task
     request: str
     messages: Annotated[list, add_messages]
+
+    # Codebase continuation context (set when --project-dir is provided)
+    project_dir: Optional[str]
+    codebase_analysis: Optional[CodebaseAnalysis]
 
     # Dev-team artifacts
     prd: Optional[PRD]

@@ -7,6 +7,7 @@ from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import DevOpsArtifact, DocumentationArtifact
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
+from antcrew.agents.codebase_scanner import CodebaseScannerAgent
 from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.integrations.confluence import ConfluenceIntegration
 from antcrew.models.simulated import SimulatedLLM

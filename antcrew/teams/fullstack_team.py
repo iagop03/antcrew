@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from antcrew.agents.codebase_scanner import CodebaseScannerAgent
 from antcrew.agents.business import BusinessAnalystAgent
 from antcrew.agents.pm import PMAgent
 from antcrew.agents.sprint_planner import SprintPlannerAgent
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _DEFAULT_FLOW = [
+    ("codebase_scanner",  "business_analyst"),
     ("business_analyst",  "pm"),
     ("pm",                "sprint_planner"),
     ("sprint_planner",    "backend_dev"),
@@ -89,13 +91,16 @@ class FullStackTeam(InteractiveMixin):
         repo_path: Optional[str] = None,
         runner: "Optional[SandboxRunner]" = None,
         sprint_size: int = 4,
+        project_dir: Optional[str] = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
         self.memory = memory
         self._runner = runner
+        self.project_dir: Optional[str] = project_dir
 
         defaults = {
+            "codebase_scanner": CodebaseScannerAgent(self.llm),
             "business_analyst": BusinessAnalystAgent(self.llm),
             "pm":               PMAgent(self.llm),
             "sprint_planner":   SprintPlannerAgent(self.llm, sprint_size=sprint_size),
@@ -127,6 +132,8 @@ class FullStackTeam(InteractiveMixin):
         return {
             "request": request,
             "messages": [{"role": "user", "content": request}],
+            "project_dir": self.project_dir or None,
+            "codebase_analysis": None,
             "prd": None,
             "tickets": None,
             "sprint_backlog": None,

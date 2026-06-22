@@ -40,8 +40,20 @@ class BusinessAnalystAgent(BaseAgent):
     conversational = True
 
     def run(self, state: TeamState) -> dict:
-        context = self._recall(state["request"])
-        raw = self.system(_SYSTEM + context, state["request"])
+        memory_ctx = self._recall(state["request"])
+        analysis = state.get("codebase_analysis")
+        if analysis:
+            user_msg = (
+                "EXISTING CODEBASE CONTEXT — this is a continuation, not a greenfield project:\n"
+                f"Tech stack: {', '.join(analysis.tech_stack)}\n"
+                f"What already exists: {analysis.what_exists}\n"
+                f"What is missing / to build: {analysis.what_is_missing}\n"
+                f"Context: {analysis.continuation_context}\n\n"
+                f"REQUEST (extend the existing project):\n{state['request']}"
+            )
+        else:
+            user_msg = state["request"]
+        raw = self.system(_SYSTEM + memory_ctx, user_msg)
         prd = PRD.model_validate(_json_loads(_strip_fences(raw)))
         return {
             "prd": prd,

@@ -7,6 +7,16 @@ from antcrew.models.base import BaseLLM, Message
 # Fixture responses keyed by what the system prompt contains
 # ---------------------------------------------------------------------------
 
+_CODEBASE_ANALYSIS_FIXTURE = {
+    "tech_stack": ["Python 3.12", "FastAPI", "React 18", "TypeScript 5"],
+    "existing_modules": ["src/auth", "src/models", "frontend/components"],
+    "entry_points": ["src/main.py", "frontend/src/main.tsx"],
+    "test_coverage_summary": "[Simulated] Tests exist for auth and models only",
+    "what_exists": "[Simulated] Authentication system, basic CRUD endpoints, React frontend",
+    "what_is_missing": "[Simulated] Billing module, PDF generation, email notifications",
+    "continuation_context": "[Simulated] MVP-stage SaaS with auth and CRUD done; billing not started",
+}
+
 _PRD_FIXTURE = {
     "title": "[Simulated] Feature Module",
     "summary": "Simulated PRD for testing â€” no real LLM called.",
@@ -284,6 +294,8 @@ def _pick_fixture(system: str) -> str:
     # ----------------------------------------------------------------
     # Normal run() prompts â€” most specific first to avoid false matches.
     # ----------------------------------------------------------------
+    if "software architect analyzing an existing codebase" in s:
+        return json.dumps(_CODEBASE_ANALYSIS_FIXTURE)
     if "prd" in s and ("functional_requirements" in s or "business analyst" in s):
         return json.dumps(_PRD_FIXTURE)
     if "critical bugs" in s or "critical_bug_count" in s:
