@@ -19,6 +19,7 @@ Key ideas:
 - **Human-in-the-loop by design.** Interactive mode pauses after every agent for approve / reject / edit / feedback.
 - **Conversational refinement.** Type free-text feedback; agents revise their output in-place before the pipeline continues.
 - **Typed artifacts.** PRDs, tickets, code changes, test suites, DevOps configs, and docs are Pydantic objects — predictable, auditable, and serializable.
+- **Explicit contracts.** Each agent declares `consumes` and `produces` — `antcrew describe` shows the full pipeline data flow without reading source code.
 - **Real sandbox execution.** Generated tests run in a subprocess (or Docker container) and results feed back into the state.
 - **Real-time streaming.** Watch tokens arrive token-by-token in the terminal or the web dashboard.
 - **Semantic memory.** Agents reference decisions from past runs via a vector store (ChromaDB or in-memory).
@@ -38,10 +39,13 @@ from antcrew import DevTeam
 from antcrew.models import SimulatedLLM   # no API key needed
 
 team = DevTeam(model=SimulatedLLM())
-state = team.run("Add a password reset flow to the auth module")
+result = team.run("Add a password reset flow to the auth module")
 
-for artifact in state["code_artifacts"]:
+for artifact in result["code_artifacts"]:      # dict access works as before
     print(artifact.file_path, "—", artifact.description)
+
+print(result.thread_id)   # LangGraph thread used
+print(result.cost_usd)    # estimated API cost (0.0 with SimulatedLLM)
 ```
 
 ```python
@@ -52,7 +56,10 @@ from antcrew.models import AnthropicModel, OllamaModel
 team = DevTeam(model=AnthropicModel("claude-sonnet-4-6"))  # cloud
 team = DevTeam(model=OllamaModel("llama3"))                # fully local
 
-state = team.run("Build a REST API for user authentication")
+result = team.run("Build a REST API for user authentication")
+print(result["prd"].title)           # PRD object
+print(len(result["tickets"]))        # list[Ticket]
+print(result.cost_usd)               # e.g. 0.43
 ```
 
 ---
@@ -129,6 +136,7 @@ team = DevTeam(model=llm)
 antcrew setup        Interactive wizard — generate agentteam.yaml from scratch
 antcrew run          Run a pipeline autonomously
 antcrew interactive  Run with human-in-the-loop review after every agent
+antcrew describe     Show pipeline agents, data contracts, and coherence check (no API key)
 antcrew project      Manage persistent project sessions
 antcrew eval         Run evaluation cases and score results
 antcrew serve        Start the REST API + web dashboard

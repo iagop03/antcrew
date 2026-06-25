@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "antcrew"
-version = "1.0.0"
+version = "0.2.0"
 description = "Multi-agent framework for software development teams, built on LangGraph"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Iago Pueyo", email = "iago.pueyo99@gmail.com" }]
 keywords = ["ai", "agents", "llm", "multi-agent", "langgraph", "anthropic", "openai", "devteam"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -39,6 +39,8 @@ Repository = "https://github.com/iagop03/antcrew"
 "Bug Tracker" = "https://github.com/iagop03/antcrew/issues"
 
 [project.optional-dependencies]
+cli       = []  # typer + rich already in core deps — alias for pip install antcrew[cli]
+sqlite    = ["aiosqlite>=0.19"]  # SqliteSaver checkpointer (v0.2.1)
 telegram  = ["python-telegram-bot>=20.0"]
 gemini    = []  # GeminiModel uses httpx (already a core dep) — no extra packages needed
 openai    = ["openai>=1.30"]
@@ -50,7 +52,7 @@ dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0"]
 all       = ["python-telegram-bot>=20.0", "openai>=1.30",
              "slack-sdk>=3.19", "slack-bolt>=1.18",
              "fastapi>=0.111", "uvicorn[standard]>=0.30", "aiofiles>=23.0",
-             "chromadb>=0.5"]
+             "chromadb>=0.5", "aiosqlite>=0.19"]
 
 [project.scripts]
 antcrew = "antcrew.cli:app"

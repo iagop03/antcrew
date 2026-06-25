@@ -5,9 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.0] — 2026-06-18
+## [0.2.0] — 2026-06-25
 
-First stable release. Public API is now stable — no breaking changes within 1.x.
+### Added
+- `RunResult` — typed return value of `team.run()`. Exposes `state`, `thread_id`, `cost_usd`. Backward-compatible: `result["prd"]`, `result.get("tickets")`, `"key" in result` all work unchanged. `SandboxRunResult` alias preserves the old sandbox `RunResult` at the top-level import.
+- `consumes` / `produces` class-level attributes on all 15 built-in agents — explicit data contracts readable without opening source code.
+- `antcrew describe` CLI command — prints a Rich table of pipeline agents, their `consumes`/`produces` fields, and a coherence check. Works without API keys or LLM instantiation.
+- `system_parsed()` on `BaseAgent` — calls the LLM, extracts JSON via `_extract_json` + `_json_loads`, validates against an optional Pydantic schema, and raises a structured `ParseError` on failure (log-friendly, no silent corruption).
+- `SprintPlannerAgent` added to full agent migration with `consumes`/`produces` metadata.
+- `save_state()` in `antcrew.utils.persistence` now transparently accepts `RunResult` in addition to plain dicts.
+- `cli` extra (alias — typer + rich are core deps) and `sqlite` extra (`aiosqlite>=0.19`, for SqliteSaver in v0.2.1).
+
+### Changed
+- All four teams (`DevTeam`, `FullStackTeam`, `ResearchTeam`, `ContentTeam`) return `RunResult` from `run()` instead of a raw `TeamState` dict. Dict access patterns are unchanged.
+- `Project.run()` still returns a plain `dict` (unwraps `RunResult.state`) — no change to existing project consumers.
+- `antcrew.__version__` set to `"0.2.0"`.
+- Package development status updated to `3 - Alpha`.
+
+### Breaking changes (within 0.x semver)
+- `from antcrew import RunResult` now imports the team-level `RunResult` (not the sandbox one). Use `from antcrew import SandboxRunResult` to access the old sandbox result type.
+- `isinstance(team.run(...), dict)` now returns `False` — use `isinstance(result, RunResult)` or rely on the dict-like interface.
+
+---
+
+## [0.1.0] — 2026-06-18
+
+Initial release — in production at Font Jardineria.
 
 ### Core
 - `DevTeam`, `FullStackTeam`, `ResearchTeam`, `ContentTeam` — multi-agent pipelines built on LangGraph
