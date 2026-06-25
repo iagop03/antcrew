@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from antcrew.memory.store import BaseMemory
     from antcrew.memory.repo_index import RepoIndex as _RepoIndexT
     from antcrew.sandbox.runner import SandboxRunner
+    from antcrew.trace import TraceLog
     from langgraph.checkpoint.base import BaseCheckpointSaver
 
 log = logging.getLogger(__name__)
@@ -97,12 +98,14 @@ class FullStackTeam(InteractiveMixin):
         project_dirs: Optional[dict] = None,
         checkpointer: "Optional[BaseCheckpointSaver]" = None,
         max_cost_usd: Optional[float] = None,
+        trace_log: "Optional[TraceLog]" = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
         self.memory = memory
         self._runner = runner
         self._checkpointer = checkpointer
+        self._trace_log = trace_log
         if max_cost_usd is not None:
             self.llm.max_cost_usd = max_cost_usd
         self.project_dir: Optional[str] = project_dir
@@ -166,24 +169,42 @@ class FullStackTeam(InteractiveMixin):
         """Execute the full-stack pipeline without human interaction."""
         if self.llm.max_cost_usd is not None:
             self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]
-        app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
-        config = {"configurable": {"thread_id": thread_id}}
-        state = app.invoke(self._initial_state(request), config=config)
-        if self.memory:
-            self.memory.store_run(state)
-        if self._runner and state.get("test_artifacts"):
-            try:
-                state["test_results"] = self._runner.run(
-                    state["test_artifacts"],
-                    code_artifacts=state.get("code_artifacts") or [],
-                )
-            except Exception as exc:
-                log.warning("SandboxRunner failed: %s", exc)
-        cost = 0.0
+        _run_id: Optional[str] = None
+        if self._trace_log is not None:
+            _run_id = self._trace_log.begin_run(
+                thread_id=thread_id, request=request, team=type(self).__name__,
+            )
+            self.llm.trace = self._trace_log
+            self.llm._trace_run_id = _run_id
         try:
-            cost = (self.llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
+            app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
+            config = {"configurable": {"thread_id": thread_id}}
+            state = app.invoke(self._initial_state(request), config=config)
+            if self.memory:
+                self.memory.store_run(state)
+            if self._runner and state.get("test_artifacts"):
+                try:
+                    state["test_results"] = self._runner.run(
+                        state["test_artifacts"],
+                        code_artifacts=state.get("code_artifacts") or [],
+                    )
+                except Exception as exc:
+                    log.warning("SandboxRunner failed: %s", exc)
+            cost = 0.0
+            try:
+                cost = (self.llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
+            except Exception:
+                pass
+            if self._trace_log is not None and _run_id is not None:
+                self._trace_log.end_run(_run_id, cost_usd=cost)
+            return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
         except Exception:
-            pass
-        return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
+            if self._trace_log is not None and _run_id is not None:
+                self._trace_log.end_run(_run_id, cost_usd=0.0, status="error")
+            raise
+        finally:
+            if self._trace_log is not None:
+                self.llm.trace = None
+                self.llm._trace_run_id = None
 
     # run_interactive() and _apply_edit() come from InteractiveMixin

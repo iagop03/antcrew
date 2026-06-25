@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from antcrew.models.cache import LLMCache
+    from antcrew.trace import TraceLog
 
 
 def _is_complete_response(text: str) -> bool:
@@ -107,6 +108,10 @@ class BaseLLM(ABC):
     max_cost_usd: Optional[float] = None
     _cost_limit_offset: float = 0.0  # accumulated cost at the start of the current run
 
+    # Trace — set by team when trace_log is attached
+    trace: "Optional[TraceLog]" = None
+    _trace_run_id: Optional[str] = None
+
     # ── Usage tracking ──────────────────────────────────────────────────────
 
     @property
@@ -183,12 +188,13 @@ class BaseLLM(ABC):
         """
 
     def system(self, prompt: str, user: str, **kwargs) -> str:
-        """One system + one user message, with cache and optional streaming."""
+        """One system + one user message, with cache, optional streaming, and trace."""
         if self.max_cost_usd is not None:
             spent = self.get_usage_summary()["total_cost_usd"] - self._cost_limit_offset
             if spent >= self.max_cost_usd:
                 from antcrew.core.exceptions import CostLimitExceeded
                 raise CostLimitExceeded(spent, self.max_cost_usd)
+
         messages = [
             Message(role="system", content=prompt),
             Message(role="user", content=user),
@@ -196,22 +202,41 @@ class BaseLLM(ABC):
         cache = getattr(self, "cache", None)
         agent = getattr(self, "current_agent", "") or ""
         model = type(self).__name__
-        # Check cache first, even in streaming mode — a cache hit skips the API entirely.
+
+        _trace_active = self.trace is not None and self._trace_run_id is not None
+        _usage_before = len(self._usage_log) if _trace_active else 0
+        _t0 = time.monotonic() if _trace_active else 0.0
+
+        # Resolve result (cache hit, streaming, or retry path)
         if cache is not None:
             hit = cache.get(messages, model, validate=_is_complete_response, agent_name=agent)
             if hit is not None:
-                return hit
-        if self.on_token is not None:
-            # Streaming path: call complete() live, then persist result to cache.
-            result = self.complete(messages, **kwargs)
-            if cache is not None:
+                result = hit
+            elif self.on_token is not None:
+                result = self.complete(messages, **kwargs)
                 cache.set(messages, model, result, agent_name=agent)
-            return result
-        if cache is not None:
+            else:
+                result = self._with_retry(self.complete, messages, **kwargs)
+                cache.set(messages, model, result, agent_name=agent)
+        elif self.on_token is not None:
+            result = self.complete(messages, **kwargs)
+        else:
             result = self._with_retry(self.complete, messages, **kwargs)
-            cache.set(messages, model, result, agent_name=agent)
-            return result
-        return self._with_retry(self.complete, messages, **kwargs)
+
+        if _trace_active:
+            added = self._usage_log[_usage_before:]
+            self.trace.record_call(  # type: ignore[union-attr]
+                run_id=self._trace_run_id,  # type: ignore[arg-type]
+                agent_name=self.current_agent,
+                duration_ms=(time.monotonic() - _t0) * 1000,
+                input_tokens=sum(e["input_tokens"] for e in added),
+                output_tokens=sum(e["output_tokens"] for e in added),
+                cost_usd=sum(e["cost_usd"] for e in added),
+                prompt_snippet=prompt,
+                response_snippet=result,
+            )
+
+        return result
 
     def with_cache(self, cache=None) -> "BaseLLM":
         """Attach a prompt cache to this model and return self.

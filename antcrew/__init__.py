@@ -19,6 +19,7 @@ from antcrew.sandbox import RunResult as SandboxRunResult
 from antcrew.core.run_result import RunResult
 from antcrew.checkpointers import SqliteSaver
 from antcrew.core.exceptions import CostLimitExceeded
+from antcrew.trace import TraceLog
 from antcrew.flow import load_flow, validate_flow, format_flow
 from antcrew.project import Project
 from antcrew.config import load_context, TeamContext, build_llm, build_runner
@@ -75,6 +76,7 @@ __all__ = [
     "SandboxRunResult",
     "SqliteSaver",
     "CostLimitExceeded",
+    "TraceLog",
     # Flow
     "load_flow",
     "validate_flow",

@@ -320,6 +320,11 @@ def run(
         help="Abort the run if estimated LLM cost (USD) exceeds this limit. "
              "Example: --max-cost 1.50",
     ),
+    trace_db: Optional[Path] = typer.Option(
+        None, "--trace",
+        help="SQLite file for per-agent call tracing (timing, tokens, cost). "
+             "View with: antcrew trace <file.db>",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -379,6 +384,11 @@ def run(
         # --max-cost flag sets a per-run cost budget
         if max_cost is not None and _llm_ref is not None:
             _llm_ref.max_cost_usd = max_cost
+
+        # --trace flag attaches TraceLog for per-agent call recording
+        if trace_db:
+            from antcrew.trace import TraceLog as _TraceLog
+            active_team._trace_log = _TraceLog(trace_db)
 
         # --project flag creates / resumes a Project (overrides config project:)
         if project:
@@ -1847,6 +1857,149 @@ def flow_validate(
             console.print(f"  [red]•[/] {err}")
         if strict or True:  # always exit 1 when errors found
             raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# antcrew trace — inspect TraceLog SQLite files
+# ---------------------------------------------------------------------------
+
+@app.command(name="trace")
+def trace_cmd(
+    db: Path = typer.Argument(..., help="TraceLog SQLite file (created with --trace)"),
+    run_id: Optional[str] = typer.Option(
+        None, "--run", "-r", help="Show agent calls for a specific run ID"
+    ),
+    thread: Optional[str] = typer.Option(
+        None, "--thread", help="Show the latest run for a thread_id"
+    ),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max runs to list"),
+) -> None:
+    """Inspect a TraceLog SQLite file — list runs or show per-agent call detail.
+
+    \b
+    List recent runs:
+        antcrew trace ~/.antcrew/trace.db
+
+    Show agent calls for a specific run:
+        antcrew trace ~/.antcrew/trace.db --run <run_id>
+
+    Show latest run for a thread:
+        antcrew trace ~/.antcrew/trace.db --thread sprint-1
+    """
+    from antcrew.trace import TraceLog as _TraceLog
+    from rich.table import Table
+
+    if not db.exists():
+        console.print(f"[red]File not found:[/] {db}")
+        raise typer.Exit(1)
+
+    tlog = _TraceLog(db)
+
+    # --- detail view (single run) ---
+    target_run: Optional[dict] = None
+    if run_id:
+        target_run = tlog.get_run(run_id)
+        if target_run is None:
+            console.print(f"[red]Run not found:[/] {run_id}")
+            raise typer.Exit(1)
+    elif thread:
+        target_run = tlog.get_run_by_thread(thread)
+        if target_run is None:
+            console.print(f"[red]No run found for thread:[/] {thread}")
+            raise typer.Exit(1)
+
+    if target_run is not None:
+        _print_trace_detail(target_run, tlog.get_calls(target_run["id"]))
+        return
+
+    # --- list view ---
+    runs = tlog.list_runs(limit=limit)
+    if not runs:
+        console.print("[dim]No runs recorded yet.[/dim]")
+        return
+
+    tbl = Table(title=f"TraceLog — {db}", show_header=True, header_style="bold dim")
+    tbl.add_column("Run ID",    style="dim",    no_wrap=True, max_width=12)
+    tbl.add_column("Thread",    style="cyan",   no_wrap=True, max_width=20)
+    tbl.add_column("Team",      style="yellow", no_wrap=True)
+    tbl.add_column("Status",    no_wrap=True)
+    tbl.add_column("Cost",      justify="right")
+    tbl.add_column("Started",   style="dim",    no_wrap=True)
+    tbl.add_column("Request",   max_width=40)
+
+    for r in runs:
+        status = r["status"]
+        status_str = (
+            f"[green]{status}[/green]"   if status == "done"
+            else f"[red]{status}[/red]"  if status == "error"
+            else f"[yellow]{status}[/yellow]"
+        )
+        cost = r["cost_usd"]
+        cost_str = f"${cost:.4f}" if cost else "—"
+        started = (r["started_at"] or "")[:19].replace("T", " ")
+        tbl.add_row(
+            r["id"][:8] + "…",
+            r["thread_id"],
+            r["team"],
+            status_str,
+            cost_str,
+            started,
+            r["request"][:40],
+        )
+
+    console.print(tbl)
+    console.print(f"\n[dim]Use --run <id> or --thread <id> to inspect agent calls.[/dim]")
+
+
+def _print_trace_detail(run: dict, calls: list[dict]) -> None:
+    """Print a detailed view of a single run and its agent calls."""
+    from rich.table import Table
+
+    cost = run.get("cost_usd") or 0.0
+    started = (run.get("started_at") or "")[:19].replace("T", " ")
+    ended = (run.get("ended_at") or "")[:19].replace("T", " ")
+
+    console.print(Panel(
+        f"[bold]{run['request'][:120]}[/bold]\n\n"
+        f"Thread:  [cyan]{run['thread_id']}[/cyan]\n"
+        f"Team:    [yellow]{run['team']}[/yellow]\n"
+        f"Status:  [{'green' if run['status'] == 'done' else 'red'}]{run['status']}[/]\n"
+        f"Cost:    [cyan]${cost:.4f}[/cyan]\n"
+        f"Started: [dim]{started}[/dim]   Ended: [dim]{ended}[/dim]",
+        title=f"Run {run['id'][:8]}…",
+        border_style="blue",
+    ))
+
+    if not calls:
+        console.print("[dim]No agent calls recorded for this run.[/dim]")
+        return
+
+    tbl = Table(show_header=True, header_style="bold dim")
+    tbl.add_column("#",             style="dim",    justify="right", no_wrap=True)
+    tbl.add_column("Agent",         style="cyan",   no_wrap=True)
+    tbl.add_column("Duration",      justify="right", no_wrap=True)
+    tbl.add_column("In tokens",     justify="right")
+    tbl.add_column("Out tokens",    justify="right")
+    tbl.add_column("Cost",          justify="right")
+    tbl.add_column("Prompt (first 80 chars)", max_width=80)
+
+    for i, c in enumerate(calls, 1):
+        dur = c.get("duration_ms") or 0.0
+        dur_str = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
+        call_cost = c.get("cost_usd") or 0.0
+        cost_str = f"${call_cost:.4f}" if call_cost else "—"
+        prompt = (c.get("prompt_snippet") or "")[:80]
+        tbl.add_row(
+            str(i),
+            c["agent_name"],
+            dur_str,
+            str(c.get("input_tokens", 0)),
+            str(c.get("output_tokens", 0)),
+            cost_str,
+            prompt,
+        )
+
+    console.print(tbl)
 
 
 if __name__ == "__main__":

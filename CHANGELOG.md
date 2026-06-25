@@ -16,6 +16,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `CostLimitExceeded` exception — importable from `antcrew` top-level. Attributes: `cost_usd` (amount spent), `limit_usd` (the configured limit).
 - `antcrew run --max-cost <USD>` CLI flag. Example: `antcrew run "..." --max-cost 1.50`.
 - `max_cost_usd:` key in `agentteam.yaml` YAML/JSON config.
+- `TraceLog` — SQLite-backed per-agent call recorder. Records one row per `llm.system()` invocation with agent name, timing (ms), token counts, and estimated cost. Importable from `antcrew` top-level.
+- `trace_log=` constructor param on all four teams. Wraps each `run()` with `begin_run`/`end_run` book-keeping; populates `agent_calls` via the `BaseLLM.system()` hook.
+- `antcrew run --trace <file.db>` CLI flag. Activates TraceLog for a single run.
+- `antcrew trace <file.db>` CLI command — lists recent runs or shows per-agent call detail for a specific run (`--run <id>` or `--thread <id>`).
+- `BaseLLM.system()` refactored to use a single `result` variable (no multiple early-returns); timing is injected via `time.monotonic()` only when `trace` is attached.
 
 ### Requires
 - `pip install antcrew[sqlite]` for `SqliteSaver` support.
