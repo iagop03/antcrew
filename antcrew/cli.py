@@ -961,6 +961,148 @@ def extract(
         console.print(f"\n[bold green]Done![/] {len(artifacts)} file(s) written to [cyan]{output}/[/]\n")
 
 
+@app.command()
+def describe(
+    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to agentteam.yaml"),
+    team: str = typer.Option("dev", "--team", "-t", help=f"Team preset: {_TEAM_CHOICES}"),
+) -> None:
+    """Show pipeline agents, data flow (consumes/produces), and coherence check.
+
+    \b
+    Examples:
+        antcrew describe --team dev
+        antcrew describe --config agentteam.yaml
+    """
+    import json as _json
+
+    from rich.table import Table
+
+    # ── Parse config file (YAML/JSON) without instantiating the LLM ─────────
+    cfg: dict = {}
+    pipeline_name = team
+    model_str = "claude"
+
+    if config:
+        if not config.exists():
+            console.print(f"[red]Config file not found:[/] {config}")
+            raise typer.Exit(1)
+        try:
+            raw_text = config.read_text(encoding="utf-8")
+            if config.suffix.lower() == ".json":
+                cfg = _json.loads(raw_text)
+            else:
+                try:
+                    import yaml as _yaml  # type: ignore[import]
+                    cfg = _yaml.safe_load(raw_text) or {}
+                except ImportError:
+                    console.print(
+                        "[red]PyYAML required for YAML files.[/]  "
+                        "Install: [bold]pip install pyyaml[/]"
+                    )
+                    raise typer.Exit(1)
+        except Exception as exc:
+            console.print(f"[red]Failed to read config:[/] {exc}")
+            raise typer.Exit(1)
+
+        pipeline_name = config.stem
+        team = cfg.get("team", team).lower()
+        model_str = cfg.get("model", model_str)
+
+    # ── Agent class registry (no instantiation needed) ────────────────────────
+    from antcrew.agents.business import BusinessAnalystAgent
+    from antcrew.agents.pm import PMAgent
+    from antcrew.agents.backend_dev import BackendDevAgent
+    from antcrew.agents.frontend_dev import FrontendDevAgent
+    from antcrew.agents.qa import QAAgent
+    from antcrew.agents.reviewer import ReviewerAgent
+    from antcrew.agents.devops import DevOpsAgent
+    from antcrew.agents.doc_writer import DocWriterAgent
+    from antcrew.agents.researcher import ResearcherAgent
+    from antcrew.agents.idea import IdeaAgent
+    from antcrew.agents.copywriter import CopywriterAgent
+    from antcrew.agents.editor import EditorAgent
+    from antcrew.agents.codebase_scanner import CodebaseScannerAgent
+    from antcrew.agents.sprint_planner import SprintPlannerAgent
+
+    _CLASSES: dict[str, type] = {
+        "business_analyst": BusinessAnalystAgent,
+        "pm":               PMAgent,
+        "backend_dev":      BackendDevAgent,
+        "frontend_dev":     FrontendDevAgent,
+        "qa":               QAAgent,
+        "reviewer":         ReviewerAgent,
+        "devops":           DevOpsAgent,
+        "doc_writer":       DocWriterAgent,
+        "researcher":       ResearcherAgent,
+        "idea":             IdeaAgent,
+        "copywriter":       CopywriterAgent,
+        "writer":           CopywriterAgent,   # alias used by research team
+        "editor":           EditorAgent,
+        "codebase_scanner": CodebaseScannerAgent,
+        "sprint_planner":   SprintPlannerAgent,
+    }
+
+    _DEFAULT_ORDER: dict[str, list[str]] = {
+        "dev":       ["business_analyst", "pm", "backend_dev"],
+        "fullstack": [
+            "codebase_scanner", "business_analyst", "pm", "sprint_planner",
+            "backend_dev", "frontend_dev", "qa", "reviewer", "devops", "doc_writer",
+        ],
+        "research":  ["researcher", "writer"],
+        "content":   ["idea", "copywriter", "editor"],
+    }
+
+    # ── Determine agent order ─────────────────────────────────────────────────
+    if "flow" in cfg:
+        # Unique ordered list: first appearance in each edge wins.
+        seen: list[str] = []
+        for step in cfg["flow"]:
+            for node in list(step)[:2]:  # skip optional condition (3rd element)
+                if node not in seen:
+                    seen.append(str(node))
+        ordered: list[str] = seen
+    else:
+        base = list(_DEFAULT_ORDER.get(team, ["business_analyst", "pm", "backend_dev"]))
+        extra = [k for k in (cfg.get("agents") or {}) if k not in base]
+        ordered = base + extra
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    console.print(
+        f"\n[bold green]Pipeline:[/] [cyan]{pipeline_name}[/]  "
+        f"[dim]team={team}  model={model_str}[/dim]\n"
+    )
+
+    # ── Table ─────────────────────────────────────────────────────────────────
+    table = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 2))
+    table.add_column("Agent",    style="cyan",  no_wrap=True, min_width=18)
+    table.add_column("Consumes", style="white", min_width=30)
+    table.add_column("Produces", style="green")
+
+    for agent_name in ordered:
+        cls = _CLASSES.get(agent_name)
+        consumed = list(getattr(cls, "consumes", [])) if cls else []
+        produced = list(getattr(cls, "produces", [])) if cls else []
+        table.add_row(
+            agent_name,
+            ", ".join(consumed) if consumed else "—",
+            ", ".join(produced) if produced else "—",
+        )
+
+    console.print(table)
+    console.print()
+
+    # ── Coherence check (unknown agent names) ─────────────────────────────────
+    unknown = [n for n in ordered if n not in _CLASSES]
+    if unknown:
+        console.print(
+            f"[bold yellow]Coherencia:[/] {len(unknown)} unknown agent(s): "
+            + ", ".join(unknown)
+            + "\n"
+        )
+    else:
+        console.print("[bold green]Coherencia:[/] OK\n")
+
+
 def _print_state_raw(raw: dict, team: str) -> None:
     """Like _print_state but works on plain dicts from load_state."""
     from antcrew.core.artifacts import (

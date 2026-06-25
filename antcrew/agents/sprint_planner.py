@@ -18,6 +18,8 @@ class SprintPlannerAgent(BaseAgent):
 
     name = "sprint_planner"
     role_description = "Divides the product backlog into focused sprints."
+    consumes: list[str] = ["tickets", "sprint_backlog"]
+    produces: list[str] = ["tickets", "sprint_backlog", "sprint_number", "metadata"]
 
     def __init__(self, llm, *, sprint_size: int = _DEFAULT_SPRINT_SIZE, **kwargs) -> None:
         super().__init__(llm, **kwargs)
