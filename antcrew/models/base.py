@@ -83,11 +83,12 @@ class BaseLLM(ABC):
 
     Instance-level attributes you can override after construction:
 
-        llm.max_retries = 5       # retry attempts (non-streaming only; default 3)
-        llm.retry_delay = 2.0     # initial backoff in seconds (doubles each attempt)
-        llm.timeout    = 60.0     # HTTP timeout in seconds (default 120)
-        llm.on_token   = fn       # called with each streaming text chunk
+        llm.max_retries  = 5      # retry attempts (non-streaming only; default 3)
+        llm.retry_delay  = 2.0    # initial backoff in seconds (doubles each attempt)
+        llm.timeout      = 60.0   # HTTP timeout in seconds (default 120)
+        llm.on_token     = fn     # called with each streaming text chunk
         llm.current_agent = "pm"  # set automatically by BaseAgent.system()
+        llm.max_cost_usd = 2.0    # abort run when this cost (USD) is exceeded
     """
 
     # Streaming
@@ -101,6 +102,10 @@ class BaseLLM(ABC):
 
     # Prompt cache (opt-in — assign an LLMCache instance to enable)
     cache: "Optional[LLMCache]" = None
+
+    # Cost guard — set by team when max_cost_usd is configured
+    max_cost_usd: Optional[float] = None
+    _cost_limit_offset: float = 0.0  # accumulated cost at the start of the current run
 
     # ── Usage tracking ──────────────────────────────────────────────────────
 
@@ -179,6 +184,11 @@ class BaseLLM(ABC):
 
     def system(self, prompt: str, user: str, **kwargs) -> str:
         """One system + one user message, with cache and optional streaming."""
+        if self.max_cost_usd is not None:
+            spent = self.get_usage_summary()["total_cost_usd"] - self._cost_limit_offset
+            if spent >= self.max_cost_usd:
+                from antcrew.core.exceptions import CostLimitExceeded
+                raise CostLimitExceeded(spent, self.max_cost_usd)
         messages = [
             Message(role="system", content=prompt),
             Message(role="user", content=user),

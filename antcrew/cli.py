@@ -315,6 +315,11 @@ def run(
              "Runs with the same --thread resume from where they left off. "
              "Requires: pip install antcrew[sqlite]",
     ),
+    max_cost: Optional[float] = typer.Option(
+        None, "--max-cost",
+        help="Abort the run if estimated LLM cost (USD) exceeds this limit. "
+             "Example: --max-cost 1.50",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -371,6 +376,10 @@ def run(
             )
             active_team._checkpointer = _SqliteSaver(_conn)
 
+        # --max-cost flag sets a per-run cost budget
+        if max_cost is not None and _llm_ref is not None:
+            _llm_ref.max_cost_usd = max_cost
+
         # --project flag creates / resumes a Project (overrides config project:)
         if project:
             from antcrew.project import Project
@@ -411,7 +420,14 @@ def run(
         console.print("\n[yellow]Interrupted.[/]")
         raise typer.Exit(1)
     except Exception as exc:
-        console.print(f"\n[red bold]Error:[/] {exc}")
+        from antcrew.core.exceptions import CostLimitExceeded as _CLE
+        if isinstance(exc, _CLE):
+            console.print(
+                f"\n[yellow bold]Cost limit reached:[/] ${exc.cost_usd:.4f} spent "
+                f"(limit: ${exc.limit_usd:.4f}). Pipeline stopped."
+            )
+        else:
+            console.print(f"\n[red bold]Error:[/] {exc}")
         raise typer.Exit(1)
 
     console.print()

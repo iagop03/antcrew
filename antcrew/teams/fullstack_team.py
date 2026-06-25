@@ -96,12 +96,15 @@ class FullStackTeam(InteractiveMixin):
         project_dir: Optional[str] = None,
         project_dirs: Optional[dict] = None,
         checkpointer: "Optional[BaseCheckpointSaver]" = None,
+        max_cost_usd: Optional[float] = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
         self.memory = memory
         self._runner = runner
         self._checkpointer = checkpointer
+        if max_cost_usd is not None:
+            self.llm.max_cost_usd = max_cost_usd
         self.project_dir: Optional[str] = project_dir
         self.project_dirs: Optional[dict] = project_dirs
 
@@ -161,6 +164,8 @@ class FullStackTeam(InteractiveMixin):
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the full-stack pipeline without human interaction."""
+        if self.llm.max_cost_usd is not None:
+            self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]
         app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
         state = app.invoke(self._initial_state(request), config=config)

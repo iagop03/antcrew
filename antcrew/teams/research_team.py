@@ -58,10 +58,13 @@ class ResearchTeam(InteractiveMixin):
         supervisor: Optional[Supervisor] = None,
         memory: Optional["BaseMemory"] = None,
         checkpointer: "Optional[BaseCheckpointSaver]" = None,
+        max_cost_usd: Optional[float] = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.memory = memory
         self._checkpointer = checkpointer
+        if max_cost_usd is not None:
+            self.llm.max_cost_usd = max_cost_usd
 
         defaults = {
             "researcher": ResearcherAgent(self.llm),
@@ -95,6 +98,8 @@ class ResearchTeam(InteractiveMixin):
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the research pipeline without human interaction."""
+        if self.llm.max_cost_usd is not None:
+            self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]
         app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
         state = app.invoke(self._initial_state(request), config=config)

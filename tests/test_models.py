@@ -113,3 +113,85 @@ def test_groq_model_complete():
         result = model.complete([Message(role="user", content="Hi")])
 
     assert result == "response from groq"
+
+
+# ---------------------------------------------------------------------------
+# CostLimitExceeded
+# ---------------------------------------------------------------------------
+
+def test_cost_limit_exceeded_importable():
+    from antcrew.core.exceptions import CostLimitExceeded
+    from antcrew import CostLimitExceeded as _top
+    assert CostLimitExceeded is _top
+
+
+def test_cost_limit_not_triggered_below_limit():
+    class _FakeLLM(BaseLLM):
+        def complete(self, messages, *, max_tokens=4096):
+            self._record_usage(100, 50)
+            return "ok"
+
+    llm = _FakeLLM()
+    llm.max_cost_usd = 10.0
+    result = llm.system("sys", "user")
+    assert result == "ok"
+
+
+def test_cost_limit_raises_when_exceeded():
+    from antcrew.core.exceptions import CostLimitExceeded
+
+    class _FakeLLM(BaseLLM):
+        def complete(self, messages, *, max_tokens=4096):
+            self._record_usage(0, 0)
+            return "ok"
+
+    llm = _FakeLLM()
+    llm.max_cost_usd = 0.001
+
+    # Manually push cost over the limit
+    llm._usage_log.append({
+        "agent": "test", "model": "test",
+        "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.002,
+    })
+
+    with pytest.raises(CostLimitExceeded) as exc_info:
+        llm.system("sys", "user")
+
+    assert exc_info.value.cost_usd >= exc_info.value.limit_usd
+    assert exc_info.value.limit_usd == pytest.approx(0.001)
+
+
+def test_cost_limit_offset_resets_per_run():
+    """Second run starts with a fresh budget even if prior run accumulated cost."""
+    from antcrew.core.exceptions import CostLimitExceeded
+    from antcrew.models.simulated import SimulatedLLM
+    from antcrew.teams.dev_team import DevTeam
+
+    llm = SimulatedLLM()
+    team = DevTeam(model=llm, max_cost_usd=999.0)
+
+    # Artificially inflate usage log so it looks like prior runs spent money
+    llm._usage_log.append({
+        "agent": "prior", "model": "sim",
+        "input_tokens": 0, "output_tokens": 0, "cost_usd": 998.0,
+    })
+
+    # Offset should be reset at start of run — so the $998 prior cost doesn't
+    # count against the new $999 limit, and the run completes without raising.
+    result = team.run("Build a login module")
+    assert result is not None
+
+
+def test_cost_limit_zero_aborts_immediately():
+    """max_cost_usd=0.0 with 0-cost LLM: spent(0) >= limit(0) fires on first call."""
+    from antcrew.core.exceptions import CostLimitExceeded
+    from antcrew.models.simulated import SimulatedLLM
+    from antcrew.teams.dev_team import DevTeam
+
+    llm = SimulatedLLM()
+    team = DevTeam(model=llm, max_cost_usd=0.0)
+
+    with pytest.raises(CostLimitExceeded) as exc_info:
+        team.run("Build a login module")
+
+    assert exc_info.value.limit_usd == pytest.approx(0.0)

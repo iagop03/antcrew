@@ -187,10 +187,15 @@ def load(path: str | Path):
     if "runner" in cfg:
         runner = build_runner(cfg["runner"])
 
+    # Cost guard (optional)
+    max_cost_usd_cfg = cfg.get("max_cost_usd")
+    max_cost_usd: Optional[float] = float(max_cost_usd_cfg) if max_cost_usd_cfg is not None else None
+
     if team_type == "dev":
         from antcrew.teams.dev_team import DevTeam
         team = DevTeam(model=default_llm, integrations=integrations,
-                       agents=agent_overrides, supervisor=supervisor, runner=runner)
+                       agents=agent_overrides, supervisor=supervisor, runner=runner,
+                       max_cost_usd=max_cost_usd)
         team.output_dir = cfg.get("output_dir") or None
         return team
 
@@ -203,18 +208,20 @@ def load(path: str | Path):
             model=default_llm, integrations=integrations,
             agents=agent_overrides, supervisor=supervisor, runner=runner,
             project_dir=project_dir, project_dirs=project_dirs,
-            sprint_size=sprint_size,
+            sprint_size=sprint_size, max_cost_usd=max_cost_usd,
         )
         team.output_dir = cfg.get("output_dir") or None
         return team
 
     if team_type == "research":
         from antcrew.teams.research_team import ResearchTeam
-        return ResearchTeam(model=default_llm, agents=agent_overrides, supervisor=supervisor)
+        return ResearchTeam(model=default_llm, agents=agent_overrides, supervisor=supervisor,
+                            max_cost_usd=max_cost_usd)
 
     if team_type == "content":
         from antcrew.teams.content_team import ContentTeam
-        return ContentTeam(model=default_llm, agents=agent_overrides, supervisor=supervisor)
+        return ContentTeam(model=default_llm, agents=agent_overrides, supervisor=supervisor,
+                           max_cost_usd=max_cost_usd)
 
     raise ValueError(
         f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content."
