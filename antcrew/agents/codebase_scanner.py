@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from pydantic import BaseModel
+
+from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import CodebaseAnalysis
 from antcrew.core.state import TeamState
 
@@ -27,6 +29,17 @@ _KEY_FILES = [
 ]
 _MAX_FILE_CHARS = 3_000
 _MAX_TREE_LINES = 200
+
+
+class _ScannerPayload(BaseModel):
+    """LLM output schema for the codebase scanner — excludes 'label' (injected from path)."""
+    tech_stack: list[str] = []
+    existing_modules: list[str] = []
+    entry_points: list[str] = []
+    test_coverage_summary: str = ""
+    what_exists: str = ""
+    what_is_missing: str = ""
+    continuation_context: str = ""
 
 _SYSTEM = """\
 You are a Senior Software Architect analyzing one component of an existing project.
@@ -90,16 +103,11 @@ def _scan_one(agent: "CodebaseScannerAgent", label: str, path: str) -> CodebaseA
     key_files = _read_key_files(root)
     context = f"Component: {label}\nPath: {root}\n\nFile tree:\n{tree}\n\n{key_files}".strip()
 
-    raw = agent.system(_SYSTEM, context)
     try:
-        data: dict = _json_loads(_strip_fences(raw))
+        payload = agent.system_parsed(_SYSTEM, context, _ScannerPayload)
     except Exception:
-        data = {}
-
-    return CodebaseAnalysis(
-        label=label,
-        **{k: v for k, v in data.items() if k in CodebaseAnalysis.model_fields and k != "label"},
-    )
+        return CodebaseAnalysis(label=label)
+    return CodebaseAnalysis(label=label, **payload.model_dump())
 
 
 class CodebaseScannerAgent(BaseAgent):
@@ -107,6 +115,8 @@ class CodebaseScannerAgent(BaseAgent):
 
     name = "codebase_scanner"
     role_description = "Analyzes existing codebase components to provide continuation context."
+    consumes: list[str] = ["project_dir", "project_dirs"]
+    produces: list[str] = ["codebase_analysis", "codebase_analyses"]
 
     def __init__(self, llm, *, extra_ignore_dirs: list[str] | None = None, **kwargs):
         super().__init__(llm, **kwargs)

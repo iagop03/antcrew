@@ -2,7 +2,7 @@
 
 import json
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import DocumentationArtifact
 from antcrew.core.state import TeamState
 
@@ -56,6 +56,8 @@ class DocWriterAgent(BaseAgent):
     name = "doc_writer"
     role_description = "Generates README, architecture docs, and API reference from pipeline artifacts."
     conversational = True
+    consumes: list[str] = ["prd", "tickets", "code_artifacts", "devops_artifacts"]
+    produces: list[str] = ["doc_artifacts"]
 
     def run(self, state: TeamState) -> dict:
         prd = state.get("prd")
@@ -88,8 +90,7 @@ class DocWriterAgent(BaseAgent):
                          for a in devops_artifacts]
             context_parts.append(f"DevOps files:\n{json.dumps(summaries, indent=2)}")
 
-        raw = self.system(_SYSTEM, "\n\n".join(context_parts))
-        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
+        raw_artifacts: list[dict] = self.system_parsed(_SYSTEM, "\n\n".join(context_parts), list[dict])
         doc_artifacts = [
             DocumentationArtifact(
                 **{k: v for k, v in a.items() if k in DocumentationArtifact.model_fields}
@@ -112,14 +113,14 @@ class DocWriterAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: list[DocumentationArtifact], feedback: str) -> dict:
-        raw = self.system(
+        raw_artifacts: list[dict] = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=json.dumps([a.model_dump() for a in artifact], indent=2),
                 feedback=feedback,
             ),
             "Revise the documentation based on the feedback.",
+            list[dict],
         )
-        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             DocumentationArtifact(
                 **{k: v for k, v in a.items() if k in DocumentationArtifact.model_fields}

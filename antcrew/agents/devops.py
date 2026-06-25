@@ -2,7 +2,7 @@
 
 import json
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import DevOpsArtifact
 from antcrew.core.state import TeamState
 
@@ -56,6 +56,8 @@ class DevOpsAgent(BaseAgent):
     name = "devops"
     role_description = "Generates Dockerfile, CI/CD pipelines, and infra config from code artifacts."
     conversational = True
+    consumes: list[str] = ["code_artifacts", "tickets"]
+    produces: list[str] = ["devops_artifacts"]
 
     def run(self, state: TeamState) -> dict:
         code_artifacts = state.get("code_artifacts") or []
@@ -73,8 +75,7 @@ class DevOpsAgent(BaseAgent):
             f"Tickets:\n{json.dumps([t.model_dump() for t in tickets], indent=2)}\n\n"
             f"Code Artifacts:\n{json.dumps([a.model_dump() for a in code_artifacts], indent=2)}"
         )
-        raw = self.system(_SYSTEM, context)
-        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
+        raw_artifacts: list[dict] = self.system_parsed(_SYSTEM, context, list[dict])
         devops_artifacts = [
             DevOpsArtifact(
                 **{k: v for k, v in a.items() if k in DevOpsArtifact.model_fields}
@@ -97,14 +98,14 @@ class DevOpsAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: list[DevOpsArtifact], feedback: str) -> dict:
-        raw = self.system(
+        raw_artifacts: list[dict] = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=json.dumps([a.model_dump() for a in artifact], indent=2),
                 feedback=feedback,
             ),
             "Revise the DevOps configuration based on the feedback.",
+            list[dict],
         )
-        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             DevOpsArtifact(
                 **{k: v for k, v in a.items() if k in DevOpsArtifact.model_fields}

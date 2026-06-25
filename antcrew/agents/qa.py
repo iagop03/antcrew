@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from antcrew.core.agent import BaseAgent, _extract_json, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import TestArtifact
 from antcrew.core.state import TeamState
 
@@ -69,6 +69,8 @@ class QAAgent(BaseAgent):
     name = "qa"
     role_description = "Writes tests for code artifacts and flags critical bugs."
     conversational = True
+    consumes: list[str] = ["code_artifacts", "tickets", "test_artifacts"]
+    produces: list[str] = ["test_artifacts", "metadata"]
 
     def run(self, state: TeamState) -> dict:
         code_artifacts = state.get("code_artifacts") or []
@@ -122,10 +124,9 @@ class QAAgent(BaseAgent):
         test_artifacts = preserved_tests + new_tests
 
         artifacts_json = json.dumps([a.model_dump() for a in sprint_artifacts], indent=2)
-        bug_raw = self.system(
-            _BUG_DETECTOR_SYSTEM, f"Code Artifacts:\n{artifacts_json}"
+        bug_result: dict = self.system_parsed(
+            _BUG_DETECTOR_SYSTEM, f"Code Artifacts:\n{artifacts_json}", dict
         )
-        bug_result: dict = _json_loads(_extract_json(bug_raw))
         has_critical = bool(bug_result.get("has_critical_bugs", False))
 
         return {
@@ -148,14 +149,14 @@ class QAAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: list[TestArtifact], feedback: str) -> dict:
-        raw = self.system(
+        raw_tests: list[dict] = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=json.dumps([t.model_dump() for t in artifact], indent=2),
                 feedback=feedback,
             ),
             "Revise the tests based on the feedback.",
+            list[dict],
         )
-        raw_tests: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             TestArtifact(
                 **{k: v for k, v in t.items() if k in TestArtifact.model_fields}

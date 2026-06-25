@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import ContentPiece
 from antcrew.core.state import TeamState
 
@@ -44,11 +44,12 @@ class IdeaAgent(BaseAgent):
     name = "idea"
     role_description = "Creates a structured content brief from a content request."
     conversational = True
+    consumes: list[str] = ["request"]
+    produces: list[str] = ["content_piece"]
 
     def run(self, state: TeamState) -> dict:
         request = state.get("request") or ""
-        raw = self.system(_SYSTEM, f"Content request:\n{request}")
-        data: dict = _json_loads(_strip_fences(raw))
+        data: dict = self.system_parsed(_SYSTEM, f"Content request:\n{request}", dict)
         brief = ContentPiece(
             title=data.get("title", request[:80]),
             target_audience=data.get("target_audience", "general audience"),
@@ -70,14 +71,14 @@ class IdeaAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: ContentPiece, feedback: str) -> dict:
-        raw = self.system(
+        data: dict = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=artifact.model_dump_json(indent=2),
                 feedback=feedback,
             ),
             "Revise the content brief based on the feedback.",
+            dict,
         )
-        data: dict = _json_loads(_strip_fences(raw))
         updated = ContentPiece(
             title=data.get("title", artifact.title),
             target_audience=data.get("target_audience", artifact.target_audience),

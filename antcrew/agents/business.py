@@ -1,6 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import PRD
 from antcrew.core.state import TeamState
 
@@ -38,6 +38,8 @@ class BusinessAnalystAgent(BaseAgent):
     name = "business_analyst"
     role_description = "Converts a product request into a structured PRD."
     conversational = True
+    consumes: list[str] = ["request", "codebase_analysis", "codebase_analyses"]
+    produces: list[str] = ["prd"]
 
     def run(self, state: TeamState) -> dict:
         memory_ctx = self._recall(state["request"])
@@ -71,8 +73,7 @@ class BusinessAnalystAgent(BaseAgent):
             user_msg = codebase_ctx + f"\nREQUEST (extend the existing project):\n{state['request']}"
         else:
             user_msg = state["request"]
-        raw = self.system(_SYSTEM + memory_ctx, user_msg)
-        prd = PRD.model_validate(_json_loads(_strip_fences(raw)))
+        prd = self.system_parsed(_SYSTEM + memory_ctx, user_msg, PRD)
         return {
             "prd": prd,
             "current_agent": self.name,
@@ -80,12 +81,12 @@ class BusinessAnalystAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: PRD, feedback: str) -> dict:
-        raw = self.system(
+        prd = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=artifact.model_dump_json(indent=2),
                 feedback=feedback,
             ),
             "Revise the PRD based on the feedback.",
+            PRD,
         )
-        prd = PRD.model_validate(_json_loads(_strip_fences(raw)))
         return {"prd": prd}

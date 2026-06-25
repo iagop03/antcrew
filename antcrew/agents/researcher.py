@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import ResearchDocument, ResearchSection
 from antcrew.core.state import TeamState
 
@@ -48,11 +48,12 @@ class ResearcherAgent(BaseAgent):
     name = "researcher"
     role_description = "Produces a structured research document from a topic or question."
     conversational = True
+    consumes: list[str] = ["request"]
+    produces: list[str] = ["research_document"]
 
     def run(self, state: TeamState) -> dict:
         request = state.get("request") or ""
-        raw = self.system(_SYSTEM, f"Research topic:\n{request}")
-        data: dict = _json_loads(_strip_fences(raw))
+        data: dict = self.system_parsed(_SYSTEM, f"Research topic:\n{request}", dict)
         sections = [
             ResearchSection(heading=s["heading"], content=s["content"])
             for s in data.get("sections", [])
@@ -80,14 +81,14 @@ class ResearcherAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: ResearchDocument, feedback: str) -> dict:
-        raw = self.system(
+        data: dict = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=artifact.model_dump_json(indent=2),
                 feedback=feedback,
             ),
             "Revise the research document based on the feedback.",
+            dict,
         )
-        data: dict = _json_loads(_strip_fences(raw))
         sections = [
             ResearchSection(heading=s["heading"], content=s["content"])
             for s in data.get("sections", [])

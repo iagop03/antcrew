@@ -1,13 +1,10 @@
 ﻿from __future__ import annotations
 
 import json
-import logging
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import Ticket, TicketStatus
 from antcrew.core.state import TeamState
-
-_log = logging.getLogger(__name__)
 
 _SYSTEM = """\
 You are a Product Manager on a software development team.
@@ -50,6 +47,8 @@ class PMAgent(BaseAgent):
     name = "pm"
     role_description = "Breaks a PRD into prioritised development tickets."
     conversational = True
+    consumes: list[str] = ["prd"]
+    produces: list[str] = ["tickets"]
 
     def run(self, state: TeamState) -> dict:
         prd = state.get("prd")
@@ -57,11 +56,12 @@ class PMAgent(BaseAgent):
             return {"errors": ["PMAgent: no PRD found in state"]}
 
         context = self._recall(prd.title + " " + prd.summary)
-        raw = self.system(_SYSTEM + context, f"PRD:\n{prd.model_dump_json(indent=2)}", max_tokens=16384)
-        _log.debug("PMAgent raw response (len=%d): %r", len(raw), raw[:500])
-        stripped = _strip_fences(raw)
-        _log.debug("PMAgent stripped (len=%d): %r", len(stripped), stripped[:200])
-        raw_tickets: list[dict] = _json_loads(stripped)
+        raw_tickets: list[dict] = self.system_parsed(
+            _SYSTEM + context,
+            f"PRD:\n{prd.model_dump_json(indent=2)}",
+            list[dict],
+            max_tokens=16384,
+        )
         tickets = [
             Ticket(
                 id=f"TICKET-{i + 1:03d}",
@@ -79,15 +79,15 @@ class PMAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: list[Ticket], feedback: str) -> dict:
-        raw = self.system(
+        raw_tickets: list[dict] = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=json.dumps([t.model_dump() for t in artifact], indent=2),
                 feedback=feedback,
             ),
             "Revise the tickets based on the feedback.",
+            list[dict],
             max_tokens=16384,
         )
-        raw_tickets: list[dict] = _json_loads(_strip_fences(raw))
         tickets = [
             Ticket(
                 id=t.get("id", f"TICKET-{i + 1:03d}"),

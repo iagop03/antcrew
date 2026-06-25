@@ -99,6 +99,8 @@ class BackendDevAgent(BaseAgent):
     name = "backend_dev"
     role_description = "Implements open tickets as code artifacts."
     conversational = True
+    consumes: list[str] = ["tickets", "metadata", "review", "code_artifacts"]
+    produces: list[str] = ["code_artifacts", "tickets"]
 
     def _fix_flagged_files(self, state: TeamState) -> dict | None:
         """Fix-mode: re-generate only files with critical/error reviewer findings."""
@@ -235,14 +237,14 @@ class BackendDevAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact: list[CodeArtifact], feedback: str) -> dict:
-        raw = self.system(
+        raw_artifacts: list[dict] = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=json.dumps([a.model_dump() for a in artifact], indent=2),
                 feedback=feedback,
             ),
             "Revise the code based on the feedback.",
+            list[dict],
         )
-        raw_artifacts: list[dict] = _json_loads(_strip_fences(raw))
         updated = [
             CodeArtifact(
                 **{k: v for k, v in a.items() if k in CodeArtifact.model_fields}

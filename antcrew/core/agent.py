@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import json as _json
+import logging
 import re
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+from pydantic import ValidationError
+
+log = logging.getLogger(__name__)
 
 from antcrew.core.state import TeamState
+from antcrew.core.validation import _validate_schema
 from antcrew.models.base import BaseLLM
 
 if TYPE_CHECKING:
@@ -159,6 +165,41 @@ class BaseAgent(ABC):
         self.llm.current_agent = self.name
         return self.llm.system(system_prompt, user, **kwargs)
 
+    def system_parsed(
+        self,
+        system_prompt: str,
+        user: str,
+        schema: Any,
+        *,
+        max_retries: int = 0,
+        **kwargs,
+    ) -> Any:
+        """Call LLM, parse JSON, validate against schema.
+
+        On parse or validation failure: logs a warning with raw output and re-raises.
+        max_retries is reserved for Commit 2b (retry-with-hint) — currently ignored.
+        **kwargs are forwarded to self.system() (e.g. max_tokens).
+        """
+        raw = self.system(system_prompt, user, **kwargs)
+        try:
+            return _validate_schema(schema, _json_loads(_extract_json(raw)))
+        except (ValidationError, ValueError) as exc:
+            schema_name = getattr(schema, "__name__", str(schema))
+            log.warning(
+                "parse_failure agent=%s schema=%s error=%s raw=%.300s",
+                self.name,
+                schema_name,
+                exc,
+                raw,
+            )
+            self._tracelog(
+                "parse_failure",
+                schema=schema_name,
+                error=str(exc),
+                raw_preview=raw[:200],
+            )
+            raise
+
     def _search_repo(self, query: str, *, n: int = 5) -> str:
         """Search the repository index for relevant existing code.
 
@@ -185,6 +226,10 @@ class BaseAgent(ABC):
             for r in results
         ]
         return "\n\nRelevant context from previous runs:\n" + "\n".join(lines) + "\n"
+
+    def _tracelog(self, event: str, **kwargs) -> None:
+        """No-op stub. Replaced by TraceLog PR (roadmap #5)."""
+        log.debug("tracelog:%s %s", event, kwargs)
 
     def refine(self, state: TeamState, artifact, feedback: str) -> dict:
         """

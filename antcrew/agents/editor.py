@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+from antcrew.core.agent import BaseAgent
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\
@@ -42,6 +42,8 @@ class EditorAgent(BaseAgent):
     name = "editor"
     role_description = "Refines a content draft for clarity, flow, and polish."
     conversational = True
+    consumes: list[str] = ["content_piece"]
+    produces: list[str] = ["content_piece"]
 
     def run(self, state: TeamState) -> dict:
         piece = state.get("content_piece")
@@ -50,8 +52,7 @@ class EditorAgent(BaseAgent):
                 "errors": ["EditorAgent: no content_piece body to edit"],
                 "current_agent": self.name,
             }
-        raw = self.system(_SYSTEM, f"Draft content:\n{piece.model_dump_json(indent=2)}")
-        data: dict = _json_loads(_strip_fences(raw))
+        data: dict = self.system_parsed(_SYSTEM, f"Draft content:\n{piece.model_dump_json(indent=2)}", dict)
         updated = piece.model_copy(
             update={
                 "body": data.get("body", piece.body),
@@ -74,14 +75,14 @@ class EditorAgent(BaseAgent):
         }
 
     def refine(self, state: TeamState, artifact, feedback: str) -> dict:
-        raw = self.system(
+        data: dict = self.system_parsed(
             _REFINE_SYSTEM.format(
                 artifact_json=artifact.model_dump_json(indent=2),
                 feedback=feedback,
             ),
             "Apply the additional feedback as another editing pass.",
+            dict,
         )
-        data: dict = _json_loads(_strip_fences(raw))
         updated = artifact.model_copy(update={
             "body": data.get("body", artifact.body),
             "word_count": data.get("word_count", artifact.word_count),
