@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from antcrew.memory.store import BaseMemory
     from antcrew.memory.repo_index import RepoIndex as _RepoIndexT
     from antcrew.sandbox.runner import SandboxRunner
+    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 log = logging.getLogger(__name__)
 
@@ -76,11 +77,13 @@ class DevTeam(InteractiveMixin):
         memory: Optional["BaseMemory"] = None,
         repo_path: Optional[str] = None,
         runner: "Optional[SandboxRunner]" = None,
+        checkpointer: "Optional[BaseCheckpointSaver]" = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
         self.memory = memory
         self._runner = runner
+        self._checkpointer = checkpointer
 
         defaults: dict[str, BaseAgent] = {
             "business_analyst": BusinessAnalystAgent(self.llm),
@@ -143,7 +146,7 @@ class DevTeam(InteractiveMixin):
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the full pipeline without human interaction."""
-        app = self._supervisor.build(self._agents)
+        app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
         state = app.invoke(self._initial_state(request), config=config)
         if self.memory:

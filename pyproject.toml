@@ -40,7 +40,7 @@ Repository = "https://github.com/iagop03/antcrew"
 
 [project.optional-dependencies]
 cli       = []  # typer + rich already in core deps — alias for pip install antcrew[cli]
-sqlite    = ["aiosqlite>=0.19"]  # SqliteSaver checkpointer (v0.2.1)
+sqlite    = ["aiosqlite>=0.19", "langgraph-checkpoint-sqlite>=2.0"]  # SqliteSaver checkpointer
 telegram  = ["python-telegram-bot>=20.0"]
 gemini    = []  # GeminiModel uses httpx (already a core dep) — no extra packages needed
 openai    = ["openai>=1.30"]
@@ -52,7 +52,7 @@ dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0"]
 all       = ["python-telegram-bot>=20.0", "openai>=1.30",
              "slack-sdk>=3.19", "slack-bolt>=1.18",
              "fastapi>=0.111", "uvicorn[standard]>=0.30", "aiofiles>=23.0",
-             "chromadb>=0.5", "aiosqlite>=0.19"]
+             "chromadb>=0.5", "aiosqlite>=0.19", "langgraph-checkpoint-sqlite>=2.0"]
 
 [project.scripts]
 antcrew = "antcrew.cli:app"

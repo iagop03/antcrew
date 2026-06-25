@@ -208,6 +208,10 @@ antcrew run "Fix refresh token bug"   --project auth.json  # continues from run 
 # Persistent LLM cache — avoids repeated API calls
 antcrew run "Build JWT auth" --team dev --cache ~/.antcrew/cache.db
 
+# Persistent thread state — resume from where you left off (pip install antcrew[sqlite])
+antcrew run "Build JWT auth" --team dev --thread sprint-1 --checkpointer ~/.antcrew/threads.db
+antcrew run "Add OAuth"      --team dev --thread sprint-1 --checkpointer ~/.antcrew/threads.db
+
 # Combine both — full iterative workflow
 antcrew run "Build JWT auth" --team dev --project auth.json --cache ~/.antcrew/cache.db
 ```

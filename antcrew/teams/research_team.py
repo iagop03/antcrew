@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from antcrew.memory.store import BaseMemory
+    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 log = logging.getLogger(__name__)
 
@@ -56,9 +57,11 @@ class ResearchTeam(InteractiveMixin):
         agents: Optional[dict] = None,
         supervisor: Optional[Supervisor] = None,
         memory: Optional["BaseMemory"] = None,
+        checkpointer: "Optional[BaseCheckpointSaver]" = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.memory = memory
+        self._checkpointer = checkpointer
 
         defaults = {
             "researcher": ResearcherAgent(self.llm),
@@ -92,7 +95,7 @@ class ResearchTeam(InteractiveMixin):
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the research pipeline without human interaction."""
-        app = self._supervisor.build(self._agents)
+        app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
         state = app.invoke(self._initial_state(request), config=config)
         if self.memory:

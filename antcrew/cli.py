@@ -309,6 +309,12 @@ def run(
         help="SQLite file for persistent LLM response cache. "
              "Avoids redundant API calls across runs.",
     ),
+    checkpointer_db: Optional[Path] = typer.Option(
+        None, "--checkpointer", "--db",
+        help="SQLite file for persistent thread state. "
+             "Runs with the same --thread resume from where they left off. "
+             "Requires: pip install antcrew[sqlite]",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -349,6 +355,21 @@ def run(
         if cache and _llm_ref is not None:
             from antcrew.models.cache import FileLLMCache
             _llm_ref.with_cache(FileLLMCache(cache))
+
+        # --checkpointer flag attaches SqliteSaver for persistent thread state
+        if checkpointer_db:
+            from antcrew.checkpointers import SqliteSaver as _SqliteSaver
+            if _SqliteSaver is None:
+                console.print(
+                    "[red]Error:[/] --checkpointer requires langgraph-checkpoint-sqlite.\n"
+                    "Install with: [bold]pip install antcrew[sqlite][/bold]"
+                )
+                raise typer.Exit(1)
+            import sqlite3 as _sqlite3
+            _conn = _sqlite3.connect(
+                str(checkpointer_db.expanduser()), check_same_thread=False
+            )
+            active_team._checkpointer = _SqliteSaver(_conn)
 
         # --project flag creates / resumes a Project (overrides config project:)
         if project:
