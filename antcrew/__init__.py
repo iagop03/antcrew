@@ -14,7 +14,9 @@ from antcrew.models.simulated import SimulatedLLM
 from antcrew.models.gemini_model import GeminiModel
 from antcrew.models.fallback import FallbackLLM
 from antcrew.models.cache import LLMCache, FileLLMCache
-from antcrew.sandbox import DockerRunner, LocalRunner, RunResult, SandboxRunner
+from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
+from antcrew.sandbox import RunResult as SandboxRunResult
+from antcrew.core.run_result import RunResult
 from antcrew.flow import load_flow, validate_flow, format_flow
 from antcrew.project import Project
 from antcrew.config import load_context, TeamContext, build_llm, build_runner
@@ -68,6 +70,7 @@ __all__ = [
     "LocalRunner",
     "DockerRunner",
     "RunResult",
+    "SandboxRunResult",
     # Flow
     "load_flow",
     "validate_flow",

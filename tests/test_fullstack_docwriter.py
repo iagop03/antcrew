@@ -10,6 +10,7 @@ from antcrew.core.artifacts import (
     CodeArtifact, DevOpsArtifact, DocumentationArtifact,
     PRD, Priority, Ticket, TicketStatus,
 )
+from antcrew.core.run_result import RunResult
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.fullstack_team import FullStackTeam
 
@@ -191,7 +192,7 @@ def test_fullstack_team_has_all_agents():
 def test_fullstack_team_run_returns_state():
     team = FullStackTeam(model=_llm())
     state = team.run("Build a task management app")
-    assert isinstance(state, dict)
+    assert isinstance(state, RunResult)
     assert state.get("prd") is not None
 
 

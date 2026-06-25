@@ -109,11 +109,11 @@ class Project:
         Returns the raw state dict from the latest run.
         """
         enriched = self._enrich(request)
-        state = self.team.run(enriched)
-        self._merge(state, request)
+        run_result = self.team.run(enriched)
+        self._merge(run_result, request)
         if self._path:
             self.save()
-        return state
+        return run_result.state if hasattr(run_result, "state") else run_result
 
     async def run_async(self, request: str) -> dict:
         """Async variant of :meth:`run`."""

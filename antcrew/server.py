@@ -195,8 +195,9 @@ def _execute_run(run_id: str, body: RunRequest) -> None:
         else:
             raise ValueError(f"Unknown team '{body.team}'.")
 
-        state = team.run(body.request, thread_id=thread_id)
-        encoded = _encode(state)
+        run_result = team.run(body.request, thread_id=thread_id)
+        raw_state = run_result.state if hasattr(run_result, "state") else run_result
+        encoded = _encode(raw_state)
         usage = llm.get_usage_summary()
 
         rec["state"] = encoded

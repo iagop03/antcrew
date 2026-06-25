@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 
+from antcrew.core.run_result import RunResult
 from antcrew.models.base import BaseLLM, Message
 from antcrew.models.cache import LLMCache
 from antcrew.models.fallback import FallbackLLM
@@ -229,7 +230,7 @@ async def test_run_async_returns_dict():
     from antcrew.teams.dev_team import DevTeam
     team = DevTeam(model=SimulatedLLM())
     state = await team.run_async("Build a login module")
-    assert isinstance(state, dict)
+    assert isinstance(state, RunResult)
 
 @pytest.mark.asyncio
 async def test_run_async_same_result_as_run():

@@ -299,7 +299,7 @@ def test_fullstack_team_with_runner():
 # ---------------------------------------------------------------------------
 
 def test_importable_from_antcrew():
-    from antcrew import LocalRunner as LR, RunResult as RR, SandboxRunner as SR
+    from antcrew import LocalRunner as LR, SandboxRunResult, SandboxRunner as SR
     assert LR is LocalRunner
-    assert RR is RunResult
+    assert SandboxRunResult is RunResult
     assert SR is SandboxRunner

@@ -240,7 +240,7 @@ def _print_usage(llm) -> None:
 # Streaming helper
 # ---------------------------------------------------------------------------
 
-def _run_with_stream(team, request: str, thread: str, stream: bool, llm=None) -> dict:
+def _run_with_stream(team, request: str, thread: str, stream: bool, llm=None):
     """Run the pipeline, optionally showing tokens live with Rich."""
     from rich.live import Live
     from rich.panel import Panel as _Panel
@@ -403,7 +403,8 @@ def run(
                 return obj.__dict__
             return str(obj)
 
-        console.print_json(json.dumps(state, default=_ser))
+        state_dict = state.state if hasattr(state, "state") else state
+        console.print_json(json.dumps(state_dict, default=_ser))
     else:
         _print_state(state, team)
 
@@ -417,6 +418,13 @@ def run(
             f"+{h.get('new_tickets', 0)} tickets  "
             f"+{h.get('new_code_files', 0)} files  "
             f"→ [cyan]{proj_path}[/][/dim]"
+        )
+
+    # RunResult metadata footer (thread_id / cost)
+    if hasattr(state, "thread_id"):
+        cost_str = f"  cost=[cyan]${state.cost_usd:.4f}[/cyan]" if state.cost_usd else ""
+        console.print(
+            f"[dim]thread=[cyan]{state.thread_id}[/cyan]{cost_str}[/dim]"
         )
 
     # Cache stats

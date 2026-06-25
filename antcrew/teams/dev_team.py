@@ -11,6 +11,7 @@ from antcrew.agents.backend_dev import BackendDevAgent
 from antcrew.core.artifacts import PRD, Ticket
 from antcrew.core.supervisor import Supervisor
 from antcrew.core.state import TeamState
+from antcrew.core.run_result import RunResult
 from antcrew.models.anthropic_model import AnthropicModel
 from antcrew.models.base import BaseLLM
 from antcrew.teams.base import InteractiveMixin
@@ -140,7 +141,7 @@ class DevTeam(InteractiveMixin):
     # Level 1 — automated run
     # ------------------------------------------------------------------
 
-    def run(self, request: str, *, thread_id: str = "default") -> TeamState:
+    def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the full pipeline without human interaction."""
         app = self._supervisor.build(self._agents)
         config = {"configurable": {"thread_id": thread_id}}
@@ -155,7 +156,12 @@ class DevTeam(InteractiveMixin):
                 )
             except Exception as exc:
                 log.warning("SandboxRunner failed: %s", exc)
-        return state
+        cost = 0.0
+        try:
+            cost = (self.llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
+        except Exception:
+            pass
+        return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
 
     # run_interactive() and _apply_edit() come from InteractiveMixin
 

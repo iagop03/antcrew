@@ -31,13 +31,16 @@ def _encode(obj: Any) -> Any:
     return str(obj)
 
 
-def save_state(state: dict, path: str | Path, *, indent: int = 2) -> None:
+def save_state(state, path: str | Path, *, indent: int = 2) -> None:
     """
-    Serialize a TeamState (Pydantic objects + plain Python) to a JSON file.
+    Serialize a TeamState or RunResult to a JSON file.
 
     All Pydantic models are converted via ``model_dump()``.
     Unknown types fall back to ``str()``.
     """
+    raw = getattr(state, "state", None)
+    if isinstance(raw, dict):
+        state = raw
     dest = Path(path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(

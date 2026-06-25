@@ -6,6 +6,7 @@ from typing import Optional
 from antcrew.agents.idea import IdeaAgent
 from antcrew.agents.copywriter import CopywriterAgent
 from antcrew.agents.editor import EditorAgent
+from antcrew.core.run_result import RunResult
 from antcrew.core.supervisor import Supervisor
 from antcrew.core.state import TeamState
 from antcrew.models.anthropic_model import AnthropicModel
@@ -93,13 +94,18 @@ class ContentTeam(InteractiveMixin):
             "metadata": {},
         }
 
-    def run(self, request: str, *, thread_id: str = "default") -> TeamState:
+    def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the content pipeline without human interaction."""
         app = self._supervisor.build(self._agents)
         config = {"configurable": {"thread_id": thread_id}}
         state = app.invoke(self._initial_state(request), config=config)
         if self.memory:
             self.memory.store_run(state)
-        return state
+        cost = 0.0
+        try:
+            cost = (self.llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
+        except Exception:
+            pass
+        return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
 
     # run_interactive() and _apply_edit() come from InteractiveMixin
