@@ -218,6 +218,75 @@ def test_dev_team_uses_fallback_transparently():
 
 
 # ---------------------------------------------------------------------------
+# Cost guard (max_cost_usd)
+# ---------------------------------------------------------------------------
+
+def test_cost_limit_raises_cost_limit_exceeded():
+    from antcrew.core.exceptions import CostLimitExceeded
+    llm = FallbackLLM([SimulatedLLM()])
+    llm.max_cost_usd = 0.0  # limit of $0 — any spend triggers it
+    with pytest.raises(CostLimitExceeded):
+        llm.system("You are a PM. Output JSON tickets array.", "Build x")
+
+
+def test_cost_limit_not_raised_before_threshold():
+    from antcrew.core.exceptions import CostLimitExceeded
+    llm = FallbackLLM([SimulatedLLM()])
+    llm.max_cost_usd = 999.0
+    result = llm.system("You are a PM. Output JSON tickets array.", "Build x")
+    assert result  # no exception — limit not reached
+
+
+def test_cost_guard_uses_aggregate_across_models():
+    """Limit checks total spend even when split across primary + fallback."""
+    from antcrew.core.exceptions import CostLimitExceeded
+    llm = FallbackLLM([FailingLLM(), SimulatedLLM()])
+    llm.max_cost_usd = 0.0
+    with pytest.raises(CostLimitExceeded):
+        llm.system("You are a PM. Output JSON tickets array.", "Build x")
+
+
+# ---------------------------------------------------------------------------
+# Trace propagation
+# ---------------------------------------------------------------------------
+
+def test_trace_propagates_to_inner_models():
+    """Setting trace on FallbackLLM propagates to all inner models."""
+    from antcrew.trace import TraceLog
+    import tempfile, os
+    m1, m2 = SimulatedLLM(), SimulatedLLM()
+    llm = FallbackLLM([m1, m2])
+    with tempfile.TemporaryDirectory() as d:
+        tlog = TraceLog(os.path.join(d, "t.db"))
+        llm.trace = tlog
+        assert m1.trace is tlog
+        assert m2.trace is tlog
+        tlog.close()
+
+
+def test_trace_run_id_propagates_to_inner_models():
+    m1, m2 = SimulatedLLM(), SimulatedLLM()
+    llm = FallbackLLM([m1, m2])
+    llm._trace_run_id = "run-abc"
+    assert m1._trace_run_id == "run-abc"
+    assert m2._trace_run_id == "run-abc"
+
+
+def test_trace_none_clears_on_all_models():
+    from antcrew.trace import TraceLog
+    import tempfile, os
+    m1, m2 = SimulatedLLM(), SimulatedLLM()
+    llm = FallbackLLM([m1, m2])
+    with tempfile.TemporaryDirectory() as d:
+        tlog = TraceLog(os.path.join(d, "t.db"))
+        llm.trace = tlog
+        llm.trace = None
+        assert m1.trace is None
+        assert m2.trace is None
+        tlog.close()
+
+
+# ---------------------------------------------------------------------------
 # Top-level import
 # ---------------------------------------------------------------------------
 

@@ -59,8 +59,9 @@ class FallbackLLM(BaseLLM):
 
     def __setattr__(self, name: str, value) -> None:
         object.__setattr__(self, name, value)
-        # Propagate streaming / agent-tag / cache attributes to every model in chain
-        if name in ("current_agent", "on_token", "cache"):
+        # Propagate runtime attributes to every model in the chain so that
+        # per-model BaseLLM.system() hooks (streaming, tracing) work correctly.
+        if name in ("current_agent", "on_token", "cache", "trace", "_trace_run_id"):
             for m in getattr(self, "_models", []):
                 object.__setattr__(m, name, value)
 
@@ -73,7 +74,15 @@ class FallbackLLM(BaseLLM):
 
         Overrides BaseLLM.system() so that each model's own retry logic
         (built into BaseLLM._with_retry) runs before the fallback triggers.
+        Cost guard uses the aggregate get_usage_summary() so the limit
+        applies to total spend across all models in the chain.
         """
+        if self.max_cost_usd is not None:
+            spent = self.get_usage_summary()["total_cost_usd"] - self._cost_limit_offset
+            if spent >= self.max_cost_usd:
+                from antcrew.core.exceptions import CostLimitExceeded
+                raise CostLimitExceeded(spent, self.max_cost_usd)
+
         last_exc: BaseException = RuntimeError("No models in chain.")
         models = self._models  # type: ignore[attr-defined]
 
