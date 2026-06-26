@@ -2002,5 +2002,145 @@ def _print_trace_detail(run: dict, calls: list[dict]) -> None:
     console.print(tbl)
 
 
+# ---------------------------------------------------------------------------
+# antcrew replay — resume a pipeline from its last SqliteSaver checkpoint
+# ---------------------------------------------------------------------------
+
+@app.command(name="replay")
+def replay_cmd(
+    thread_id: str = typer.Argument(..., help="Thread ID to resume"),
+    checkpointer_db: Path = typer.Option(
+        ..., "--checkpointer", "--db",
+        help="SqliteSaver SQLite file used in the original run.",
+    ),
+    trace_db: Optional[Path] = typer.Option(
+        None, "--trace",
+        help="TraceLog SQLite file (created with --trace). "
+             "Auto-looks up the original request and team so you don't need to re-specify them.",
+    ),
+    team: Optional[str] = typer.Option(
+        None, "--team", "-t", help=f"Team to use: {_TEAM_CHOICES} (auto-detected from --trace)"
+    ),
+    model: str = typer.Option("claude", "--model", "-m", help=_MODEL_HELP),
+    request: Optional[str] = typer.Option(
+        None, "--request", "-r",
+        help="Request to pass to the pipeline (auto-detected from --trace if omitted).",
+    ),
+    stream: bool = typer.Option(True, "--stream/--no-stream"),
+    output_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Resume a pipeline run from its last SqliteSaver checkpoint.
+
+    \b
+    With TraceLog (zero-friction — request and team auto-detected):
+        antcrew replay sprint-1 \\
+          --checkpointer ~/.antcrew/threads.db \\
+          --trace ~/.antcrew/trace.db
+
+    \b
+    Without TraceLog (explicit):
+        antcrew replay sprint-1 \\
+          --checkpointer ~/.antcrew/threads.db \\
+          --team dev --request "Build JWT auth"
+
+    \b
+    Typical workflow — run fails at agent 3, resume after fix:
+        antcrew run "Build JWT auth" --thread sprint-1 \\
+          --checkpointer ~/.antcrew/threads.db --trace ~/.antcrew/trace.db
+        # ... fix cost limit or env issue ...
+        antcrew replay sprint-1 \\
+          --checkpointer ~/.antcrew/threads.db --trace ~/.antcrew/trace.db
+    """
+    from antcrew.checkpointers import SqliteSaver as _SqliteSaver
+    if _SqliteSaver is None:
+        console.print(
+            "[red]Error:[/] --checkpointer requires langgraph-checkpoint-sqlite.\n"
+            "Install with: [bold]pip install antcrew[sqlite][/bold]"
+        )
+        raise typer.Exit(1)
+
+    _request = request
+    _team = team
+
+    # Auto-detect request + team from TraceLog if --trace is provided
+    if trace_db:
+        if not trace_db.exists():
+            console.print(f"[red]TraceLog not found:[/] {trace_db}")
+            raise typer.Exit(1)
+        from antcrew.trace import TraceLog as _TL
+        _tlog = _TL(trace_db)
+        _prior = _tlog.get_run_by_thread(thread_id)
+        _tlog.close()
+        if _prior:
+            _request = _request or _prior["request"]
+            if _team is None:
+                _team = _prior["team"].lower().replace("team", "")
+        else:
+            console.print(
+                f"[yellow]Warning:[/] thread '{thread_id}' not found in TraceLog — "
+                "falling back to explicit --request / --team."
+            )
+
+    if not _request:
+        console.print(
+            "[red]Error:[/] Cannot determine request. "
+            "Provide --request or --trace pointing to a TraceLog that contains this thread."
+        )
+        raise typer.Exit(1)
+    if not _team:
+        console.print(
+            "[red]Error:[/] Cannot determine team. "
+            "Provide --team or --trace pointing to a TraceLog that contains this thread."
+        )
+        raise typer.Exit(1)
+
+    # Build team + attach SqliteSaver
+    from antcrew.config import build_llm as _bllm
+    _llm = _bllm(model)
+    _active_team = _build_team(_team, model, integrations=[], llm=_llm)
+
+    import sqlite3 as _sqlite3
+    _conn = _sqlite3.connect(str(checkpointer_db.expanduser()), check_same_thread=False)
+    _active_team._checkpointer = _SqliteSaver(_conn)
+
+    console.print(
+        f"\n[bold green]AntCrew[/] replay  —  "
+        f"thread=[cyan]{thread_id}[/]  team=[cyan]{_team}[/]  model=[cyan]{model}[/]\n"
+    )
+
+    try:
+        state = _run_with_stream(_active_team, _request, thread_id, stream, llm=_llm)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted.[/]")
+        raise typer.Exit(1)
+    except Exception as exc:
+        from antcrew.core.exceptions import CostLimitExceeded as _CLE
+        if isinstance(exc, _CLE):
+            console.print(
+                f"\n[yellow bold]Cost limit reached:[/] ${exc.cost_usd:.4f} spent "
+                f"(limit: ${exc.limit_usd:.4f}). Pipeline stopped."
+            )
+        else:
+            console.print(f"\n[red bold]Error:[/] {exc}")
+        raise typer.Exit(1)
+
+    console.print()
+    if output_json:
+        def _ser(obj):
+            if hasattr(obj, "model_dump"):
+                return obj.model_dump()
+            if hasattr(obj, "__dict__"):
+                return obj.__dict__
+            return str(obj)
+        state_dict = state.state if hasattr(state, "state") else state
+        console.print_json(__import__("json").dumps(state_dict, default=_ser))
+    else:
+        _print_state(state, _team)
+
+    if hasattr(state, "thread_id"):
+        cost_str = f"  cost=[cyan]${state.cost_usd:.4f}[/cyan]" if state.cost_usd else ""
+        console.print(f"[dim]thread=[cyan]{state.thread_id}[/cyan]{cost_str}[/dim]")
+
+
 if __name__ == "__main__":
     app()

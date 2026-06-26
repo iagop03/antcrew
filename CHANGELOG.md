@@ -21,6 +21,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `antcrew run --trace <file.db>` CLI flag. Activates TraceLog for a single run.
 - `antcrew trace <file.db>` CLI command — lists recent runs or shows per-agent call detail for a specific run (`--run <id>` or `--thread <id>`).
 - `BaseLLM.system()` refactored to use a single `result` variable (no multiple early-returns); timing is injected via `time.monotonic()` only when `trace` is attached.
+- `antcrew replay <thread_id> --checkpointer <db>` CLI command — resumes a pipeline from its last SqliteSaver checkpoint. With `--trace <db>`, auto-detects the original request and team from TraceLog so no re-specification needed.
 
 ### Requires
 - `pip install antcrew[sqlite]` for `SqliteSaver` support.

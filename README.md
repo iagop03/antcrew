@@ -137,6 +137,8 @@ antcrew setup        Interactive wizard — generate agentteam.yaml from scratch
 antcrew run          Run a pipeline autonomously
 antcrew interactive  Run with human-in-the-loop review after every agent
 antcrew describe     Show pipeline agents, data contracts, and coherence check (no API key)
+antcrew replay       Resume a pipeline from its last SqliteSaver checkpoint
+antcrew trace        Inspect a TraceLog SQLite file — list runs or show per-agent detail
 antcrew project      Manage persistent project sessions
 antcrew eval         Run evaluation cases and score results
 antcrew serve        Start the REST API + web dashboard
@@ -211,6 +213,21 @@ antcrew run "Build JWT auth" --team dev --cache ~/.antcrew/cache.db
 # Persistent thread state — resume from where you left off (pip install antcrew[sqlite])
 antcrew run "Build JWT auth" --team dev --thread sprint-1 --checkpointer ~/.antcrew/threads.db
 antcrew run "Add OAuth"      --team dev --thread sprint-1 --checkpointer ~/.antcrew/threads.db
+
+# Full observability stack — tracing + cost guard + checkpointing
+antcrew run "Build JWT auth" --team dev --thread sprint-1 \
+  --checkpointer ~/.antcrew/threads.db \
+  --trace ~/.antcrew/trace.db \
+  --max-cost 2.00
+
+# If the run was interrupted, replay from last checkpoint (zero re-specification)
+antcrew replay sprint-1 \
+  --checkpointer ~/.antcrew/threads.db \
+  --trace ~/.antcrew/trace.db
+
+# Inspect what ran
+antcrew trace ~/.antcrew/trace.db
+antcrew trace ~/.antcrew/trace.db --thread sprint-1
 
 # Combine both — full iterative workflow
 antcrew run "Build JWT auth" --team dev --project auth.json --cache ~/.antcrew/cache.db
