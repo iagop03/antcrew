@@ -64,6 +64,7 @@ class ContentTeam(InteractiveMixin):
         checkpointer: "Optional[BaseCheckpointSaver]" = None,
         max_cost_usd: Optional[float] = None,
         trace_log: "Optional[TraceLog]" = None,
+        agent_models: Optional[dict[str, BaseLLM]] = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.memory = memory
@@ -72,10 +73,11 @@ class ContentTeam(InteractiveMixin):
         if max_cost_usd is not None:
             self.llm.max_cost_usd = max_cost_usd
 
+        _am = agent_models or {}
         defaults = {
-            "idea":       IdeaAgent(self.llm),
-            "copywriter": CopywriterAgent(self.llm),
-            "editor":     EditorAgent(self.llm),
+            "idea":       IdeaAgent(_am.get("idea", self.llm)),
+            "copywriter": CopywriterAgent(_am.get("copywriter", self.llm)),
+            "editor":     EditorAgent(_am.get("editor", self.llm)),
         }
         if agents:
             defaults.update(agents)
@@ -105,6 +107,7 @@ class ContentTeam(InteractiveMixin):
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the content pipeline without human interaction."""
+        _llms = self._unique_llms()
         if self.llm.max_cost_usd is not None:
             self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]
         _run_id: Optional[str] = None
@@ -112,19 +115,19 @@ class ContentTeam(InteractiveMixin):
             _run_id = self._trace_log.begin_run(
                 thread_id=thread_id, request=request, team=type(self).__name__,
             )
-            self.llm.trace = self._trace_log
-            self.llm._trace_run_id = _run_id
+            for _llm in _llms:
+                _llm.trace = self._trace_log
+                _llm._trace_run_id = _run_id
         try:
             app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
             config = {"configurable": {"thread_id": thread_id}}
             state = app.invoke(self._initial_state(request), config=config)
             if self.memory:
                 self.memory.store_run(state)
-            cost = 0.0
-            try:
-                cost = (self.llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
-            except Exception:
-                pass
+            cost = sum(
+                (llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
+                for llm in _llms
+            )
             if self._trace_log is not None and _run_id is not None:
                 self._trace_log.end_run(_run_id, cost_usd=cost)
             return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
@@ -134,7 +137,8 @@ class ContentTeam(InteractiveMixin):
             raise
         finally:
             if self._trace_log is not None:
-                self.llm.trace = None
-                self.llm._trace_run_id = None
+                for _llm in _llms:
+                    _llm.trace = None
+                    _llm._trace_run_id = None
 
     # run_interactive() and _apply_edit() come from InteractiveMixin

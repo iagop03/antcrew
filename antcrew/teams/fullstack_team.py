@@ -99,6 +99,7 @@ class FullStackTeam(InteractiveMixin):
         checkpointer: "Optional[BaseCheckpointSaver]" = None,
         max_cost_usd: Optional[float] = None,
         trace_log: "Optional[TraceLog]" = None,
+        agent_models: Optional[dict[str, BaseLLM]] = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
@@ -111,17 +112,18 @@ class FullStackTeam(InteractiveMixin):
         self.project_dir: Optional[str] = project_dir
         self.project_dirs: Optional[dict] = project_dirs
 
+        _am = agent_models or {}
         defaults = {
-            "codebase_scanner": CodebaseScannerAgent(self.llm),
-            "business_analyst": BusinessAnalystAgent(self.llm),
-            "pm":               PMAgent(self.llm),
-            "sprint_planner":   SprintPlannerAgent(self.llm, sprint_size=sprint_size),
-            "backend_dev":      BackendDevAgent(self.llm),
-            "frontend_dev":     FrontendDevAgent(self.llm),
-            "qa":               QAAgent(self.llm),
-            "reviewer":         ReviewerAgent(self.llm),
-            "devops":           DevOpsAgent(self.llm),
-            "doc_writer":       DocWriterAgent(self.llm),
+            "codebase_scanner": CodebaseScannerAgent(_am.get("codebase_scanner", self.llm)),
+            "business_analyst": BusinessAnalystAgent(_am.get("business_analyst", self.llm)),
+            "pm":               PMAgent(_am.get("pm", self.llm)),
+            "sprint_planner":   SprintPlannerAgent(_am.get("sprint_planner", self.llm), sprint_size=sprint_size),
+            "backend_dev":      BackendDevAgent(_am.get("backend_dev", self.llm)),
+            "frontend_dev":     FrontendDevAgent(_am.get("frontend_dev", self.llm)),
+            "qa":               QAAgent(_am.get("qa", self.llm)),
+            "reviewer":         ReviewerAgent(_am.get("reviewer", self.llm)),
+            "devops":           DevOpsAgent(_am.get("devops", self.llm)),
+            "doc_writer":       DocWriterAgent(_am.get("doc_writer", self.llm)),
         }
         if agents:
             defaults.update(agents)
@@ -167,6 +169,7 @@ class FullStackTeam(InteractiveMixin):
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the full-stack pipeline without human interaction."""
+        _llms = self._unique_llms()
         if self.llm.max_cost_usd is not None:
             self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]
         _run_id: Optional[str] = None
@@ -174,8 +177,9 @@ class FullStackTeam(InteractiveMixin):
             _run_id = self._trace_log.begin_run(
                 thread_id=thread_id, request=request, team=type(self).__name__,
             )
-            self.llm.trace = self._trace_log
-            self.llm._trace_run_id = _run_id
+            for _llm in _llms:
+                _llm.trace = self._trace_log
+                _llm._trace_run_id = _run_id
         try:
             app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
             config = {"configurable": {"thread_id": thread_id}}
@@ -190,11 +194,10 @@ class FullStackTeam(InteractiveMixin):
                     )
                 except Exception as exc:
                     log.warning("SandboxRunner failed: %s", exc)
-            cost = 0.0
-            try:
-                cost = (self.llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
-            except Exception:
-                pass
+            cost = sum(
+                (llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
+                for llm in _llms
+            )
             if self._trace_log is not None and _run_id is not None:
                 self._trace_log.end_run(_run_id, cost_usd=cost)
             return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
@@ -204,7 +207,8 @@ class FullStackTeam(InteractiveMixin):
             raise
         finally:
             if self._trace_log is not None:
-                self.llm.trace = None
-                self.llm._trace_run_id = None
+                for _llm in _llms:
+                    _llm.trace = None
+                    _llm._trace_run_id = None
 
     # run_interactive() and _apply_edit() come from InteractiveMixin

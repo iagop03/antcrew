@@ -181,6 +181,15 @@ class InteractiveMixin:
 
     _agents: dict[str, "BaseAgent"]
 
+    def _unique_llms(self) -> "list":
+        """Return one instance per distinct LLM object used across all agents."""
+        seen: dict[int, object] = {}
+        for agent in self._agents.values():
+            llm = getattr(agent, "llm", None)
+            if llm is not None and id(llm) not in seen:
+                seen[id(llm)] = llm
+        return list(seen.values())
+
     async def run_async(self, request: str, *, thread_id: str = "default") -> dict:
         """Non-blocking version of run() — safe to await from FastAPI or any async context."""
         loop = asyncio.get_running_loop()
@@ -217,28 +226,27 @@ class InteractiveMixin:
         app = self._supervisor.build(self._agents, interrupt_before=interrupt_nodes)
         config = {"configurable": {"thread_id": thread_id}}
 
-        llm = next(
-            (getattr(a, "llm", None) for a in self._agents.values()),
-            None,
-        )
+        _llms = self._unique_llms()
         progress = _ProgressPanel()
         _live_ref: list = [None]
 
-        def _on_token(token: str) -> None:
-            agent_name = getattr(llm, "current_agent", "") if llm else ""
-            progress.update(token, agent_name)
-            if _live_ref[0] is not None:
-                _live_ref[0].update(progress.render())
+        def _make_on_token(llm_ref):
+            def _on_token(token: str) -> None:
+                agent_name = getattr(llm_ref, "current_agent", "")
+                progress.update(token, agent_name)
+                if _live_ref[0] is not None:
+                    _live_ref[0].update(progress.render())
+            return _on_token
 
         def _invoke(state_or_none):
-            if llm is not None:
-                llm.on_token = _on_token
+            for _llm in _llms:
+                _llm.on_token = _make_on_token(_llm)
             with Live(progress.render(), refresh_per_second=4, console=_rc) as live:
                 _live_ref[0] = live
                 app.invoke(state_or_none, config=config)
                 _live_ref[0] = None
-            if llm is not None:
-                llm.on_token = None
+            for _llm in _llms:
+                _llm.on_token = None
             progress.flush_current()
 
         _rc.print(f"\n[bold green]AntCrew[/bold green] — [dim]{request[:80]}[/dim]\n")
