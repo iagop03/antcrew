@@ -2325,6 +2325,192 @@ def publish_cmd(
             console.print("[yellow]Nothing to publish to Confluence[/] — no PRD, research, or doc artifacts found.")
 
 
+@app.command(name="benchmark")
+def benchmark_cmd(
+    cases_file: Path = typer.Argument(
+        ...,
+        help=(
+            "JSON file with a list of benchmark cases.  Each entry: "
+            '{"request": "...", "team": "dev", "label": "optional"}.'
+        ),
+    ),
+    model_name: str = typer.Option("claude-haiku-4-5-20251001", "--model", "-m", help="Model ID."),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Write results JSON to this file."
+    ),
+    parallel: int = typer.Option(1, "--parallel", "-p", help="Number of cases to run in parallel."),
+    timeout: float = typer.Option(300.0, "--timeout", help="Per-case timeout in seconds (0 = no limit)."),
+) -> None:
+    """Run a batch of pipeline requests and compare metrics.
+
+    \b
+    benchmark.json:
+    [
+      {"request": "Build a login module",   "team": "dev",     "label": "Login"},
+      {"request": "Write about AI safety",  "team": "research","label": "Research"}
+    ]
+
+    \b
+    antcrew benchmark benchmark.json
+    antcrew benchmark benchmark.json --parallel 3 --output results.json
+    """
+    import concurrent.futures
+    import time as _time
+    from antcrew.config import build_llm
+
+    if not cases_file.exists():
+        console.print(f"[red]File not found:[/] {cases_file}")
+        raise typer.Exit(1)
+
+    try:
+        raw = json.loads(cases_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        console.print(f"[red]Failed to parse cases file:[/] {exc}")
+        raise typer.Exit(1)
+
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list) or not raw:
+        console.print("[red]Cases file must contain a JSON array of case objects.[/]")
+        raise typer.Exit(1)
+
+    def _run_case(idx: int, case: dict) -> dict:
+        label = case.get("label") or f"case-{idx + 1}"
+        req   = case.get("request", "")
+        t     = (case.get("team") or "dev").lower()
+
+        if not req:
+            return {"label": label, "status": "skipped", "reason": "empty request",
+                    "cost_usd": 0.0, "elapsed_s": 0.0, "artifacts": {}}
+
+        llm = build_llm(case.get("model") or model_name)
+
+        def _mk_team():
+            if t == "dev":
+                from antcrew.teams.dev_team import DevTeam
+                return DevTeam(model=llm)
+            if t in ("fullstack", "full"):
+                from antcrew.teams.fullstack_team import FullStackTeam
+                return FullStackTeam(model=llm)
+            if t == "research":
+                from antcrew.teams.research_team import ResearchTeam
+                return ResearchTeam(model=llm)
+            if t == "content":
+                from antcrew.teams.content_team import ContentTeam
+                return ContentTeam(model=llm)
+            raise ValueError(f"Unknown team: {t!r}")
+
+        start = _time.monotonic()
+        try:
+            team_inst = _mk_team()
+            result = team_inst.run(req, thread_id=f"bench-{idx}")
+            elapsed = _time.monotonic() - start
+            state = result.state
+            artifacts: dict[str, int] = {}
+            for key in ("tickets", "code_artifacts", "test_artifacts",
+                        "devops_artifacts", "doc_artifacts"):
+                v = state.get(key)
+                if isinstance(v, list):
+                    artifacts[key] = len(v)
+            if state.get("prd"):
+                artifacts["prd"] = 1
+            if state.get("research_document"):
+                artifacts["research_document"] = 1
+            if state.get("content_piece"):
+                artifacts["content_piece"] = 1
+            return {
+                "label": label,
+                "request": req,
+                "team": t,
+                "status": "ok",
+                "cost_usd": result.cost_usd,
+                "elapsed_s": round(elapsed, 2),
+                "artifacts": artifacts,
+            }
+        except Exception as exc:
+            elapsed = _time.monotonic() - start
+            return {
+                "label": label,
+                "request": req,
+                "team": t,
+                "status": "error",
+                "reason": str(exc),
+                "cost_usd": 0.0,
+                "elapsed_s": round(elapsed, 2),
+                "artifacts": {},
+            }
+
+    console.print(
+        f"\n[bold green]antcrew benchmark[/]  "
+        f"{len(raw)} case(s)  parallel={parallel}  model={model_name}\n"
+    )
+
+    results: list[dict] = [{}] * len(raw)
+    with console.status("Running benchmark…") as status:
+        if parallel <= 1:
+            for i, case in enumerate(raw):
+                status.update(f"Running {i + 1}/{len(raw)}…")
+                results[i] = _run_case(i, case)
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
+                futs = {pool.submit(_run_case, i, c): i for i, c in enumerate(raw)}
+                for fut in concurrent.futures.as_completed(futs):
+                    idx = futs[fut]
+                    results[idx] = fut.result()
+
+    # ── Results table ─────────────────────────────────────────────────────────
+    from rich.table import Table
+
+    tbl = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
+    tbl.add_column("#",         style="dim",   width=3)
+    tbl.add_column("Label",     min_width=14)
+    tbl.add_column("Team",      width=9)
+    tbl.add_column("Status",    width=7)
+    tbl.add_column("Elapsed",   width=8, justify="right")
+    tbl.add_column("Cost USD",  width=9, justify="right")
+    tbl.add_column("Artifacts", min_width=18)
+
+    total_cost = 0.0
+    total_time = 0.0
+    ok_count   = 0
+
+    for i, r in enumerate(results, 1):
+        status_str = r.get("status", "?")
+        status_col = (
+            "[green]ok[/green]"    if status_str == "ok"      else
+            "[yellow]skip[/yellow]" if status_str == "skipped" else
+            "[red]error[/red]"
+        )
+        arts = r.get("artifacts") or {}
+        arts_str = "  ".join(f"{k}:{v}" for k, v in arts.items()) or "[dim]—[/dim]"
+        cost = r.get("cost_usd") or 0.0
+        elapsed = r.get("elapsed_s") or 0.0
+        total_cost += cost
+        total_time += elapsed
+        if status_str == "ok":
+            ok_count += 1
+
+        tbl.add_row(
+            str(i),
+            r.get("label", ""),
+            r.get("team", ""),
+            status_col,
+            f"{elapsed:.1f}s",
+            f"${cost:.4f}",
+            arts_str,
+        )
+
+    console.print(tbl)
+    console.print(
+        f"\n[dim]Total: {ok_count}/{len(raw)} ok  "
+        f"time={total_time:.1f}s  cost=${total_cost:.4f}[/dim]\n"
+    )
+
+    if output:
+        output.write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
+        console.print(f"[dim]Results written → [cyan]{output}[/][/dim]\n")
+
+
 @app.command(name="watch")
 def watch_cmd(
     watch_path: Path = typer.Argument(..., help="File or directory to watch for changes."),
