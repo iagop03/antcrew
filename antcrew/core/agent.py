@@ -176,29 +176,45 @@ class BaseAgent(ABC):
     ) -> Any:
         """Call LLM, parse JSON, validate against schema.
 
-        On parse or validation failure: logs a warning with raw output and re-raises.
-        max_retries is reserved for Commit 2b (retry-with-hint) — currently ignored.
+        On parse or validation failure, retries up to *max_retries* times.
+        Each retry appends a hint to the user message containing the previous
+        error and the invalid response so the model can self-correct.
         **kwargs are forwarded to self.system() (e.g. max_tokens).
         """
+        schema_name = getattr(schema, "__name__", str(schema))
         raw = self.system(system_prompt, user, **kwargs)
-        try:
-            return _validate_schema(schema, _json_loads(_extract_json(raw)))
-        except (ValidationError, ValueError) as exc:
-            schema_name = getattr(schema, "__name__", str(schema))
-            log.warning(
-                "parse_failure agent=%s schema=%s error=%s raw=%.300s",
-                self.name,
-                schema_name,
-                exc,
-                raw,
-            )
-            self._tracelog(
-                "parse_failure",
-                schema=schema_name,
-                error=str(exc),
-                raw_preview=raw[:200],
-            )
-            raise
+        last_exc: Exception = ValueError("no attempts made")
+
+        for attempt in range(1 + max_retries):
+            if attempt > 0:
+                hint = (
+                    f"\n\nYour previous response was invalid.\n"
+                    f"Error: {last_exc}\n"
+                    f"Previous response:\n{raw[:500]}\n"
+                    "Respond ONLY with valid JSON — no prose, no code fences."
+                )
+                log.debug(
+                    "parse_retry agent=%s schema=%s attempt=%d/%d",
+                    self.name, schema_name, attempt, max_retries,
+                )
+                raw = self.system(system_prompt, user + hint, **kwargs)
+
+            try:
+                return _validate_schema(schema, _json_loads(_extract_json(raw)))
+            except (ValidationError, ValueError) as exc:
+                last_exc = exc
+
+        log.warning(
+            "parse_failure agent=%s schema=%s attempts=%d error=%s raw=%.300s",
+            self.name, schema_name, 1 + max_retries, last_exc, raw,
+        )
+        self._tracelog(
+            "parse_failure",
+            schema=schema_name,
+            error=str(last_exc),
+            raw_preview=raw[:200],
+        )
+        raise last_exc
 
     def _search_repo(self, query: str, *, n: int = 5) -> str:
         """Search the repository index for relevant existing code.
