@@ -159,6 +159,8 @@ class BaseAgent(ABC):
         tools: Optional[list["BaseTool"]] = None,
         max_tool_steps: int = 5,
         preset=None,
+        memory_n: int = 3,
+        memory_score_threshold: float = 0.0,
     ) -> None:
         from antcrew.presets import resolve_preset
         self.llm = llm
@@ -170,6 +172,8 @@ class BaseAgent(ABC):
         self.tools: list["BaseTool"] = tools or []
         self.max_tool_steps = max_tool_steps
         self.preset = resolve_preset(preset)
+        self.memory_n = memory_n
+        self.memory_score_threshold = memory_score_threshold
 
     @abstractmethod
     def run(self, state: TeamState) -> dict:
@@ -182,18 +186,40 @@ class BaseAgent(ABC):
         """Call LLM with system + user messages, tagging the LLM with this agent's name.
 
         Applies per-agent overrides (in order):
-        - preset: instruction prepended to the system prompt.
-        - system_prompt_suffix: text appended to the system prompt.
-        - max_tokens: overrides the LLM default when set.
+        1. preset:              instruction prepended to the system prompt.
+        2. memory:              relevant past context prepended to the user message.
+        3. system_prompt_suffix: text appended to the system prompt.
+        4. max_tokens:          overrides the LLM default when set.
         """
         if self.preset is not None:
             system_prompt = self.preset.apply(system_prompt)
+        user = self._inject_memory(user)
         if self.system_prompt_suffix:
             system_prompt = system_prompt + "\n\n" + self.system_prompt_suffix
         if self.max_tokens and "max_tokens" not in kwargs:
             kwargs["max_tokens"] = self.max_tokens
         self.llm.current_agent = self.name
         return self.llm.system(system_prompt, user, **kwargs)
+
+    def _inject_memory(self, user: str) -> str:
+        """Prepend relevant memory context to the user message, if memory is attached."""
+        if self.memory is None or self.memory.count() == 0:
+            return user
+        try:
+            results = self.memory.search(
+                user,
+                n=self.memory_n,
+            )
+        except Exception:
+            return user
+        relevant = [r for r in results if r.score >= self.memory_score_threshold]
+        if not relevant:
+            return user
+        context_lines = ["[Relevant context from memory]"]
+        for r in relevant:
+            context_lines.append(r.text.strip())
+        context_block = "\n".join(context_lines)
+        return f"{context_block}\n\n{user}"
 
     def system_with_tools(
         self,
