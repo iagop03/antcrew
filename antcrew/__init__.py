@@ -17,8 +17,10 @@ from antcrew.models.gemini_model import GeminiModel
 from antcrew.models.fallback import FallbackLLM
 try:
     from antcrew.models.openai_model import OpenAIModel
+    from antcrew.models.azure_openai_model import AzureOpenAIModel
 except ImportError:
-    OpenAIModel = None  # type: ignore[assignment,misc]
+    OpenAIModel = None       # type: ignore[assignment,misc]
+    AzureOpenAIModel = None  # type: ignore[assignment,misc]
 from antcrew.models.cache import LLMCache, FileLLMCache
 from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
 from antcrew.sandbox import RunResult as SandboxRunResult
@@ -76,6 +78,7 @@ __all__ = [
     "SimulatedLLM",
     "GeminiModel",
     "OpenAIModel",
+    "AzureOpenAIModel",
     "FallbackLLM",
     "LLMCache",
     "FileLLMCache",
