@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.5.0] — 2026-06-26
+
+### Added
+- **Agent tools** (`BaseTool`, `WebSearchTool`, `CodeExecutorTool`,
+  `ReadFileTool`) — callable capabilities injected into agents.  Any
+  `BaseAgent` accepts `tools=[...]` and `max_tool_steps=N`.  Calling
+  `agent.system_with_tools(system, user)` runs a ReAct loop: tool schemas
+  are injected into the system prompt; `<tool_call>` XML blocks in the
+  response are parsed and dispatched; results are fed back as conversation
+  history until the model gives a plain-text final answer or step limit is
+  reached.  All types exported from `antcrew` top-level.
+  - `WebSearchTool` — DuckDuckGo Instant Answer API (no key required).
+  - `CodeExecutorTool` — isolated Python subprocess with 15 s timeout.
+  - `ReadFileTool` — reads local files up to a configurable size cap.
+- **`Pipeline`** — chains multiple teams sequentially.
+  `Pipeline([ResearchTeam(llm), DevTeam(llm)]).run(request)` carries
+  artifact keys (`prd`, `tickets`, `code_artifacts`, `research_document`,
+  etc.) from each team's output into the next team's initial state.
+  `RunResult.cost_usd` aggregates cost across all teams.  The set of
+  forwarded keys is configurable via `carry_keys`.  Exported from
+  `antcrew` top-level.
+- **`antcrew watch <path>`** — file-watcher dev loop.  Watches a file or
+  directory; re-runs the pipeline on every save and shows a unified
+  artifact diff between runs.  `--debounce N` (default 2 s),
+  `--no-diff`.  Requires `pip install antcrew[watch]` (`watchdog>=4.0`).
+  New `watch` optional dependency added to `pyproject.toml`.
+- **`antcrew benchmark <cases.json>`** — batch pipeline evaluation.
+  Runs a list of `{request, team, label}` cases, collects elapsed time,
+  cost, and artifact counts per case, and prints a Rich table.  Flags:
+  `--parallel N`, `--output results.json`, `--model`, `--timeout`.
+  Empty requests are skipped; unknown teams are recorded as errors without
+  crashing the batch.
+
+---
+
 ## [0.4.0] — 2026-06-26
 
 ### Added
