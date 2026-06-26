@@ -21,23 +21,101 @@ Usage — conditional (condition key looked up in state["metadata"]):
         ("qa", "backend_dev", when="has_critical_bugs"),
     ])
 
-Usage — parallel fan-out / fan-in:
+Usage — parallel agents (concurrent execution with auto-merged state):
+    from antcrew.core.supervisor import Supervisor, parallel
+
     supervisor = Supervisor(flow=[
-        ("pm", "backend_dev"),
-        ("pm", "frontend_dev"),   # both start after pm
-        ("backend_dev", "qa"),
-        ("frontend_dev", "qa"),   # qa starts after BOTH finish
+        ("pm",            "coding"),
+        ("coding",        "qa"),
     ])
+    app = supervisor.build({
+        "pm":     PMAgent(llm),
+        "coding": parallel(BackendDevAgent(llm), FrontendDevAgent(llm)),
+        "qa":     QAAgent(llm),
+    })
+
+    List outputs are concatenated; dict outputs are merged; scalar outputs
+    use last-write.  Agents run concurrently via ThreadPoolExecutor.
 """
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import TYPE_CHECKING
+
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 
 from antcrew.core.agent import BaseAgent
 from antcrew.core.state import TeamState
+
+
+# ---------------------------------------------------------------------------
+# ParallelGroup
+# ---------------------------------------------------------------------------
+
+def _merge(base: dict, update: dict) -> dict:
+    """Merge two partial state dicts returned by agents running in parallel."""
+    result = dict(base)
+    for key, value in update.items():
+        if value is None:
+            result.setdefault(key, None)
+        elif key not in result or result[key] is None:
+            result[key] = value
+        elif isinstance(result[key], list) and isinstance(value, list):
+            result[key] = result[key] + value
+        elif isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = {**result[key], **value}
+        else:
+            result[key] = value
+    return result
+
+
+class ParallelGroup:
+    """Runs multiple agents concurrently and merges their state updates.
+
+    List fields are concatenated; dict fields are union-merged; scalar fields
+    use last-write semantics.  Use the :func:`parallel` helper to construct.
+
+    Example::
+
+        from antcrew.core.supervisor import parallel
+        supervisor = Supervisor(flow=[("pm", "coding"), ("coding", "qa")])
+        app = supervisor.build({
+            "pm":     pm_agent,
+            "coding": parallel(backend_dev_agent, frontend_dev_agent),
+            "qa":     qa_agent,
+        })
+    """
+
+    def __init__(self, *agents: BaseAgent, name: str = "parallel_group") -> None:
+        if not agents:
+            raise ValueError("ParallelGroup requires at least one agent.")
+        self.name = name
+        self._agents: list[BaseAgent] = list(agents)
+
+    def run(self, state: TeamState) -> dict:
+        merged: dict = {}
+        with ThreadPoolExecutor(max_workers=len(self._agents)) as pool:
+            futures = {pool.submit(agent.run, state): agent for agent in self._agents}
+            for future in as_completed(futures):
+                partial = future.result()
+                merged = _merge(merged, partial)
+        return merged
+
+    # Mirror enough of BaseAgent so Supervisor can treat this transparently.
+    @property
+    def approval_required(self) -> bool:
+        return any(getattr(a, "approval_required", False) for a in self._agents)
+
+
+def parallel(*agents: BaseAgent, name: str = "parallel_group") -> ParallelGroup:
+    """Convenience constructor — wraps agents into a :class:`ParallelGroup`.
+
+    The *name* is used as the LangGraph node name (must be unique in the flow).
+    """
+    return ParallelGroup(*agents, name=name)
 
 # Must be set before the first checkpoint restore (checked at deserialize time)
 os.environ.setdefault(

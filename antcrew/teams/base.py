@@ -182,12 +182,26 @@ class InteractiveMixin:
     _agents: dict[str, "BaseAgent"]
 
     def _unique_llms(self) -> "list":
-        """Return one instance per distinct LLM object used across all agents."""
+        """Return one instance per distinct LLM object used across all agents.
+
+        Recurses into ParallelGroup instances so their inner agents' LLMs are
+        included in cost aggregation and trace propagation.
+        """
+        from antcrew.core.supervisor import ParallelGroup
+
         seen: dict[int, object] = {}
+
+        def _collect(agent) -> None:
+            if isinstance(agent, ParallelGroup):
+                for inner in agent._agents:
+                    _collect(inner)
+            else:
+                llm = getattr(agent, "llm", None)
+                if llm is not None and id(llm) not in seen:
+                    seen[id(llm)] = llm
+
         for agent in self._agents.values():
-            llm = getattr(agent, "llm", None)
-            if llm is not None and id(llm) not in seen:
-                seen[id(llm)] = llm
+            _collect(agent)
         return list(seen.values())
 
     async def run_async(self, request: str, *, thread_id: str = "default") -> dict:
