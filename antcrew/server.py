@@ -481,3 +481,14 @@ def _mount_dashboard() -> None:
 
 
 _mount_dashboard()
+
+
+# Redirect / → /ui/ when the dashboard is installed
+try:
+    from fastapi.responses import RedirectResponse as _RR
+
+    @app.get("/", include_in_schema=False)
+    def _root() -> _RR:
+        return _RR(url="/ui/")
+except Exception:
+    pass

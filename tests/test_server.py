@@ -176,3 +176,40 @@ def test_delete_run():
 def test_delete_run_not_found():
     r = client.delete("/run/ghost-id")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+def test_dashboard_index_served():
+    """GET /ui/index.html returns the dashboard HTML."""
+    r = client.get("/ui/index.html")
+    assert r.status_code == 200
+    assert "AntCrew" in r.text
+    assert "text/html" in r.headers.get("content-type", "")
+
+
+def test_root_redirects_to_ui():
+    """GET / redirects to /ui/."""
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (301, 302, 307, 308)
+    assert "/ui/" in r.headers.get("location", "")
+
+
+def test_dashboard_contains_api_link():
+    """The dashboard HTML references the /docs API page."""
+    r = client.get("/ui/index.html")
+    assert "/docs" in r.text
+
+
+def test_dashboard_has_runs_table():
+    """Dashboard HTML includes the runs table element."""
+    r = client.get("/ui/index.html")
+    assert "runs-table" in r.text or "runs-body" in r.text
+
+
+def test_dashboard_has_new_run_modal():
+    """Dashboard HTML includes the new-run modal."""
+    r = client.get("/ui/index.html")
+    assert "new-run-modal" in r.text or "New run" in r.text

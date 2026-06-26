@@ -5,24 +5,699 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AntCrew Dashboard</title>
   <style>
-    body { font-family: system-ui, sans-serif; background: #0f172a; color: #94a3b8;
-           display: flex; align-items: center; justify-content: center; min-height: 100vh;
-           margin: 0; }
-    .box { text-align: center; max-width: 500px; padding: 2rem; }
-    h1 { color: #f1f5f9; margin-bottom: 1rem; }
-    code { background: #1e293b; padding: 0.5rem 1rem; border-radius: 4px;
-           display: block; margin: 1rem 0; font-family: monospace; color: #818cf8; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f172a;
+      --surface:   #1e293b;
+      --surface2:  #0f172a;
+      --border:    #334155;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --accent:    #818cf8;
+      --accent2:   #6366f1;
+      --green:     #22c55e;
+      --yellow:    #eab308;
+      --red:       #ef4444;
+      --radius:    8px;
+    }
+
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
+           color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ── Top bar ─────────────────────────────────────────────────────────── */
+    header { background: var(--surface); border-bottom: 1px solid var(--border);
+             padding: 0 1.5rem; display: flex; align-items: center; gap: 1rem; height: 52px; }
+    header h1 { font-size: 1rem; font-weight: 700; color: var(--accent); letter-spacing: .05em;
+                white-space: nowrap; }
+    .tabs { display: flex; gap: 0; margin-left: 1rem; height: 100%; }
+    .tab { padding: 0 1.25rem; border: none; background: none; color: var(--muted);
+           font-size: .875rem; cursor: pointer; border-bottom: 2px solid transparent;
+           transition: color .15s, border-color .15s; height: 100%; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .spacer { flex: 1; }
+    .api-link { color: var(--muted); font-size: .8rem; text-decoration: none; }
+    .api-link:hover { color: var(--accent); }
+
+    /* ── Layout ──────────────────────────────────────────────────────────── */
+    .layout { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 52px); }
+    .panel { flex: 1; overflow-y: auto; padding: 1.5rem; }
+    .detail { width: 52%; border-left: 1px solid var(--border); overflow-y: auto;
+              padding: 1.5rem; display: none; }
+    .detail.visible { display: block; }
+
+    /* ── Cards / sections ────────────────────────────────────────────────── */
+    .card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
+    .card-title { font-size: .7rem; font-weight: 700; text-transform: uppercase;
+                  letter-spacing: .1em; color: var(--muted); margin-bottom: .75rem; }
+
+    /* ── Buttons ─────────────────────────────────────────────────────────── */
+    .btn { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .9rem;
+           border-radius: 6px; font-size: .8rem; font-weight: 600; cursor: pointer;
+           border: none; transition: opacity .15s; }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--accent2); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; }
+    .btn-sm { padding: .3rem .65rem; font-size: .75rem; }
+
+    /* ── Table ───────────────────────────────────────────────────────────── */
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+    th { text-align: left; font-size: .7rem; text-transform: uppercase;
+         letter-spacing: .08em; color: var(--muted); padding: .6rem .75rem;
+         border-bottom: 1px solid var(--border); font-weight: 600; }
+    td { padding: .65rem .75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:hover td { background: #1a2744; cursor: pointer; }
+    tr.selected td { background: #1e2d50; }
+    .req-cell { max-width: 260px; white-space: nowrap; overflow: hidden;
+                text-overflow: ellipsis; color: var(--text); }
+
+    /* ── Status badges ───────────────────────────────────────────────────── */
+    .badge { display: inline-flex; align-items: center; gap: .3rem;
+             padding: .2rem .55rem; border-radius: 20px; font-size: .73rem; font-weight: 600; }
+    .badge-running { background: #1e3a5f; color: #60a5fa; }
+    .badge-done    { background: #14532d; color: #86efac; }
+    .badge-error   { background: #450a0a; color: #fca5a5; }
+    .pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+             background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Stream / tokens ─────────────────────────────────────────────────── */
+    .stream-box { font-family: 'Fira Code', 'Courier New', monospace; font-size: .78rem;
+                  background: var(--surface2); border: 1px solid var(--border);
+                  border-radius: var(--radius); padding: .75rem 1rem; max-height: 260px;
+                  overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+                  color: #a5f3fc; line-height: 1.6; }
+    .agent-tag { color: var(--accent); font-weight: 700; }
+
+    /* ── Detail sections ─────────────────────────────────────────────────── */
+    .section { margin-bottom: 1.25rem; }
+    .section-header { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
+    .section-label { font-size: .7rem; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: .08em; color: var(--muted); }
+    .prd-title { font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: .35rem; }
+    .prd-summary { font-size: .85rem; color: var(--muted); line-height: 1.5; }
+
+    .ticket-row { display: flex; align-items: center; gap: .5rem; padding: .4rem 0;
+                  border-bottom: 1px solid var(--border); font-size: .83rem; }
+    .ticket-row:last-child { border-bottom: none; }
+    .ticket-id { font-family: monospace; color: var(--accent); min-width: 54px; }
+    .ticket-title { flex: 1; }
+    .prio { font-size: .68rem; font-weight: 700; padding: .1rem .4rem;
+            border-radius: 4px; text-transform: uppercase; }
+    .prio-high,.prio-critical { background:#450a0a; color:#fca5a5; }
+    .prio-medium { background:#422006; color:#fed7aa; }
+    .prio-low { background:#052e16; color:#86efac; }
+
+    .file-row { display: flex; align-items: center; gap: .5rem; padding: .35rem 0;
+                border-bottom: 1px solid var(--border); font-size: .83rem; }
+    .file-row:last-child { border-bottom: none; }
+    .file-path { font-family: monospace; color: #7dd3fc; flex: 1; }
+    .file-desc { color: var(--muted); font-size: .78rem; max-width: 180px;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .view-btn { color: var(--accent); cursor: pointer; font-size: .75rem;
+                background: none; border: none; text-decoration: underline; }
+
+    /* ── Usage bar ───────────────────────────────────────────────────────── */
+    .usage-row { display: flex; gap: 1.5rem; font-size: .82rem; }
+    .usage-item { display: flex; flex-direction: column; gap: .15rem; }
+    .usage-val { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+    .usage-label { color: var(--muted); font-size: .72rem; text-transform: uppercase;
+                   letter-spacing: .05em; }
+
+    /* ── Empty states ────────────────────────────────────────────────────── */
+    .empty { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: .9rem; }
+    .empty-icon { font-size: 2rem; margin-bottom: .5rem; }
+
+    /* ── Modal ───────────────────────────────────────────────────────────── */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
+               align-items: center; justify-content: center; z-index: 100; }
+    .overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border);
+             border-radius: var(--radius); padding: 1.5rem; width: 480px; max-width: 95vw; }
+    .modal h2 { font-size: 1rem; margin-bottom: 1.25rem; color: var(--text); }
+    .field { margin-bottom: 1rem; }
+    .field label { display: block; font-size: .78rem; color: var(--muted);
+                   margin-bottom: .35rem; font-weight: 600; }
+    .field input, .field select, .field textarea {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: .55rem .75rem; color: var(--text);
+      font-size: .88rem; outline: none; font-family: inherit; }
+    .field textarea { resize: vertical; min-height: 80px; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: var(--accent); }
+    .modal-footer { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1.25rem; }
+
+    /* ── Code viewer ─────────────────────────────────────────────────────── */
+    .code-viewer { background: var(--surface2); border: 1px solid var(--border);
+                   border-radius: var(--radius); padding: .75rem 1rem;
+                   font-family: 'Fira Code', monospace; font-size: .76rem;
+                   white-space: pre-wrap; word-break: break-all; color: #a5f3fc;
+                   max-height: 340px; overflow-y: auto; margin-top: .5rem; }
+
+    /* ── Header row above table ──────────────────────────────────────────── */
+    .list-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+    .list-header h2 { font-size: .95rem; font-weight: 700; color: var(--text); }
+    .refresh-hint { font-size: .75rem; color: var(--muted); }
+
+    /* ── Detail close button ─────────────────────────────────────────────── */
+    .detail-header { display: flex; align-items: center; gap: .75rem; margin-bottom: 1.25rem; }
+    .detail-header h2 { font-size: .9rem; font-weight: 700; flex: 1; color: var(--text); }
+    .close-btn { background: none; border: none; color: var(--muted); font-size: 1.1rem;
+                 cursor: pointer; line-height: 1; }
+    .close-btn:hover { color: var(--text); }
+
+    /* ── Scrollbar ───────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h1>🐜 AntCrew Dashboard</h1>
-    <p>The dashboard has not been built yet. To build it, run:</p>
-    <code>cd dashboard &amp;&amp; npm install &amp;&amp; npm run build</code>
-    <p>Then restart <code>antcrew serve</code>.</p>
-    <p style="margin-top:1rem">The REST API is available at
-      <a href="/docs" style="color:#818cf8">/docs</a>.
-    </p>
+
+<!-- ── Top bar ──────────────────────────────────────────────────────────── -->
+<header>
+  <h1>🐜 AntCrew</h1>
+  <nav class="tabs">
+    <button class="tab active" onclick="switchTab('runs')">Runs</button>
+    <button class="tab" onclick="switchTab('evals')">Evals</button>
+  </nav>
+  <div class="spacer"></div>
+  <a class="api-link" href="/docs" target="_blank">API docs ↗</a>
+</header>
+
+<!-- ── Main layout ──────────────────────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- Left: list panel -->
+  <div class="panel" id="list-panel">
+
+    <!-- Runs tab -->
+    <div id="tab-runs">
+      <div class="list-header">
+        <h2>Pipeline Runs</h2>
+        <button class="btn btn-primary btn-sm" onclick="openNewRun()">+ New run</button>
+        <span class="refresh-hint" id="refresh-hint">auto-refresh</span>
+        <div class="spacer"></div>
+      </div>
+      <div class="tbl-wrap">
+        <table id="runs-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Team</th>
+              <th>Request</th>
+              <th>Cost</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="runs-body">
+            <tr><td colspan="5" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Evals tab -->
+    <div id="tab-evals" style="display:none">
+      <div class="list-header">
+        <h2>Eval Reports</h2>
+        <div class="spacer"></div>
+      </div>
+      <div class="tbl-wrap">
+        <table id="evals-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Name</th>
+              <th>Score</th>
+              <th>Passed</th>
+              <th>Tokens</th>
+            </tr>
+          </thead>
+          <tbody id="evals-body">
+            <tr><td colspan="5" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /panel -->
+
+  <!-- Right: detail panel -->
+  <div class="detail" id="detail-panel">
+    <div id="detail-content"></div>
   </div>
+
+</div><!-- /layout -->
+
+<!-- ── New Run Modal ─────────────────────────────────────────────────────── -->
+<div class="overlay" id="new-run-modal">
+  <div class="modal">
+    <h2>New Pipeline Run</h2>
+    <div class="field">
+      <label>Request</label>
+      <textarea id="nr-request" rows="3" placeholder="Build a JWT authentication module with login and refresh endpoints"></textarea>
+    </div>
+    <div class="field">
+      <label>Team</label>
+      <select id="nr-team">
+        <option value="dev">dev — DevTeam (PM → Backend → Frontend → QA → DevOps → Docs)</option>
+        <option value="fullstack">fullstack — FullStackTeam</option>
+        <option value="research">research — ResearchTeam</option>
+        <option value="content">content — ContentTeam</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Model</label>
+      <select id="nr-model">
+        <option value="simulated">simulated (no API key — fixture responses)</option>
+        <option value="claude">claude (claude-sonnet-4-6)</option>
+        <option value="gpt-4o-mini">gpt-4o-mini</option>
+        <option value="gemini">gemini-2.0-flash</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Thread ID <span style="color:var(--muted);font-weight:400">(optional — for checkpointer resume)</span></label>
+      <input id="nr-thread" placeholder="sprint-1 (leave blank for auto UUID)">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeNewRun()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitNewRun()">Start run</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Code Viewer Modal ─────────────────────────────────────────────────── -->
+<div class="overlay" id="code-modal">
+  <div class="modal" style="width:700px;max-width:96vw">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+      <span id="code-modal-path" style="font-family:monospace;color:#7dd3fc;font-size:.88rem;flex:1"></span>
+      <button class="close-btn" onclick="closeCode()">✕</button>
+    </div>
+    <div id="code-modal-content" class="code-viewer"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let _currentTab = 'runs';
+let _selectedRunId = null;
+let _activeSource = null;
+let _refreshTimer = null;
+let _hasRunning = false;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab switching
+// ─────────────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  _currentTab = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-runs').style.display = name === 'runs' ? '' : 'none';
+  document.getElementById('tab-evals').style.display = name === 'evals' ? '' : 'none';
+  closeDetail();
+  if (name === 'runs') loadRuns();
+  else loadEvals();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Detail panel
+// ─────────────────────────────────────────────────────────────────────────────
+function closeDetail() {
+  _selectedRunId = null;
+  document.getElementById('detail-panel').classList.remove('visible');
+  if (_activeSource) { _activeSource.close(); _activeSource = null; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Runs list
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadRuns() {
+  let runs;
+  try { runs = await (await fetch('/runs')).json(); }
+  catch { runs = []; }
+
+  _hasRunning = runs.some(r => r.status === 'running');
+  const hint = document.getElementById('refresh-hint');
+  if (hint) hint.textContent = _hasRunning ? '↻ live' : 'auto-refresh 10s';
+
+  const tbody = document.getElementById('runs-body');
+  if (!runs.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">
+      <div class="empty-icon">🐜</div>No runs yet — start one with "+ New run"</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = runs.slice().reverse().map(r => `
+    <tr onclick="showRun('${r.run_id}')" class="${r.run_id === _selectedRunId ? 'selected' : ''}">
+      <td>${badge(r.status)}</td>
+      <td><span style="color:var(--accent);font-size:.8rem">${esc(r.team)}</span></td>
+      <td class="req-cell">${esc(r.request)}</td>
+      <td style="color:var(--muted);font-size:.8rem" id="cost-${r.run_id}">—</td>
+      <td>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteRun('${r.run_id}')">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function deleteRun(id) {
+  if (!confirm('Delete this run?')) return;
+  await fetch(`/run/${id}`, { method: 'DELETE' });
+  if (_selectedRunId === id) closeDetail();
+  loadRuns();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Run detail
+// ─────────────────────────────────────────────────────────────────────────────
+async function showRun(id) {
+  if (_selectedRunId === id) { closeDetail(); return; }
+  _selectedRunId = id;
+  if (_activeSource) { _activeSource.close(); _activeSource = null; }
+
+  const panel = document.getElementById('detail-panel');
+  const content = document.getElementById('detail-content');
+  panel.classList.add('visible');
+
+  // Mark row selected
+  document.querySelectorAll('#runs-body tr').forEach(tr => tr.classList.remove('selected'));
+  const rows = document.querySelectorAll('#runs-body tr');
+  rows.forEach(tr => { if (tr.onclick && tr.onclick.toString().includes(id)) tr.classList.add('selected'); });
+
+  let rec;
+  try { rec = await (await fetch(`/run/${id}`)).json(); }
+  catch { content.innerHTML = `<p style="color:var(--red)">Failed to load run.</p>`; return; }
+
+  renderRunDetail(id, rec, content);
+
+  // Stream if still running
+  if (rec.status === 'running') {
+    startStream(id, content);
+  }
+}
+
+function renderRunDetail(id, rec, container) {
+  const streamSection = rec.status === 'running' ? `
+    <div class="section">
+      <div class="section-header"><span class="section-label">Live output</span>
+        <span class="badge badge-running"><span class="pulse"></span> streaming</span></div>
+      <div class="stream-box" id="stream-${id}"></div>
+    </div>` : '';
+
+  const prd = rec.state?.prd;
+  const prdSection = prd ? `
+    <div class="section">
+      <div class="section-label">PRD</div>
+      <div class="card" style="margin-top:.5rem">
+        <div class="prd-title">${esc(prd.title)}</div>
+        <div class="prd-summary">${esc(prd.summary || '')}</div>
+        ${prd.goals?.length ? `<ul style="margin-top:.6rem;padding-left:1.25rem;font-size:.83rem;color:var(--muted)">${prd.goals.map(g => `<li>${esc(g)}</li>`).join('')}</ul>` : ''}
+      </div>
+    </div>` : '';
+
+  const tickets = rec.state?.tickets || [];
+  const ticketSection = tickets.length ? `
+    <div class="section">
+      <div class="section-label">Tickets (${tickets.length})</div>
+      <div class="card" style="margin-top:.5rem;padding:.75rem 1rem">
+        ${tickets.map(t => `
+          <div class="ticket-row">
+            <span class="ticket-id">${esc(t.id)}</span>
+            <span class="ticket-title">${esc(t.title)}</span>
+            <span class="prio prio-${(t.priority||'medium').toLowerCase()}">${esc(t.priority||'medium')}</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const code = rec.state?.code_artifacts || [];
+  const devops = rec.state?.devops_artifacts || [];
+  const allFiles = [...code, ...devops];
+  const fileSection = allFiles.length ? `
+    <div class="section">
+      <div class="section-label">Files (${allFiles.length})</div>
+      <div class="card" style="margin-top:.5rem;padding:.75rem 1rem">
+        ${allFiles.map((f, i) => `
+          <div class="file-row">
+            <span class="file-path">${esc(f.file_path)}</span>
+            <span class="file-desc">${esc(f.description||'')}</span>
+            ${f.content ? `<button class="view-btn" onclick='viewCode(${JSON.stringify(f.file_path)},${JSON.stringify(f.content)})'>view</button>` : ''}
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const usage = rec.usage;
+  const usageSection = usage ? `
+    <div class="section">
+      <div class="section-label">Usage</div>
+      <div class="usage-row" style="margin-top:.5rem">
+        <div class="usage-item">
+          <span class="usage-val">${(usage.total_input_tokens||0).toLocaleString()}</span>
+          <span class="usage-label">Input tokens</span>
+        </div>
+        <div class="usage-item">
+          <span class="usage-val">${(usage.total_output_tokens||0).toLocaleString()}</span>
+          <span class="usage-label">Output tokens</span>
+        </div>
+        <div class="usage-item">
+          <span class="usage-val">$${(usage.total_cost_usd||0).toFixed(4)}</span>
+          <span class="usage-label">Est. cost</span>
+        </div>
+      </div>
+    </div>` : '';
+
+  const errorSection = rec.error ? `
+    <div class="card" style="border-color:var(--red);margin-bottom:1rem">
+      <div class="section-label" style="color:var(--red)">Error</div>
+      <div style="margin-top:.5rem;font-family:monospace;font-size:.8rem;color:#fca5a5">${esc(rec.error)}</div>
+    </div>` : '';
+
+  container.innerHTML = `
+    <div class="detail-header">
+      <h2>${esc(rec.request?.slice(0,60) || 'Run')}${(rec.request||'').length > 60 ? '…' : ''}</h2>
+      <span class="badge badge-${rec.status}">${rec.status}</span>
+      <button class="close-btn" onclick="closeDetail()">✕</button>
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;font-size:.78rem;color:var(--muted)">
+      <span>team: <b style="color:var(--accent)">${esc(rec.team)}</b></span>
+      <span style="color:var(--border)">|</span>
+      <span>id: <span style="font-family:monospace">${id.slice(0,8)}…</span></span>
+    </div>
+    ${errorSection}
+    ${streamSection}
+    ${prdSection}
+    ${ticketSection}
+    ${fileSection}
+    ${usageSection}
+  `;
+}
+
+function startStream(id, container) {
+  const es = new EventSource(`/run/${id}/stream`);
+  _activeSource = es;
+
+  es.addEventListener('message', e => {
+    let box = document.getElementById(`stream-${id}`);
+    if (!box) return;
+    try {
+      const d = JSON.parse(e.data);
+      const agentSpan = d.agent ? `<span class="agent-tag">[${esc(d.agent)}]</span> ` : '';
+      box.insertAdjacentHTML('beforeend', agentSpan + esc(d.token || ''));
+      box.scrollTop = box.scrollHeight;
+    } catch {}
+  });
+
+  es.addEventListener('done', e => {
+    es.close();
+    _activeSource = null;
+    // Reload run detail with full state
+    showRun(id);
+    loadRuns();
+  });
+
+  es.addEventListener('error', e => {
+    es.close();
+    _activeSource = null;
+    showRun(id);
+    loadRuns();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Evals list
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadEvals() {
+  let evals;
+  try { evals = await (await fetch('/evals')).json(); }
+  catch { evals = []; }
+
+  const tbody = document.getElementById('evals-body');
+  if (!evals.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">
+      <div class="empty-icon">📊</div>No evals yet. Use the REST API or <code>antcrew eval</code> CLI.</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = evals.slice().reverse().map(e => `
+    <tr onclick="showEval('${e.eval_id}')">
+      <td>${badge(e.status)}</td>
+      <td class="req-cell">${esc(e.name||e.request)}</td>
+      <td style="color:${scoreColor(e.overall_score)}">${e.overall_score != null ? (e.overall_score*100).toFixed(0)+'%' : '—'}</td>
+      <td>${e.passed != null ? (e.passed ? '✅' : '❌') : '—'}</td>
+      <td style="color:var(--muted);font-size:.8rem">${e.token_count != null ? e.token_count.toLocaleString() : '—'}</td>
+    </tr>`).join('');
+}
+
+async function showEval(id) {
+  let rec;
+  try { rec = await (await fetch(`/eval/${id}`)).json(); }
+  catch { return; }
+
+  const panel = document.getElementById('detail-panel');
+  const content = document.getElementById('detail-content');
+  panel.classList.add('visible');
+
+  const rpt = rec.report;
+  content.innerHTML = `
+    <div class="detail-header">
+      <h2>${esc(rec.name||rec.request)}</h2>
+      <span class="badge badge-${rec.status}">${rec.status}</span>
+      <button class="close-btn" onclick="closeDetail()">✕</button>
+    </div>
+    ${rec.error ? `<div class="card" style="border-color:var(--red);margin-bottom:1rem">
+      <span style="color:var(--red)">${esc(rec.error)}</span></div>` : ''}
+    ${rpt ? `
+    <div class="usage-row" style="margin-bottom:1.25rem">
+      <div class="usage-item">
+        <span class="usage-val" style="color:${scoreColor(rpt.overall_score)}">${((rpt.overall_score||0)*100).toFixed(0)}%</span>
+        <span class="usage-label">Overall</span>
+      </div>
+      <div class="usage-item">
+        <span class="usage-val">${rpt.passed ? '✅' : '❌'}</span>
+        <span class="usage-label">Passed</span>
+      </div>
+      ${rpt.judge_score != null ? `
+      <div class="usage-item">
+        <span class="usage-val" style="color:${scoreColor(rpt.judge_score)}">${((rpt.judge_score||0)*100).toFixed(0)}%</span>
+        <span class="usage-label">Judge</span>
+      </div>` : ''}
+      <div class="usage-item">
+        <span class="usage-val">${(rpt.token_count||0).toLocaleString()}</span>
+        <span class="usage-label">Tokens</span>
+      </div>
+    </div>
+    ${(rpt.agent_scores||[]).length ? `
+    <div class="section">
+      <div class="section-label">Agent Scores</div>
+      <div class="card" style="margin-top:.5rem;padding:.75rem 1rem">
+        ${rpt.agent_scores.map(s => `
+          <div class="ticket-row">
+            <span class="ticket-id">${esc(s.agent_name)}</span>
+            <div style="flex:1;background:var(--border);border-radius:4px;height:6px">
+              <div style="width:${((s.score||0)*100).toFixed(0)}%;background:${scoreColor(s.score)};height:100%;border-radius:4px"></div>
+            </div>
+            <span style="color:${scoreColor(s.score)};font-size:.8rem;min-width:36px;text-align:right">${((s.score||0)*100).toFixed(0)}%</span>
+          </div>`).join('')}
+      </div>
+    </div>` : ''}
+    ` : ''}
+  `;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Run modal
+// ─────────────────────────────────────────────────────────────────────────────
+function openNewRun() {
+  document.getElementById('new-run-modal').classList.add('open');
+  setTimeout(() => document.getElementById('nr-request').focus(), 50);
+}
+function closeNewRun() {
+  document.getElementById('new-run-modal').classList.remove('open');
+}
+async function submitNewRun() {
+  const request = document.getElementById('nr-request').value.trim();
+  if (!request) { alert('Request is required.'); return; }
+  const body = {
+    request,
+    team: document.getElementById('nr-team').value,
+    model: document.getElementById('nr-model').value,
+    thread_id: document.getElementById('nr-thread').value.trim() || undefined,
+  };
+  closeNewRun();
+  const rec = await (await fetch('/run', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  })).json();
+  await loadRuns();
+  showRun(rec.run_id);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Code viewer
+// ─────────────────────────────────────────────────────────────────────────────
+function viewCode(path, content) {
+  document.getElementById('code-modal-path').textContent = path;
+  document.getElementById('code-modal-content').textContent = content;
+  document.getElementById('code-modal').classList.add('open');
+}
+function closeCode() {
+  document.getElementById('code-modal').classList.remove('open');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function badge(status) {
+  const cls = status === 'running' ? 'badge-running' : status === 'done' ? 'badge-done' : 'badge-error';
+  const pulse = status === 'running' ? '<span class="pulse"></span>' : '';
+  return `<span class="badge ${cls}">${pulse}${esc(status)}</span>`;
+}
+function scoreColor(s) {
+  if (s == null) return 'var(--muted)';
+  if (s >= .8) return 'var(--green)';
+  if (s >= .5) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+// Close modals on overlay click
+document.getElementById('new-run-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeNewRun();
+});
+document.getElementById('code-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeCode();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeNewRun(); closeCode(); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-refresh
+// ─────────────────────────────────────────────────────────────────────────────
+function scheduleRefresh() {
+  clearTimeout(_refreshTimer);
+  const delay = _hasRunning ? 2000 : 10000;
+  _refreshTimer = setTimeout(async () => {
+    if (_currentTab === 'runs') await loadRuns();
+    else await loadEvals();
+    scheduleRefresh();
+  }, delay);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────────────────────────────────────
+(async () => {
+  await loadRuns();
+  scheduleRefresh();
+})();
+</script>
 </body>
 </html>

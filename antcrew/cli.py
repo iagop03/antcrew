@@ -612,17 +612,13 @@ def serve(
     _static_index = _Path(__file__).parent / "static" / "index.html"
     _has_dashboard = _static_index.exists()
 
+    from antcrew import __version__ as _ver
     display_host = "localhost" if host in ("0.0.0.0", "::") else host
-    console.print("\n[bold green]AntCrew[/] v0.4")
-    console.print(f"  API    → [cyan]http://{display_host}:{port}[/]")
-    console.print(f"  Docs   → [dim]http://{display_host}:{port}/docs[/dim]")
+    console.print(f"\n[bold green]AntCrew[/] v{_ver}")
+    console.print(f"  API       → [cyan]http://{display_host}:{port}[/]")
+    console.print(f"  Docs      → [dim]http://{display_host}:{port}/docs[/dim]")
     if _has_dashboard:
         console.print(f"  Dashboard → [bold cyan]http://{display_host}:{port}/ui/[/bold cyan]")
-    else:
-        console.print(
-            "  Dashboard → [yellow]not built[/yellow]  "
-            "[dim](cd dashboard && npm install && npm run build)[/dim]"
-        )
     console.print()
     uvicorn.run("antcrew.server:app", host=host, port=port, reload=reload)
 
