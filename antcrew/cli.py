@@ -2325,6 +2325,86 @@ def publish_cmd(
             console.print("[yellow]Nothing to publish to Confluence[/] — no PRD, research, or doc artifacts found.")
 
 
+@app.command(name="export")
+def export_cmd(
+    path: Path = typer.Argument(..., help="JSON state file to export."),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o",
+        help="Destination zip path (default: <stem>.zip next to the source file).",
+    ),
+    include_tests: bool = typer.Option(True, "--tests/--no-tests", help="Include test artifacts."),
+    include_devops: bool = typer.Option(True, "--devops/--no-devops", help="Include devops artifacts."),
+    include_docs: bool = typer.Option(True, "--docs/--no-docs", help="Include doc artifacts."),
+    include_state: bool = typer.Option(True, "--state/--no-state", help="Include the raw state JSON."),
+) -> None:
+    """Export a saved run to a zip archive containing all generated files.
+
+    \b
+    antcrew export run_output.json
+    antcrew export run_output.json --output my_project.zip --no-tests
+    """
+    import zipfile
+    from antcrew.utils.persistence import load_state as _load_state
+
+    if not path.exists():
+        console.print(f"[red]File not found:[/] {path}")
+        raise typer.Exit(1)
+
+    raw = _load_state(path)
+    # Support project files that nest state under "state"
+    state = raw.get("state", raw) if isinstance(raw.get("state"), dict) else raw
+
+    zip_path = output or path.with_suffix(".zip")
+
+    def _artifacts(key: str) -> list[dict]:
+        items = state.get(key) or []
+        return [a for a in items if isinstance(a, dict) and a.get("file_path")]
+
+    entries: list[tuple[str, str]] = []  # (arcname, content)
+
+    for art in _artifacts("code_artifacts"):
+        entries.append((f"src/{art['file_path']}", art.get("content") or ""))
+
+    if include_tests:
+        for art in _artifacts("test_artifacts"):
+            entries.append((f"tests/{art['file_path']}", art.get("content") or ""))
+
+    if include_devops:
+        for art in _artifacts("devops_artifacts"):
+            entries.append((f"devops/{art['file_path']}", art.get("content") or ""))
+
+    if include_docs:
+        for art in _artifacts("doc_artifacts"):
+            entries.append((f"docs/{art['file_path']}", art.get("content") or ""))
+
+    # Research document → docs/research.md
+    if include_docs and state.get("research_document"):
+        rd = state["research_document"]
+        if isinstance(rd, dict):
+            body = rd.get("body") or rd.get("summary") or ""
+            title = rd.get("title") or "research"
+            entries.append((f"docs/{title}.md", body))
+
+    if include_state:
+        entries.append(("state.json", json.dumps(raw, indent=2, default=str)))
+
+    if not entries:
+        console.print("[yellow]Nothing to export[/] — no artifacts found in this run.")
+        raise typer.Exit(0)
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for arcname, content in entries:
+            zf.writestr(arcname, content)
+
+    size_kb = zip_path.stat().st_size / 1024
+    console.print(
+        f"[green]Exported[/] {len(entries)} files → [cyan]{zip_path}[/]  "
+        f"[dim]({size_kb:.1f} KB)[/dim]"
+    )
+    for arcname, _ in entries:
+        console.print(f"  [dim]{arcname}[/dim]")
+
+
 @app.command(name="diff")
 def diff_cmd(
     run_a: Path = typer.Argument(..., help="First state JSON file (baseline)."),
