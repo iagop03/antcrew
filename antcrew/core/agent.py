@@ -16,8 +16,28 @@ from antcrew.models.base import BaseLLM
 
 if TYPE_CHECKING:
     from antcrew.core.channel import BaseChannel
+    from antcrew.core.tools import BaseTool
     from antcrew.memory.store import BaseMemory
     from antcrew.memory.repo_index import RepoIndex
+
+
+_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*<name>(.*?)</name>\s*<input>(.*?)</input>\s*</tool_call>",
+    re.DOTALL,
+)
+
+_TOOL_SYSTEM_SUFFIX = """
+You have access to the following tools:
+{tool_schemas}
+
+To call a tool, respond with this exact XML format (one call at a time):
+<tool_call>
+<name>tool_name</name>
+<input>your input here</input>
+</tool_call>
+
+After gathering the information you need, give your final answer without any <tool_call> tags.
+"""
 
 
 _FENCE_RE = re.compile(r'^```[a-zA-Z]*[ \t]*\n?([\s\S]*)```[ \t]*$')
@@ -136,6 +156,8 @@ class BaseAgent(ABC):
         response_options: Optional[list[str]] = None,
         max_tokens: Optional[int] = None,
         system_prompt_suffix: Optional[str] = None,
+        tools: Optional[list["BaseTool"]] = None,
+        max_tool_steps: int = 5,
     ) -> None:
         self.llm = llm
         self.channel = channel
@@ -143,6 +165,8 @@ class BaseAgent(ABC):
         self.response_options = response_options or ["approve", "edit", "reject"]
         self.max_tokens = max_tokens                        # per-agent token cap
         self.system_prompt_suffix = system_prompt_suffix   # appended to every system call
+        self.tools: list["BaseTool"] = tools or []
+        self.max_tool_steps = max_tool_steps
 
     @abstractmethod
     def run(self, state: TeamState) -> dict:
@@ -164,6 +188,74 @@ class BaseAgent(ABC):
             kwargs["max_tokens"] = self.max_tokens
         self.llm.current_agent = self.name
         return self.llm.system(system_prompt, user, **kwargs)
+
+    def system_with_tools(
+        self,
+        system_prompt: str,
+        user: str,
+        *,
+        tools: Optional[list["BaseTool"]] = None,
+        max_tool_steps: Optional[int] = None,
+        **kwargs,
+    ) -> str:
+        """Call LLM with a ReAct tool-use loop.
+
+        The agent iterates up to *max_tool_steps* times.  On each step it
+        checks the LLM response for a ``<tool_call>`` block; if found, it
+        executes the tool and feeds the result back as context before the next
+        LLM call.  The loop exits when the model produces a response with no
+        ``<tool_call>`` tags, which is returned as the final answer.
+
+        *tools* defaults to ``self.tools``.  *max_tool_steps* defaults to
+        ``self.max_tool_steps``.
+        """
+        active_tools = tools if tools is not None else self.tools
+        steps = max_tool_steps if max_tool_steps is not None else self.max_tool_steps
+
+        if not active_tools:
+            return self.system(system_prompt, user, **kwargs)
+
+        tool_map = {t.name: t for t in active_tools}
+        schemas = "\n".join(t.schema() for t in active_tools)
+        full_system = system_prompt + _TOOL_SYSTEM_SUFFIX.format(tool_schemas=schemas)
+
+        history: list[str] = []
+        current_user = user
+
+        for step in range(steps):
+            if history:
+                current_user = user + "\n\n" + "\n".join(history)
+
+            response = self.system(full_system, current_user, **kwargs)
+
+            match = _TOOL_CALL_RE.search(response)
+            if not match:
+                return response
+
+            tool_name = match.group(1).strip()
+            tool_input = match.group(2).strip()
+
+            log.debug(
+                "tool_call agent=%s tool=%s step=%d/%d",
+                self.name, tool_name, step + 1, steps,
+            )
+
+            tool = tool_map.get(tool_name)
+            if tool is None:
+                result_text = f"ERROR: unknown tool '{tool_name}'. Available: {list(tool_map)}"
+            else:
+                result = tool.run(tool_input)
+                result_text = str(result)
+
+            history.append(
+                f"[Tool call: {tool_name}]\n{tool_input}\n\n"
+                f"[Tool result: {tool_name}]\n{result_text}"
+            )
+
+        log.warning(
+            "tool_loop_exhausted agent=%s steps=%d", self.name, steps
+        )
+        return self.system(full_system, current_user, **kwargs)
 
     def system_parsed(
         self,
