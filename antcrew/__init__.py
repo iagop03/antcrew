@@ -2,7 +2,7 @@ from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.research_team import ResearchTeam
 from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.fullstack_team import FullStackTeam
-from antcrew.core.supervisor import Supervisor
+from antcrew.core.supervisor import Supervisor, ParallelGroup, parallel
 from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import DevOpsArtifact, DocumentationArtifact
 from antcrew.agents.devops import DevOpsAgent
@@ -49,6 +49,8 @@ __all__ = [
     "ContentTeam",
     # Core
     "Supervisor",
+    "ParallelGroup",
+    "parallel",
     "BaseChannel",
     "DevOpsArtifact",
     "DocumentationArtifact",
@@ -107,4 +109,4 @@ __all__ = [
     "EvalRunner",
     "JudgeResult",
 ]
-__version__ = "0.3.0"
+__version__ = "0.4.0"

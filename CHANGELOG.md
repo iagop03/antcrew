@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.0] — 2026-06-26
+
+### Added
+- **Per-agent LLM** (`agent_models=` param on all four teams) — assign a
+  different `BaseLLM` instance to any individual agent. Unspecified agents
+  fall back to the team `model`. Cost aggregation in `RunResult.cost_usd`
+  and trace propagation both work across all unique LLMs automatically.
+- **Agent parallelism** (`ParallelGroup` + `parallel()` helper in
+  `antcrew.core.supervisor`) — wrap any set of agents into a concurrent
+  node that runs them simultaneously via `ThreadPoolExecutor`. State
+  updates are merged automatically: list fields are concatenated, dict
+  fields are union-merged, scalars use last-write. Cuts wall-clock time
+  by ~40 % for independent groups (e.g. `backend_dev` + `frontend_dev`).
+  `_unique_llms()` recurses into groups for correct cost/trace handling.
+- **`antcrew diff <run-a.json> <run-b.json>`** — compare two saved
+  pipeline runs. Shows differences in request, PRD (title, summary),
+  tickets (added / removed by id), and code artifacts (added / removed /
+  modified with inline unified diff per changed file). `--no-files`
+  suppresses content diffs; `--context N` controls unified diff lines.
+- **`antcrew export <run.json>`** — bundle all generated artifacts from a
+  saved run into a deflate-compressed zip archive. Layout:
+  `src/` (code), `tests/`, `devops/`, `docs/`, `state.json`. Flags:
+  `--output`, `--no-tests`, `--no-devops`, `--no-docs`, `--no-state`.
+  Research documents are exported as `docs/<title>.md`.
+
+---
+
 ## [0.3.0] — 2026-06-26
 
 ### Added
