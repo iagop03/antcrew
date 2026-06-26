@@ -45,19 +45,30 @@ class Message(BaseModel):
 # Matched by substring of the lowercase model name.
 # ---------------------------------------------------------------------------
 _COST_TABLE: list[tuple[str, float, float]] = [
-    ("claude-opus",      15.00, 75.00),
-    ("claude-sonnet",     3.00, 15.00),
-    ("claude-haiku",      0.25,  1.25),
-    ("gpt-4o-mini",       0.15,  0.60),
-    ("gpt-4o",            2.50, 10.00),
-    ("gemini-1.5-pro",    1.25,  5.00),
-    ("gemini-1.5-flash",  0.075, 0.30),
-    ("gemini-2.0",        0.075, 0.30),
-    ("llama3-70b",        0.59,  0.79),
-    ("llama3-8b",         0.05,  0.08),
-    ("mixtral",           0.24,  0.24),
-    ("deepseek",          0.14,  0.28),
-    ("mistral",           0.20,  0.60),
+    # Anthropic
+    ("claude-opus",      15.00,  75.00),
+    ("claude-sonnet",     3.00,  15.00),
+    ("claude-haiku",      0.25,   1.25),
+    # OpenAI — reasoning models (match before gpt-4o)
+    ("o3-mini",           1.10,   4.40),
+    ("o1-mini",           1.10,   4.40),
+    ("o1",               15.00,  60.00),
+    ("o3",               10.00,  40.00),
+    # OpenAI — chat models
+    ("gpt-4o-mini",       0.15,   0.60),
+    ("gpt-4o",            2.50,  10.00),
+    ("gpt-4-turbo",      10.00,  30.00),
+    ("gpt-3.5",           0.50,   1.50),
+    # Google
+    ("gemini-1.5-pro",    1.25,   5.00),
+    ("gemini-1.5-flash",  0.075,  0.30),
+    ("gemini-2.0",        0.075,  0.30),
+    # Open-source / hosted
+    ("llama3-70b",        0.59,   0.79),
+    ("llama3-8b",         0.05,   0.08),
+    ("mixtral",           0.24,   0.24),
+    ("deepseek",          0.14,   0.28),
+    ("mistral",           0.20,   0.60),
 ]
 
 # HTTP status codes that warrant a retry

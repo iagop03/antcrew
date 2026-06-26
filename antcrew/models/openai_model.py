@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 from typing import Optional
@@ -11,15 +11,34 @@ except ImportError:
     OpenAI = None  # type: ignore[assignment,misc]
 
 
+# Reasoning models use max_completion_tokens and do not support streaming.
+_REASONING_PREFIXES = ("o1", "o3")
+
+
+def _is_reasoning_model(model: str) -> bool:
+    return any(model.lower().startswith(p) for p in _REASONING_PREFIXES)
+
+
 class OpenAIModel(BaseLLM):
-    """
-    OpenAI chat completion model.
+    # Default; overridden in __init__ based on the chosen model.
+    _is_reasoning: bool = False
 
-    Default model: gpt-4o
+    """OpenAI chat / reasoning model adapter.
 
-    Usage:
-        llm = OpenAIModel()                        # reads OPENAI_API_KEY
+    Supports:
+    - Chat models: ``gpt-4o``, ``gpt-4o-mini``, ``gpt-3.5-turbo``, …
+    - Reasoning models: ``o1``, ``o1-mini``, ``o3``, ``o3-mini``
+
+    Reasoning models (``o1``/``o3`` family) automatically use
+    ``max_completion_tokens`` instead of ``max_tokens`` and skip streaming
+    because the OpenAI API does not support it for those models.
+
+    Usage::
+
+        llm = OpenAIModel()                        # reads OPENAI_API_KEY, default gpt-4o
+        llm = OpenAIModel("o3-mini")               # reasoning model, no streaming
         llm = OpenAIModel("gpt-4o-mini", api_key="sk-...")
+        llm = OpenAIModel("gpt-4o", base_url="https://your-proxy/v1")
     """
 
     def __init__(
@@ -27,44 +46,90 @@ class OpenAIModel(BaseLLM):
         model: str = "gpt-4o",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        organization: Optional[str] = None,
     ) -> None:
         if OpenAI is None:
             raise ImportError(
                 "openai package is required for OpenAIModel. "
-                "Install it: pip install openai"
+                "Install it: pip install antcrew[openai]"
             )
         self._model = model
-        self._client = OpenAI(
-            api_key=api_key or os.environ.get("OPENAI_API_KEY", "not-needed"),
-            **({"base_url": base_url} if base_url else {}),
-        )
+        self._is_reasoning = _is_reasoning_model(model)
+        client_kwargs: dict = {
+            "api_key": api_key or os.environ.get("OPENAI_API_KEY", "not-needed"),
+        }
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        if organization:
+            client_kwargs["organization"] = organization
+        self._client = OpenAI(**client_kwargs)
 
     def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
         chat_msgs = [{"role": m.role, "content": m.content} for m in messages]
 
-        if self.on_token:
-            stream = self._client.chat.completions.create(
-                model=self._model, messages=chat_msgs, max_tokens=max_tokens,
-                stream=True, stream_options={"include_usage": True},
-                timeout=self.timeout,
-            )
-            chunks: list[str] = []
-            usage_data = None
-            for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    text = chunk.choices[0].delta.content
-                    self.on_token(text)
-                    chunks.append(text)
-                if getattr(chunk, "usage", None):
-                    usage_data = chunk.usage
-            if usage_data:
-                self._record_usage(usage_data.prompt_tokens, usage_data.completion_tokens)
-            return "".join(chunks)
+        # Reasoning models: no streaming, different token param name.
+        if self._is_reasoning:
+            return self._complete_reasoning(chat_msgs, max_tokens)
 
+        if self.on_token:
+            return self._complete_streaming(chat_msgs, max_tokens)
+
+        return self._complete_blocking(chat_msgs, max_tokens)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _complete_blocking(self, chat_msgs: list[dict], max_tokens: int) -> str:
         response = self._client.chat.completions.create(
-            model=self._model, messages=chat_msgs, max_tokens=max_tokens,
+            model=self._model,
+            messages=chat_msgs,
+            max_tokens=max_tokens,
             timeout=self.timeout,
         )
         if response.usage:
-            self._record_usage(response.usage.prompt_tokens, response.usage.completion_tokens)
+            self._record_usage(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+            )
+        return response.choices[0].message.content or ""
+
+    def _complete_streaming(self, chat_msgs: list[dict], max_tokens: int) -> str:
+        stream = self._client.chat.completions.create(
+            model=self._model,
+            messages=chat_msgs,
+            max_tokens=max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+            timeout=self.timeout,
+        )
+        chunks: list[str] = []
+        usage_data = None
+        for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                text = chunk.choices[0].delta.content
+                if self.on_token:
+                    self.on_token(text)
+                chunks.append(text)
+            if getattr(chunk, "usage", None):
+                usage_data = chunk.usage
+        if usage_data:
+            self._record_usage(
+                usage_data.prompt_tokens,
+                usage_data.completion_tokens,
+            )
+        return "".join(chunks)
+
+    def _complete_reasoning(self, chat_msgs: list[dict], max_tokens: int) -> str:
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=chat_msgs,
+            max_completion_tokens=max_tokens,
+            timeout=self.timeout,
+        )
+        if response.usage:
+            self._record_usage(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+            )
         return response.choices[0].message.content or ""

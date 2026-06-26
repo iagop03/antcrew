@@ -15,6 +15,10 @@ from antcrew.integrations.confluence import ConfluenceIntegration
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.models.gemini_model import GeminiModel
 from antcrew.models.fallback import FallbackLLM
+try:
+    from antcrew.models.openai_model import OpenAIModel
+except ImportError:
+    OpenAIModel = None  # type: ignore[assignment,misc]
 from antcrew.models.cache import LLMCache, FileLLMCache
 from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
 from antcrew.sandbox import RunResult as SandboxRunResult
@@ -71,6 +75,7 @@ __all__ = [
     # Models
     "SimulatedLLM",
     "GeminiModel",
+    "OpenAIModel",
     "FallbackLLM",
     "LLMCache",
     "FileLLMCache",

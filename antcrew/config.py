@@ -70,7 +70,11 @@ def build_llm(model_str: str, *, prompt_caching: bool = False) -> BaseLLM:
         from antcrew.models.groq_model import GroqModel
         return GroqModel(s.split(":", 1)[1])
 
-    if s.startswith("gpt"):
+    if s.startswith("openai:"):
+        from antcrew.models.openai_model import OpenAIModel
+        return OpenAIModel(s.split(":", 1)[1])
+
+    if s.startswith("gpt") or s.startswith("o1") or s.startswith("o3"):
         from antcrew.models.openai_model import OpenAIModel
         return OpenAIModel(s)
 
