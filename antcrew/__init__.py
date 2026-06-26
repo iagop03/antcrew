@@ -4,6 +4,7 @@ from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.fullstack_team import FullStackTeam
 from antcrew.core.supervisor import Supervisor, ParallelGroup, parallel
 from antcrew.core.tools import BaseTool, ToolResult, WebSearchTool, CodeExecutorTool, ReadFileTool
+from antcrew.core.pipeline import Pipeline
 from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import DevOpsArtifact, DocumentationArtifact
 from antcrew.agents.devops import DevOpsAgent
@@ -52,6 +53,7 @@ __all__ = [
     "Supervisor",
     "ParallelGroup",
     "parallel",
+    "Pipeline",
     # Tools
     "BaseTool",
     "ToolResult",
