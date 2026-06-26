@@ -2325,5 +2325,167 @@ def publish_cmd(
             console.print("[yellow]Nothing to publish to Confluence[/] — no PRD, research, or doc artifacts found.")
 
 
+@app.command(name="diff")
+def diff_cmd(
+    run_a: Path = typer.Argument(..., help="First state JSON file (baseline)."),
+    run_b: Path = typer.Argument(..., help="Second state JSON file (comparison)."),
+    files: bool = typer.Option(True, "--files/--no-files", help="Show per-file content diffs."),
+    context: int = typer.Option(3, "--context", "-c", help="Unified diff context lines."),
+) -> None:
+    """Compare two saved pipeline runs side-by-side.
+
+    \b
+    antcrew diff run_v1.json run_v2.json
+    antcrew diff run_v1.json run_v2.json --no-files   # metadata only
+    """
+    import difflib
+    from antcrew.utils.persistence import load_state as _load_state
+    from rich.rule import Rule
+    from rich.table import Table
+
+    for p in (run_a, run_b):
+        if not p.exists():
+            console.print(f"[red]File not found:[/] {p}")
+            raise typer.Exit(1)
+
+    a = _load_state(run_a)
+    b = _load_state(run_b)
+
+    def _val(state: dict, key: str):
+        v = state.get(key)
+        if isinstance(v, dict) and v:
+            return v
+        return v
+
+    console.print(f"\n[bold green]antcrew diff[/]  [cyan]{run_a.name}[/]  →  [cyan]{run_b.name}[/]\n")
+
+    # ── request ──────────────────────────────────────────────────────────────
+    req_a = a.get("request") or ""
+    req_b = b.get("request") or ""
+    if req_a != req_b:
+        console.print(Rule("[bold]request[/]"))
+        console.print(f"  [red]A:[/] {req_a}")
+        console.print(f"  [green]B:[/] {req_b}")
+        console.print()
+
+    # ── PRD ──────────────────────────────────────────────────────────────────
+    prd_a = a.get("prd") or {}
+    prd_b = b.get("prd") or {}
+    if isinstance(prd_a, dict) and isinstance(prd_b, dict) and (prd_a or prd_b):
+        prd_changed = any(prd_a.get(k) != prd_b.get(k) for k in ("title", "summary"))
+        if prd_changed:
+            console.print(Rule("[bold]PRD[/]"))
+            for field in ("title", "summary"):
+                va, vb = prd_a.get(field, ""), prd_b.get(field, "")
+                if va != vb:
+                    console.print(f"  [dim]{field}:[/]")
+                    console.print(f"    [red]A:[/] {va}")
+                    console.print(f"    [green]B:[/] {vb}")
+            console.print()
+
+    # ── Tickets ───────────────────────────────────────────────────────────────
+    tix_a: list[dict] = a.get("tickets") or []
+    tix_b: list[dict] = b.get("tickets") or []
+    if isinstance(tix_a, list) and isinstance(tix_b, list):
+        ids_a = {t.get("id") if isinstance(t, dict) else None for t in tix_a}
+        ids_b = {t.get("id") if isinstance(t, dict) else None for t in tix_b}
+        added   = ids_b - ids_a
+        removed = ids_a - ids_b
+        if added or removed or len(tix_a) != len(tix_b):
+            delta_str = ""
+            if added:
+                delta_str += f"  [green]+{len(added)} added[/]"
+            if removed:
+                delta_str += f"  [red]-{len(removed)} removed[/]"
+            console.print(Rule(f"[bold]Tickets[/]  A:{len(tix_a)}  B:{len(tix_b)}{delta_str}"))
+            for t in tix_b:
+                if isinstance(t, dict) and t.get("id") in added:
+                    console.print(f"  [green]+[/] {t.get('id','?')}  {t.get('title','')}")
+            for t in tix_a:
+                if isinstance(t, dict) and t.get("id") in removed:
+                    console.print(f"  [red]−[/] {t.get('id','?')}  {t.get('title','')}")
+            console.print()
+
+    # ── Code artifacts ────────────────────────────────────────────────────────
+    def _artifact_map(lst) -> dict[str, str]:
+        if not lst:
+            return {}
+        out = {}
+        for a in lst:
+            fp = a.get("file_path") if isinstance(a, dict) else None
+            ct = a.get("content") if isinstance(a, dict) else None
+            if fp:
+                out[fp] = ct or ""
+        return out
+
+    ca_a = _artifact_map(a.get("code_artifacts"))
+    ca_b = _artifact_map(b.get("code_artifacts"))
+    if ca_a or ca_b:
+        all_files = sorted(set(ca_a) | set(ca_b))
+        added_f   = [f for f in all_files if f not in ca_a]
+        removed_f = [f for f in all_files if f not in ca_b]
+        changed_f = [f for f in all_files if f in ca_a and f in ca_b and ca_a[f] != ca_b[f]]
+        same_f    = [f for f in all_files if f in ca_a and f in ca_b and ca_a[f] == ca_b[f]]
+
+        parts = []
+        if added_f:
+            parts.append(f"[green]+{len(added_f)} added[/]")
+        if removed_f:
+            parts.append(f"[red]-{len(removed_f)} removed[/]")
+        if changed_f:
+            parts.append(f"[yellow]~{len(changed_f)} changed[/]")
+
+        summary = "  " + "  ".join(parts) if parts else ""
+        console.print(Rule(f"[bold]Code files[/]  A:{len(ca_a)}  B:{len(ca_b)}{summary}"))
+
+        for f in sorted(added_f):
+            console.print(f"  [green]+[/] {f}  [dim]\\[new][/dim]")
+        for f in sorted(removed_f):
+            console.print(f"  [red]−[/] {f}  [dim]\\[removed][/dim]")
+        for f in sorted(changed_f):
+            console.print(f"  [yellow]~[/] {f}  [dim]\\[modified][/dim]")
+        for f in same_f:
+            console.print(f"  [dim]=[/dim] [dim]{f}  \\[unchanged][/dim]")
+
+        if files and changed_f:
+            console.print()
+            for f in sorted(changed_f):
+                lines_a = (ca_a[f] or "").splitlines(keepends=True)
+                lines_b = (ca_b[f] or "").splitlines(keepends=True)
+                diff_lines = list(difflib.unified_diff(
+                    lines_a, lines_b,
+                    fromfile=f"A/{f}", tofile=f"B/{f}",
+                    n=context,
+                ))
+                if diff_lines:
+                    console.print(f"\n  [bold]{f}[/]")
+                    for line in diff_lines:
+                        line = line.rstrip("\n")
+                        if line.startswith("+++") or line.startswith("---"):
+                            console.print(f"  [dim]{line}[/dim]")
+                        elif line.startswith("+"):
+                            console.print(f"  [green]{line}[/green]")
+                        elif line.startswith("-"):
+                            console.print(f"  [red]{line}[/red]")
+                        elif line.startswith("@@"):
+                            console.print(f"  [cyan]{line}[/cyan]")
+                        else:
+                            console.print(f"  {line}")
+
+        console.print()
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    any_diff = (
+        req_a != req_b
+        or prd_a != prd_b
+        or tix_a != tix_b
+        or ca_a != ca_b
+    )
+    if not any_diff:
+        console.print("[dim]No differences found.[/dim]\n")
+    else:
+        console.print("[dim]─── end of diff ───[/dim]\n")
+
+
 if __name__ == "__main__":
     app()
