@@ -2938,5 +2938,114 @@ def diff_cmd(
         console.print("[dim]─── end of diff ───[/dim]\n")
 
 
+# ---------------------------------------------------------------------------
+# antcrew graph — visualise Supervisor flow
+# ---------------------------------------------------------------------------
+
+@app.command(name="graph")
+def graph_cmd(
+    config: Path = typer.Option(
+        None, "--config", "-c",
+        help="YAML or JSON config/flow file (agentteam.yaml, flow.json, …)",
+    ),
+    team: str = typer.Option(
+        None, "--team", "-t",
+        help="Built-in team name: dev | fullstack | research | content",
+    ),
+    fmt: str = typer.Option(
+        "ascii", "--format", "-f",
+        help="Output format: ascii | mermaid",
+    ),
+) -> None:
+    """Visualise the Supervisor agent flow as ASCII art or a Mermaid diagram.
+
+    \b
+    # Built-in team
+    antcrew graph --team dev
+    antcrew graph --team fullstack --format mermaid
+
+    \b
+    # Custom flow from config file
+    antcrew graph --config agentteam.yaml
+    antcrew graph --config flow.json --format mermaid
+    """
+    from antcrew.graph import render_ascii, render_mermaid, _get_builtin_flow
+
+    fmt = fmt.lower().strip()
+    if fmt not in ("ascii", "mermaid"):
+        console.print(f"[red]Unknown format:[/] {fmt!r}  (choose ascii or mermaid)")
+        raise typer.Exit(1)
+
+    # ── Resolve flow ─────────────────────────────────────────────────────────
+    flow: list[tuple] | None = None
+
+    if config is not None:
+        if not config.exists():
+            console.print(f"[red]Config file not found:[/] {config}")
+            raise typer.Exit(1)
+        try:
+            from antcrew.flow import load_flow as _load_flow
+            flow = _load_flow(config)
+        except Exception as exc:
+            console.print(f"[red]Could not load flow from {config}:[/] {exc}")
+            raise typer.Exit(1)
+
+    elif team is not None:
+        flow = _get_builtin_flow(team)
+        if flow is None:
+            console.print(
+                f"[red]Unknown team:[/] {team!r}\n"
+                "  Available: dev, fullstack, research, content"
+            )
+            raise typer.Exit(1)
+
+    else:
+        # Try agentteam.yaml in cwd as default
+        default = Path("agentteam.yaml")
+        if default.exists():
+            try:
+                from antcrew.flow import load_flow as _load_flow
+                flow = _load_flow(default)
+            except Exception as exc:
+                console.print(f"[red]Could not load {default}:[/] {exc}")
+                raise typer.Exit(1)
+        else:
+            console.print(
+                "[yellow]No flow source specified.[/]\n"
+                "  Use --team <name> or --config <file>.\n"
+                "  Run [cyan]antcrew graph --help[/] for details."
+            )
+            raise typer.Exit(1)
+
+    if not flow:
+        console.print("[yellow]Flow is empty — nothing to render.[/]")
+        raise typer.Exit(0)
+
+    # ── Render ───────────────────────────────────────────────────────────────
+    agents = {str(n) for step in flow for n in list(step)[:2]}
+    edges = len(flow)
+    source_label = (
+        str(config) if config else
+        f"{team} (built-in)" if team else
+        "agentteam.yaml"
+    )
+
+    console.print(
+        f"\n[bold green]antcrew graph[/]  [cyan]{source_label}[/]  "
+        f"[dim]({len(agents)} agents, {edges} edges)[/dim]\n"
+    )
+
+    if fmt == "mermaid":
+        console.print(render_mermaid(flow), markup=False, highlight=False)
+        console.print(
+            "\n[dim]Paste the block above into https://mermaid.live or a "
+            "```mermaid``` fenced block in GitHub Markdown.[/dim]"
+        )
+    else:
+        console.print(render_ascii(flow), markup=False, highlight=False)
+
+    console.print()
+
+
 if __name__ == "__main__":
     app()
