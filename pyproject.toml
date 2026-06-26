@@ -48,11 +48,13 @@ slack     = ["slack-sdk>=3.19", "slack-bolt>=1.18"]
 server    = ["fastapi>=0.111", "uvicorn[standard]>=0.30"]
 memory    = ["chromadb>=0.5"]
 dashboard = ["fastapi>=0.111", "uvicorn[standard]>=0.30", "aiofiles>=23.0"]
-dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0"]
+watch     = ["watchdog>=4.0"]
+dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0", "watchdog>=4.0"]
 all       = ["python-telegram-bot>=20.0", "openai>=1.30",
              "slack-sdk>=3.19", "slack-bolt>=1.18",
              "fastapi>=0.111", "uvicorn[standard]>=0.30", "aiofiles>=23.0",
-             "chromadb>=0.5", "aiosqlite>=0.19", "langgraph-checkpoint-sqlite>=2.0"]
+             "chromadb>=0.5", "aiosqlite>=0.19", "langgraph-checkpoint-sqlite>=2.0",
+             "watchdog>=4.0"]
 
 [project.scripts]
 antcrew = "antcrew.cli:app"

@@ -2325,6 +2325,191 @@ def publish_cmd(
             console.print("[yellow]Nothing to publish to Confluence[/] — no PRD, research, or doc artifacts found.")
 
 
+@app.command(name="watch")
+def watch_cmd(
+    watch_path: Path = typer.Argument(..., help="File or directory to watch for changes."),
+    request: Optional[str] = typer.Option(
+        None, "--request", "-r",
+        help="Request to run on each change. Defaults to the file's content.",
+    ),
+    team: str = typer.Option("dev", "--team", "-t", help="Team to run: dev, fullstack, research, content."),
+    model_name: str = typer.Option("claude-haiku-4-5-20251001", "--model", "-m", help="Model ID."),
+    output: Path = typer.Option(
+        Path("antcrew-watch-latest.json"), "--output", "-o",
+        help="Where to write each run's state (overwritten on each change).",
+    ),
+    diff: bool = typer.Option(True, "--diff/--no-diff", help="Show artifact diff after each re-run."),
+    debounce: float = typer.Option(2.0, "--debounce", help="Seconds to wait after a change before re-running."),
+) -> None:
+    """Re-run the pipeline whenever a watched file changes.
+
+    \b
+    Watch a spec file and re-run DevTeam on every save:
+        antcrew watch spec.md --request "implement this spec"
+
+    \b
+    Watch a directory (any file change triggers a re-run):
+        antcrew watch src/ --team fullstack
+
+    \b
+    Requires:  pip install antcrew[watch]
+    """
+    watch_path = watch_path.resolve()
+    if not watch_path.exists():
+        console.print(f"[red]Path not found:[/] {watch_path}")
+        raise typer.Exit(1)
+
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+    except ImportError:
+        console.print(
+            "[red]watchdog is not installed.[/] "
+            "Run: [cyan]pip install antcrew\\[watch][/]"
+        )
+        raise typer.Exit(1)
+
+    import threading
+    import time as _time
+    import difflib
+    from antcrew.utils.persistence import save_state as _save, load_state as _load
+    from antcrew.config import build_llm
+
+    llm = build_llm(model_name)
+
+    def _build_team():
+        t = team.lower()
+        if t == "dev":
+            from antcrew.teams.dev_team import DevTeam
+            return DevTeam(model=llm)
+        if t in ("fullstack", "full"):
+            from antcrew.teams.fullstack_team import FullStackTeam
+            return FullStackTeam(model=llm)
+        if t == "research":
+            from antcrew.teams.research_team import ResearchTeam
+            return ResearchTeam(model=llm)
+        if t == "content":
+            from antcrew.teams.content_team import ContentTeam
+            return ContentTeam(model=llm)
+        console.print(f"[red]Unknown team:[/] {team}")
+        raise typer.Exit(1)
+
+    def _read_request() -> str:
+        if request:
+            return request
+        if watch_path.is_file():
+            try:
+                return watch_path.read_text(encoding="utf-8", errors="replace")[:4000].strip()
+            except Exception:
+                pass
+        return f"Process changes in {watch_path.name}"
+
+    def _run_once(run_n: int) -> Optional[dict]:
+        req = _read_request()
+        console.print(
+            f"\n[bold green]antcrew watch[/]  run #{run_n}  "
+            f"[dim]{watch_path.name}[/dim]\n"
+        )
+        try:
+            team_inst = _build_team()
+            with console.status(f"Running {team}…"):
+                result = team_inst.run(req, thread_id=f"watch-{run_n}")
+            state = dict(result.state)
+            _save(state, output)
+            console.print(f"[green]Done.[/]  cost={result.cost_usd:.4f}  → [cyan]{output}[/]\n")
+            return state
+        except Exception as exc:
+            console.print(f"[red]Run failed:[/] {exc}\n")
+            return None
+
+    def _show_diff(prev: dict, curr: dict) -> None:
+        # Code artifact diff
+        def _fmap(state):
+            arts = state.get("code_artifacts") or []
+            return {
+                a["file_path"]: a.get("content", "")
+                for a in arts if isinstance(a, dict) and a.get("file_path")
+            }
+        fa, fb = _fmap(prev), _fmap(curr)
+        if fa == fb:
+            console.print("[dim]Code artifacts unchanged.[/dim]\n")
+            return
+        all_files = sorted(set(fa) | set(fb))
+        for f in all_files:
+            if f not in fa:
+                console.print(f"  [green]+[/] {f}  [dim]\\[new][/dim]")
+            elif f not in fb:
+                console.print(f"  [red]−[/] {f}  [dim]\\[removed][/dim]")
+            elif fa[f] != fb[f]:
+                lines = list(difflib.unified_diff(
+                    fa[f].splitlines(keepends=True),
+                    fb[f].splitlines(keepends=True),
+                    fromfile=f"prev/{f}", tofile=f"curr/{f}", n=2,
+                ))
+                console.print(f"  [yellow]~[/] {f}")
+                for line in lines[2:]:  # skip --- +++
+                    line = line.rstrip("\n")
+                    if line.startswith("+"):
+                        console.print(f"    [green]{line}[/green]")
+                    elif line.startswith("-"):
+                        console.print(f"    [red]{line}[/red]")
+        console.print()
+
+    # ── debounce + run state ─────────────────────────────────────────────────
+    _lock = threading.Lock()
+    _pending: list[bool] = [False]
+    _run_n: list[int] = [0]
+    _prev_state: list[Optional[dict]] = [None]
+
+    def _schedule_run():
+        with _lock:
+            _pending[0] = True
+
+    class _Handler(FileSystemEventHandler):
+        def on_modified(self, event):
+            if not event.is_directory:
+                _schedule_run()
+
+        def on_created(self, event):
+            if not event.is_directory:
+                _schedule_run()
+
+    watch_dir = str(watch_path if watch_path.is_dir() else watch_path.parent)
+    observer = Observer()
+    observer.schedule(_Handler(), path=watch_dir, recursive=watch_path.is_dir())
+    observer.start()
+
+    console.print(
+        f"[bold green]antcrew watch[/]  watching [cyan]{watch_path}[/]  "
+        f"team=[cyan]{team}[/]  debounce={debounce}s\n"
+        "Press [bold]Ctrl+C[/bold] to stop.\n"
+    )
+
+    # Immediate first run
+    _run_n[0] += 1
+    _prev_state[0] = _run_once(_run_n[0])
+
+    try:
+        while True:
+            _time.sleep(0.5)
+            with _lock:
+                if not _pending[0]:
+                    continue
+                _pending[0] = False
+
+            _time.sleep(debounce)
+            _run_n[0] += 1
+            curr = _run_once(_run_n[0])
+            if curr is not None and diff and _prev_state[0] is not None:
+                _show_diff(_prev_state[0], curr)
+            _prev_state[0] = curr
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped.[/dim]\n")
+    finally:
+        observer.stop()
+        observer.join()
+
+
 @app.command(name="export")
 def export_cmd(
     path: Path = typer.Argument(..., help="JSON state file to export."),
