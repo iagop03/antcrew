@@ -5,6 +5,57 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.0] — 2026-06-26
+
+### Added
+- `retry-with-hint` in `BaseAgent.system_parsed()` — when `max_retries > 0`,
+  failed parse or schema-validation attempts are retried automatically. Each
+  retry appends the previous error and up to 500 chars of the invalid response
+  to the user message so the model can self-correct. `parse_failure` warning is
+  now logged only after all attempts are exhausted; intermediate failures are
+  logged at DEBUG level.
+- `FallbackLLM` cost guard — `FallbackLLM.system()` previously bypassed the
+  `max_cost_usd` guard because it overrides `BaseLLM.system()` directly. Fixed
+  by adding an aggregate cost check at the top of `FallbackLLM.system()` using
+  `get_usage_summary()` (which sums across all inner models). Budget now applies
+  correctly to the total spend regardless of which model in the chain is called.
+- `FallbackLLM` trace propagation — `trace` and `_trace_run_id` are now
+  included in `FallbackLLM.__setattr__` propagation so `BaseLLM.system()` trace
+  hooks fire on every inner model. Trace records were previously silently dropped
+  when a `FallbackLLM` was used as the team LLM.
+- `antcrew publish <state.json>` CLI command — publishes pipeline output to
+  external systems from a saved state file:
+  - `--github` — creates a branch, commits `code_artifacts` + `devops_artifacts`,
+    and opens a GitHub PR. Credentials via `--token` / `$GITHUB_TOKEN`.
+  - `--confluence` — publishes PRD, research document, and doc artifacts as
+    Confluence pages. Credentials via env vars or flags.
+  - Both flags can be combined in a single invocation.
+  - State dict is re-hydrated into Pydantic objects (`PRD`, `CodeArtifact`,
+    `DevOpsArtifact`, `DocumentationArtifact`, `ResearchDocument`) before
+    integrations receive it so attribute access works correctly.
+- Dashboard SPA — `antcrew serve` now ships a fully functional web UI at `/ui/`
+  (single-file vanilla HTML/JS, no build step, no npm dependencies):
+  - **Runs tab**: auto-refreshing table with status badges; 2 s poll while any
+    run is live, 10 s otherwise.
+  - **New run modal**: trigger a run with request, team, model, and optional
+    thread ID.
+  - **Detail panel**: live-streaming tokens via `EventSource` with per-agent
+    labels, then PRD, ticket list, file list with inline code viewer, and usage
+    stats (input/output tokens + estimated cost).
+  - **Evals tab**: score bars, per-agent scores, pass/fail indicator.
+  - `GET /` now redirects to `/ui/`.
+  - `antcrew serve` prints the current `__version__` instead of a hardcoded
+    string.
+
+### Fixed
+- `FallbackLLM.system()` silently bypassed `max_cost_usd` — now raises
+  `CostLimitExceeded` using the correct aggregate cost.
+- `FallbackLLM` with `trace_log=` attached to the team no longer drops trace
+  records for inner-model calls.
+- `antcrew serve` printed `v0.4` regardless of the installed version.
+
+---
+
 ## [0.2.1] — 2026-06-26
 
 ### Added
