@@ -2,6 +2,9 @@ from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.research_team import ResearchTeam
 from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.fullstack_team import FullStackTeam
+from antcrew.teams.async_teams import (
+    AsyncDevTeam, AsyncFullStackTeam, AsyncResearchTeam, AsyncContentTeam,
+)
 from antcrew.core.supervisor import Supervisor, ParallelGroup, parallel
 from antcrew.core.tools import BaseTool, ToolResult, WebSearchTool, CodeExecutorTool, ReadFileTool
 from antcrew.core.pipeline import Pipeline
@@ -56,6 +59,11 @@ __all__ = [
     "FullStackTeam",
     "ResearchTeam",
     "ContentTeam",
+    # Async teams
+    "AsyncDevTeam",
+    "AsyncFullStackTeam",
+    "AsyncResearchTeam",
+    "AsyncContentTeam",
     # Core
     "Supervisor",
     "ParallelGroup",
