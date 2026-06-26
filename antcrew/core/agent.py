@@ -158,15 +158,18 @@ class BaseAgent(ABC):
         system_prompt_suffix: Optional[str] = None,
         tools: Optional[list["BaseTool"]] = None,
         max_tool_steps: int = 5,
+        preset=None,
     ) -> None:
+        from antcrew.presets import resolve_preset
         self.llm = llm
         self.channel = channel
         self.approval_required = approval_required
         self.response_options = response_options or ["approve", "edit", "reject"]
-        self.max_tokens = max_tokens                        # per-agent token cap
-        self.system_prompt_suffix = system_prompt_suffix   # appended to every system call
+        self.max_tokens = max_tokens
+        self.system_prompt_suffix = system_prompt_suffix
         self.tools: list["BaseTool"] = tools or []
         self.max_tool_steps = max_tool_steps
+        self.preset = resolve_preset(preset)
 
     @abstractmethod
     def run(self, state: TeamState) -> dict:
@@ -178,10 +181,13 @@ class BaseAgent(ABC):
     def system(self, system_prompt: str, user: str, **kwargs) -> str:
         """Call LLM with system + user messages, tagging the LLM with this agent's name.
 
-        Applies per-agent overrides:
-        - system_prompt_suffix: appended to the system prompt on every call.
+        Applies per-agent overrides (in order):
+        - preset: instruction prepended to the system prompt.
+        - system_prompt_suffix: text appended to the system prompt.
         - max_tokens: overrides the LLM default when set.
         """
+        if self.preset is not None:
+            system_prompt = self.preset.apply(system_prompt)
         if self.system_prompt_suffix:
             system_prompt = system_prompt + "\n\n" + self.system_prompt_suffix
         if self.max_tokens and "max_tokens" not in kwargs:

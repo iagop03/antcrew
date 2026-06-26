@@ -42,6 +42,7 @@ from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult
 from antcrew.memory.chroma import ChromaMemory
 from antcrew.memory.repo_index import RepoIndex
 from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResult
+from antcrew.presets import AgentPreset, get_preset, CONCISE, STRICT, VERBOSE, CAREFUL
 
 __all__ = [
     # Teams
@@ -117,5 +118,12 @@ __all__ = [
     "EvalReport",
     "EvalRunner",
     "JudgeResult",
+    # Presets
+    "AgentPreset",
+    "get_preset",
+    "CONCISE",
+    "STRICT",
+    "VERBOSE",
+    "CAREFUL",
 ]
 __version__ = "0.5.0"

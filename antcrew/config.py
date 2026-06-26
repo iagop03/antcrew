@@ -368,6 +368,8 @@ def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel, ag
         kwargs["max_tokens"] = int(agent_cfg["max_tokens"])
     if "system_prompt_suffix" in agent_cfg:
         kwargs["system_prompt_suffix"] = str(agent_cfg["system_prompt_suffix"])
+    if "preset" in agent_cfg:
+        kwargs["preset"] = str(agent_cfg["preset"])
 
     # codebase_scanner-specific extra: ignore_dirs
     if name == "codebase_scanner" and "ignore_dirs" in agent_cfg:
