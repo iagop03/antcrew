@@ -142,4 +142,4 @@ __all__ = [
     "VERBOSE",
     "CAREFUL",
 ]
-__version__ = "0.8.0"
+__version__ = "0.8.1"

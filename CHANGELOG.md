@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.1] — 2026-06-26
+
+### Added
+- **`antcrew test <state.json>`** — new CLI command that runs the QA-generated
+  test artifacts from any saved pipeline state file without re-running the
+  full pipeline.
+  - Supports `--runner local` (default, temp-dir subprocess) and
+    `--runner docker` (isolated container via `DockerRunner`).
+  - `--keep <dir>` writes test + code files to the specified directory and
+    keeps them after the run — useful for debugging failing tests.
+  - `--no-code` runs test files only, omitting code artifacts (useful when the
+    implementation is already checked out locally).
+  - `--verbose` / `-v` always prints the full pytest output; without it,
+    output is shown only on failure.
+  - `--timeout` controls the per-run pytest timeout (default 60 s).
+  - Handles nested project state files (`{"state": {...}}`) automatically.
+  - Exit code 0 when all tests pass, 1 on failure — suitable for CI scripts.
+  - 22 new tests in `tests/test_cli_test_cmd.py`.
+
+---
+
 ## [0.8.0] — 2026-06-26
 
 ### Added
