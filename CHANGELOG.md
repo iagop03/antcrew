@@ -5,6 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.0] — 2026-06-26
+
+### Added
+- **Native JSON mode / structured outputs** — `BaseLLM.complete()` gains a
+  `json_mode: bool = False` keyword argument.  Adapters that support native
+  JSON mode use it; others accept and silently ignore the flag.
+  - **`OpenAIModel`** — passes `response_format={"type": "json_object"}` on
+    the blocking path (`_complete_blocking`).  Streaming and reasoning models
+    (`o1`/`o3`) are not affected.
+  - **`GeminiModel`** — sets `generationConfig.responseMimeType =
+    "application/json"` for both streaming and non-streaming paths.
+  - **`AzureOpenAIModel`** — inherits OpenAI behaviour automatically.
+  - **`AnthropicModel`**, **`GroqModel`**, **`OllamaModel`**,
+    **`SimulatedLLM`** — accept `json_mode` as a no-op; callers fall back to
+    the existing retry-with-hint logic in `system_parsed`.
+  - **`FallbackLLM`** — propagates `json_mode` to every model in the chain.
+- **`BaseAgent.system_parsed()` auto-activates JSON mode** — every call to
+  `system_parsed()` (including retries) now passes `json_mode=True` to the
+  underlying LLM so that providers that support it return well-formed JSON
+  immediately, reducing parse errors and retry round-trips.
+- **`antcrew.testing.llms.SequencedLLM`** — signature updated to accept
+  `json_mode` for compatibility with `system_parsed` test scenarios.
+
+### Changed
+- `BaseLLM.complete()` abstract signature now includes `json_mode: bool =
+  False`.  All concrete adapters and test helpers updated accordingly.
+
+---
+
 ## [0.7.0] — 2026-06-26
 
 ### Added

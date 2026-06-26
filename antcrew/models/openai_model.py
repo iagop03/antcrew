@@ -64,7 +64,7 @@ class OpenAIModel(BaseLLM):
             client_kwargs["organization"] = organization
         self._client = OpenAI(**client_kwargs)
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384, json_mode: bool = False) -> str:
         chat_msgs = [{"role": m.role, "content": m.content} for m in messages]
 
         # Reasoning models: no streaming, different token param name.
@@ -74,19 +74,22 @@ class OpenAIModel(BaseLLM):
         if self.on_token:
             return self._complete_streaming(chat_msgs, max_tokens)
 
-        return self._complete_blocking(chat_msgs, max_tokens)
+        return self._complete_blocking(chat_msgs, max_tokens, json_mode=json_mode)
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _complete_blocking(self, chat_msgs: list[dict], max_tokens: int) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=chat_msgs,
-            max_tokens=max_tokens,
-            timeout=self.timeout,
-        )
+    def _complete_blocking(self, chat_msgs: list[dict], max_tokens: int, *, json_mode: bool = False) -> str:
+        kwargs: dict = {
+            "model": self._model,
+            "messages": chat_msgs,
+            "max_tokens": max_tokens,
+            "timeout": self.timeout,
+        }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        response = self._client.chat.completions.create(**kwargs)
         if response.usage:
             self._record_usage(
                 response.usage.prompt_tokens,

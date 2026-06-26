@@ -24,9 +24,9 @@ class _CaptureLLM(SimulatedLLM):
         super().__init__()
         self.captured = []
 
-    def complete(self, messages, *, max_tokens=4096):
+    def complete(self, messages, *, max_tokens=4096, json_mode=False):
         self.captured.append((messages[0].content, messages[1].content))
-        return super().complete(messages, max_tokens=max_tokens)
+        return super().complete(messages, max_tokens=max_tokens, json_mode=json_mode)
 
 
 # ===========================================================================

@@ -33,7 +33,7 @@ class GroqModel(BaseLLM):
             )
         self._client = Groq(api_key=key)
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384, json_mode: bool = False) -> str:
         chat_msgs = [{"role": m.role, "content": m.content} for m in messages]
 
         if self.on_token:

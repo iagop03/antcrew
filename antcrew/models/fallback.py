@@ -107,7 +107,7 @@ class FallbackLLM(BaseLLM):
 
         raise last_exc
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384, json_mode: bool = False) -> str:
         """Try each model's complete() in order (no per-model retries here).
 
         In normal operation BaseAgent calls llm.system(), not complete() directly.
@@ -116,7 +116,7 @@ class FallbackLLM(BaseLLM):
         last_exc: BaseException = RuntimeError("No models in chain.")
         for model in self._models:  # type: ignore[attr-defined]
             try:
-                return model.complete(messages, max_tokens=max_tokens)
+                return model.complete(messages, max_tokens=max_tokens, json_mode=json_mode)
             except Exception as exc:
                 last_exc = exc
         raise last_exc

@@ -224,12 +224,23 @@ class BaseLLM(ABC):
     # ── Abstract interface ────────────────────────────────────────────────────
 
     @abstractmethod
-    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
+    def complete(
+        self,
+        messages: list[Message],
+        *,
+        max_tokens: int = 16384,
+        json_mode: bool = False,
+    ) -> str:
         """Send messages and return the full reply as a string.
 
         When ``self.on_token`` is set, stream the response and call
         ``on_token(chunk)`` for each piece of text; still return the full
         concatenated string at the end.
+
+        When ``json_mode=True``, the response is guaranteed to be valid JSON.
+        Adapters that support native JSON mode (OpenAI ``response_format``,
+        Gemini ``responseMimeType``) use it; others ignore the flag and rely
+        on the caller's retry-with-hint logic.
 
         Must call ``self._record_usage(input_tokens, output_tokens)`` after
         every successful call.

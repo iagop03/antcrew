@@ -306,7 +306,7 @@ class BaseAgent(ABC):
         **kwargs are forwarded to self.system() (e.g. max_tokens).
         """
         schema_name = getattr(schema, "__name__", str(schema))
-        raw = self.system(system_prompt, user, **kwargs)
+        raw = self.system(system_prompt, user, json_mode=True, **kwargs)
         last_exc: Exception = ValueError("no attempts made")
 
         for attempt in range(1 + max_retries):
@@ -321,7 +321,7 @@ class BaseAgent(ABC):
                     "parse_retry agent=%s schema=%s attempt=%d/%d",
                     self.name, schema_name, attempt, max_retries,
                 )
-                raw = self.system(system_prompt, user + hint, **kwargs)
+                raw = self.system(system_prompt, user + hint, json_mode=True, **kwargs)
 
             try:
                 return _validate_schema(schema, _json_loads(_extract_json(raw)))

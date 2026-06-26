@@ -55,7 +55,7 @@ class AnthropicModel(BaseLLM):
             + getattr(usage, "cache_read_input_tokens", 0)
         )
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384, json_mode: bool = False) -> str:
         system_parts = [m.content for m in messages if m.role == "system"]
         chat_messages = [
             {"role": m.role, "content": m.content}

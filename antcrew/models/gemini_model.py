@@ -51,10 +51,12 @@ class GeminiModel(BaseLLM):
             body["systemInstruction"] = {"parts": [{"text": "\n\n".join(system_parts)}]}
         return body
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384, json_mode: bool = False) -> str:
         import json as _json
 
         body = self._build_body(messages, max_tokens)
+        if json_mode:
+            body["generationConfig"]["responseMimeType"] = "application/json"
 
         _to = self.timeout
 

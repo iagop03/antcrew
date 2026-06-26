@@ -339,7 +339,7 @@ class SimulatedLLM(BaseLLM):
         state = team.run("Build a login module")  # instant, no API calls
     """
 
-    def complete(self, messages: list[Message], *, max_tokens: int = 16384) -> str:
+    def complete(self, messages: list[Message], *, max_tokens: int = 16384, json_mode: bool = False) -> str:
         system = next((m.content for m in messages if m.role == "system"), "")
         result = _pick_fixture(system)
         if self.on_token:
