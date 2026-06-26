@@ -3047,5 +3047,82 @@ def graph_cmd(
     console.print()
 
 
+# ---------------------------------------------------------------------------
+# antcrew lint — static config / flow validation
+# ---------------------------------------------------------------------------
+
+@app.command(name="lint")
+def lint_cmd(
+    config: Path = typer.Argument(
+        Path("agentteam.yaml"),
+        help="YAML or JSON config file to lint (default: agentteam.yaml)",
+    ),
+    strict: bool = typer.Option(
+        False, "--strict", "-s",
+        help="Exit 1 on warnings as well as errors (default: only errors cause exit 1).",
+    ),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q",
+        help="Suppress info-level messages; only show warnings and errors.",
+    ),
+) -> None:
+    """Statically validate an agentteam.yaml or flow.json config.
+
+    \b
+    Checks (no LLM calls, no API keys required):
+      errors   — unknown team/model/channel/runner, flow cycles, bad max_cost_usd
+      warnings — unknown agent names, unresolved ${VAR} tokens, unknown presets
+      info     — missing optional keys that have defaults
+
+    \b
+    antcrew lint
+    antcrew lint agentteam.yaml
+    antcrew lint agentteam.yaml --strict   # warnings also cause exit 1
+    antcrew lint flow.json --quiet         # hide info messages
+    """
+    from antcrew.linter import lint_config
+
+    if not config.exists():
+        console.print(f"[red]File not found:[/] {config}")
+        raise typer.Exit(1)
+
+    issues = lint_config(config)
+
+    errors   = [i for i in issues if i.severity == "error"]
+    warnings = [i for i in issues if i.severity == "warning"]
+    infos    = [i for i in issues if i.severity == "info"]
+
+    if not issues:
+        console.print(f"[bold green]✓ {config}[/]  [dim]no issues found[/dim]")
+        return
+
+    console.print(f"\n[bold]antcrew lint[/]  [cyan]{config}[/]\n")
+
+    for issue in issues:
+        if issue.severity == "error":
+            loc = f"  [dim]{issue.path}[/dim]" if issue.path else ""
+            console.print(f"  [bold red]✗[/] {issue.message}{loc}")
+        elif issue.severity == "warning":
+            loc = f"  [dim]{issue.path}[/dim]" if issue.path else ""
+            console.print(f"  [yellow]⚠[/] {issue.message}{loc}")
+        elif not quiet:
+            loc = f"  [dim]{issue.path}[/dim]" if issue.path else ""
+            console.print(f"  [dim]ℹ {issue.message}{loc}[/dim]")
+
+    console.print()
+    parts = []
+    if errors:
+        parts.append(f"[red]{len(errors)} error(s)[/]")
+    if warnings:
+        parts.append(f"[yellow]{len(warnings)} warning(s)[/]")
+    if infos and not quiet:
+        parts.append(f"[dim]{len(infos)} info[/dim]")
+    console.print("  " + ", ".join(parts))
+    console.print()
+
+    if errors or (strict and warnings):
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
