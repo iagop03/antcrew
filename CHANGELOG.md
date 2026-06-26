@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.7.0] — 2026-06-26
+
+### Added
+- **`AzureOpenAIModel`** — Azure OpenAI endpoint adapter.  Inherits all
+  streaming, retry, cost-tracking, and reasoning-model logic from
+  `OpenAIModel`; the only difference is the `AzureOpenAI` SDK client.
+  Reads `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`,
+  `AZURE_OPENAI_API_VERSION` from env.  Deployment names starting with
+  `o1`/`o3` are automatically routed to the reasoning path.
+  `build_llm("azure:<deployment>")` added.  Exported from `antcrew`
+  top-level.
+- **`antcrew lint`** — static validation of `agentteam.yaml` / flow files
+  with no LLM calls or API keys required.  Checks: unknown team/model/
+  channel/runner, flow cycles (DFS), invalid `max_cost_usd`, unresolved
+  `${VAR}` tokens, unknown agent names, unknown preset names.  Severity
+  levels: `error` (exit 1), `warning` (advisory), `info` (defaults).
+  `--strict` promotes warnings to errors; `--quiet` hides info messages.
+  Defaults to `agentteam.yaml` in cwd.
+- **Async teams** — `AsyncDevTeam`, `AsyncFullStackTeam`,
+  `AsyncResearchTeam`, `AsyncContentTeam`.  Each is a thin subclass of the
+  synchronous counterpart with an `async def run()` that delegates to
+  `asyncio.to_thread` so blocking LLM calls never stall the event loop.
+  `run_sync()` alias preserves direct synchronous access.  Compatible with
+  FastAPI route handlers, Jupyter `await`, and `asyncio.gather`.  All four
+  exported from `antcrew` top-level.
+- **Automatic memory injection** — `BaseAgent.system()` now searches
+  `self.memory` before every LLM call and prepends a
+  `[Relevant context from memory]` block to the user message when relevant
+  entries are found.  Behaviour is controlled by two new constructor params:
+  `memory_n=3` (max results) and `memory_score_threshold=0.0` (min Jaccard
+  score).  Activates only when `memory=` is attached to the agent (no
+  change for agents without memory).  Falls back silently on errors.
+
+---
+
 ## [0.6.0] — 2026-06-26
 
 ### Added
