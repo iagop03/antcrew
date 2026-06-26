@@ -140,25 +140,50 @@ def test_system_uses_retry_when_no_streaming():
     assert isinstance(result, str)
 
 
-def test_system_no_retry_when_streaming():
-    """When on_token is set, failures propagate immediately (no retry)."""
+def test_system_retries_when_streaming():
+    """When on_token is set, transient failures are still retried."""
     llm = SimulatedLLM()
-    llm.max_retries = 3
+    llm.max_retries = 2
     llm.retry_delay = 0.0
     llm.on_token = lambda t: None
 
     attempts = [0]
+    orig_complete = llm.complete
 
-    def always_fails(messages, *, max_tokens=4096):
+    def flaky(messages, *, max_tokens=4096):
         attempts[0] += 1
-        raise TimeoutError("streaming error")
+        if attempts[0] == 1:
+            raise TimeoutError("streaming blip")
+        return orig_complete(messages, max_tokens=max_tokens)
 
-    llm.complete = always_fails
+    llm.complete = flaky
+    result = llm.system("sys", "user")
+    assert attempts[0] == 2
+    assert isinstance(result, str)
 
-    with pytest.raises(TimeoutError):
-        llm.system("sys", "user")
 
-    assert attempts[0] == 1  # no retry
+def test_system_streaming_disables_on_token_for_retries():
+    """After the first streaming failure on_token is cleared for retry calls."""
+    llm = SimulatedLLM()
+    llm.max_retries = 1
+    llm.retry_delay = 0.0
+    tokens_during_retry: list[str | None] = []
+    llm.on_token = lambda t: None
+
+    attempts = [0]
+    orig_complete = llm.complete
+
+    def spy_complete(messages, *, max_tokens=4096):
+        attempts[0] += 1
+        if attempts[0] == 1:
+            raise TimeoutError("first fails")
+        # Record on_token state during the retry call
+        tokens_during_retry.append(llm.on_token)
+        return orig_complete(messages, max_tokens=max_tokens)
+
+    llm.complete = spy_complete
+    llm.system("sys", "user")
+    assert tokens_during_retry == [None]  # on_token disabled for retry
 
 
 # ===========================================================================

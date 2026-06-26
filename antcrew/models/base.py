@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
+import random
 import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Callable, Literal, Optional
 from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from antcrew.models.cache import LLMCache
@@ -84,12 +88,14 @@ class BaseLLM(ABC):
 
     Instance-level attributes you can override after construction:
 
-        llm.max_retries  = 5      # retry attempts (non-streaming only; default 3)
-        llm.retry_delay  = 2.0    # initial backoff in seconds (doubles each attempt)
-        llm.timeout      = 60.0   # HTTP timeout in seconds (default 120)
-        llm.on_token     = fn     # called with each streaming text chunk
-        llm.current_agent = "pm"  # set automatically by BaseAgent.system()
-        llm.max_cost_usd = 2.0    # abort run when this cost (USD) is exceeded
+        llm.max_retries    = 5     # retry attempts (default 3)
+        llm.retry_delay    = 2.0   # initial backoff in seconds (doubles each attempt)
+        llm.max_retry_delay = 60.0 # backoff ceiling in seconds (default 60)
+        llm.retry_jitter   = 0.5   # uniform jitter added to each delay (default 0.5)
+        llm.timeout        = 60.0  # HTTP timeout in seconds (default 600)
+        llm.on_token       = fn    # called with each streaming text chunk
+        llm.current_agent  = "pm"  # set automatically by BaseAgent.system()
+        llm.max_cost_usd   = 2.0   # abort run when this cost (USD) is exceeded
     """
 
     # Streaming
@@ -99,6 +105,8 @@ class BaseLLM(ABC):
     # Retry / timeout
     max_retries: int = 3
     retry_delay: float = 1.0
+    max_retry_delay: float = 60.0
+    retry_jitter: float = 0.5
     timeout: float = 600.0
 
     # Prompt cache (opt-in — assign an LLMCache instance to enable)
@@ -160,8 +168,31 @@ class BaseLLM(ABC):
 
     # ── Retry ────────────────────────────────────────────────────────────────
 
+    def _retry_delay_for(self, attempt: int, exc: BaseException) -> float:
+        """Compute the sleep duration for *attempt* (0-based), respecting Retry-After."""
+        # Honour Retry-After header when the provider sends it.
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            headers = getattr(resp, "headers", {}) or {}
+            ra = headers.get("Retry-After") or headers.get("retry-after")
+            if ra:
+                try:
+                    return float(ra)
+                except (TypeError, ValueError):
+                    pass
+
+        base = min(self.retry_delay * (2 ** attempt), self.max_retry_delay)
+        return base + random.uniform(0.0, self.retry_jitter)
+
     def _with_retry(self, fn, *args, **kwargs):
-        """Call fn(*args, **kwargs) with exponential-backoff retry on transient errors."""
+        """Call fn(*args, **kwargs) with exponential-backoff + jitter retry.
+
+        On each transient failure (429, 5xx, timeout, connection error) the
+        delay doubles from *retry_delay*, capped at *max_retry_delay*, with up
+        to *retry_jitter* seconds of uniform noise added to avoid thundering herd.
+        If the response includes a ``Retry-After`` header its value is used
+        directly instead of the computed delay.
+        """
         last_exc: BaseException = RuntimeError("unreachable")
         for attempt in range(self.max_retries + 1):
             try:
@@ -170,7 +201,13 @@ class BaseLLM(ABC):
                 last_exc = exc
                 if attempt >= self.max_retries or not _is_retryable(exc):
                     raise
-                time.sleep(self.retry_delay * (2 ** attempt))
+                delay = self._retry_delay_for(attempt, exc)
+                log.warning(
+                    "llm_retry attempt=%d/%d delay=%.1fs agent=%s exc=%s",
+                    attempt + 1, self.max_retries, delay,
+                    self.current_agent, type(exc).__name__,
+                )
+                time.sleep(delay)
         raise last_exc  # pragma: no cover
 
     # ── Abstract interface ────────────────────────────────────────────────────
@@ -207,19 +244,35 @@ class BaseLLM(ABC):
         _usage_before = len(self._usage_log) if _trace_active else 0
         _t0 = time.monotonic() if _trace_active else 0.0
 
-        # Resolve result (cache hit, streaming, or retry path)
+        # Resolve result (cache hit, streaming, or retry path).
+        # Streaming retries too: after the first transient failure we disable
+        # on_token for subsequent attempts to avoid sending partial duplicate
+        # tokens to the progress panel.
+        _stream_disabled = [False]
+
+        def _complete_possibly_streaming(msgs, **kw):
+            if _stream_disabled[0]:
+                saved, self.on_token = self.on_token, None
+                try:
+                    return self.complete(msgs, **kw)
+                finally:
+                    self.on_token = saved
+            try:
+                return self.complete(msgs, **kw)
+            except Exception as exc:
+                if _is_retryable(exc):
+                    _stream_disabled[0] = True
+                raise
+
         if cache is not None:
             hit = cache.get(messages, model, validate=_is_complete_response, agent_name=agent)
             if hit is not None:
                 result = hit
-            elif self.on_token is not None:
-                result = self.complete(messages, **kwargs)
-                cache.set(messages, model, result, agent_name=agent)
             else:
                 result = self._with_retry(self.complete, messages, **kwargs)
                 cache.set(messages, model, result, agent_name=agent)
         elif self.on_token is not None:
-            result = self.complete(messages, **kwargs)
+            result = self._with_retry(_complete_possibly_streaming, messages, **kwargs)
         else:
             result = self._with_retry(self.complete, messages, **kwargs)
 
