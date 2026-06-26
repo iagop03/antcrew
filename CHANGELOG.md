@@ -5,6 +5,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.6.0] — 2026-06-26
+
+### Added
+- **Rate-limit auto-retry improvements** — `BaseLLM._retry_delay_for()` now
+  honours the `Retry-After` response header when the provider sends it
+  (both `Retry-After` and `retry-after` spellings).  Backoff is capped at
+  `max_retry_delay` (default 60 s) and `retry_jitter` (default 0.5 s) of
+  uniform noise is added to prevent thundering-herd bursts on 429 responses.
+  Each retry emits a structured `log.warning()` with attempt number, delay,
+  agent name, and exception type.  Streaming path now also uses
+  `_with_retry`; `on_token` is cleared for fallback attempts so the progress
+  panel does not receive duplicate partial output.  New `BaseLLM` class
+  attrs: `max_retry_delay`, `retry_jitter`.
+- **`antcrew graph`** — new CLI command that renders the Supervisor agent
+  flow as ASCII art or a Mermaid diagram, with no LLM calls required.
+  `antcrew graph --team dev`, `antcrew graph --config agentteam.yaml`,
+  `antcrew graph --format mermaid`.  Linear chains render as a single
+  `[START] → A → B → [END]` line; branching/conditional graphs use a
+  topologically-sorted edge list.  Mermaid conditional edges appear as
+  labelled arrows (`-->|condition|`).  Auto-loads `agentteam.yaml` from the
+  current directory when no `--team` or `--config` is given.
+  New `antcrew/graph.py` module: `render_ascii()`, `render_mermaid()`,
+  `_get_builtin_flow()`.
+- **Agent presets** — named prompt-style modifiers applied to every system
+  call.  Four built-ins: `CONCISE`, `STRICT`, `VERBOSE`, `CAREFUL`.
+  Any `BaseAgent` now accepts `preset=` as a string name or `AgentPreset`
+  instance.  The preset instruction is prepended before the base system
+  prompt and before `system_prompt_suffix`.  YAML `agentteam.yaml` supports
+  a `preset:` key per agent.  All presets exported from `antcrew` top-level.
+  Custom presets: `AgentPreset("name", "Your instruction here.")`.
+- **OpenAI model enhancements** — `OpenAIModel` fully supports the `o1` /
+  `o3` reasoning model family (`o1`, `o1-mini`, `o3`, `o3-mini`): uses
+  `max_completion_tokens` instead of `max_tokens`, skips streaming (which
+  the API does not support for these models), and cost-estimates correctly
+  via the updated `_COST_TABLE`.  New `build_llm()` shortcuts: `o1`,
+  `o3-mini`, and `openai:<model>` explicit prefix.  `OpenAIModel` exported
+  from `antcrew` top-level (is `None` when the `openai` package is not
+  installed).  Cost table extended with `gpt-4-turbo`, `gpt-3.5`, and all
+  `o1`/`o3` variants.
+
+---
+
 ## [0.5.0] — 2026-06-26
 
 ### Added
