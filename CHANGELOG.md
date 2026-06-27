@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.7] — 2026-06-27
+
+### Added
+- **System prompt interpolation in `TemplateAgent`** — ``{key}`` placeholders
+  in the ``system_prompt`` are replaced with ``str(state[key])`` at runtime,
+  enabling multi-value injection without chaining ``input_key``.
+  - Unknown keys (not in state) and ``None`` values are left as ``{key}``.
+  - Only ``{identifier}`` patterns are matched — JSON syntax
+    (``{"key": "value"}``), positional (``{0}``), and format-spec
+    (``{:.2f}``) are untouched.
+  - Opt out per-agent with ``interpolate: false`` in the config (default:
+    ``true``).
+  - Works transparently through `CustomTeam` pipelines: a producer's
+    ``output_key`` can be injected directly into the next step's
+    ``system_prompt`` via ``{output_key_name}``.
+  - ``_interpolate(template, state)`` helper function is exported from
+    ``antcrew.agents.template_agent`` for programmatic use.
+  - 18 new tests added to `tests/test_template_agent.py` (50 total).
+
+---
+
 ## [0.8.6] — 2026-06-27
 
 ### Added

@@ -1,4 +1,4 @@
-"""Tests for TemplateAgent (v0.8.2)."""
+"""Tests for TemplateAgent (v0.8.2 – v0.8.7)."""
 from __future__ import annotations
 
 import json
@@ -286,3 +286,165 @@ def test_config_inline_template_agent(tmp_path):
     ctx = load_context(p)
     # The team is constructed; if no error, the template agent was created OK
     assert ctx.team is not None
+
+
+# ===========================================================================
+# System prompt interpolation — _interpolate helper
+# ===========================================================================
+
+def test_interpolate_replaces_known_key():
+    from antcrew.agents.template_agent import _interpolate
+    result = _interpolate("Hello {name}!", {"name": "world"})
+    assert result == "Hello world!"
+
+
+def test_interpolate_leaves_unknown_key_unchanged():
+    from antcrew.agents.template_agent import _interpolate
+    result = _interpolate("Plan: {plan}", {})
+    assert result == "Plan: {plan}"
+
+
+def test_interpolate_leaves_none_value_unchanged():
+    from antcrew.agents.template_agent import _interpolate
+    result = _interpolate("Plan: {plan}", {"plan": None})
+    assert result == "Plan: {plan}"
+
+
+def test_interpolate_multiple_keys():
+    from antcrew.agents.template_agent import _interpolate
+    result = _interpolate("{a} and {b}", {"a": "foo", "b": "bar"})
+    assert result == "foo and bar"
+
+
+def test_interpolate_leaves_json_syntax_unchanged():
+    from antcrew.agents.template_agent import _interpolate
+    template = 'Return JSON: {"key": "value"}'
+    assert _interpolate(template, {}) == template
+
+
+def test_interpolate_leaves_positional_unchanged():
+    from antcrew.agents.template_agent import _interpolate
+    assert _interpolate("Value: {0}", {}) == "Value: {0}"
+
+
+def test_interpolate_leaves_format_spec_unchanged():
+    from antcrew.agents.template_agent import _interpolate
+    assert _interpolate("{:.2f}", {}) == "{:.2f}"
+
+
+def test_interpolate_converts_non_string_to_str():
+    from antcrew.agents.template_agent import _interpolate
+    result = _interpolate("Count: {n}", {"n": 42})
+    assert result == "Count: 42"
+
+
+def test_interpolate_no_op_on_plain_text():
+    from antcrew.agents.template_agent import _interpolate
+    text = "No placeholders here."
+    assert _interpolate(text, {"plan": "something"}) == text
+
+
+# ===========================================================================
+# System prompt interpolation — TemplateAgent behaviour
+# ===========================================================================
+
+def test_interpolation_enabled_by_default():
+    agent = TemplateAgent(_basic_cfg(system_prompt="Review: {request}"), _llm())
+    assert agent._interpolate is True
+
+
+def test_interpolate_false_from_config():
+    agent = TemplateAgent(_basic_cfg(system_prompt="Hello.", interpolate=False), _llm())
+    assert agent._interpolate is False
+
+
+def test_run_interpolates_system_prompt():
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(system_prompt="Review the code: {code}"),
+        llm,
+    )
+    agent.run({"request": "task", "code": "def foo(): pass"})
+    sys_p, _ = llm.calls[0]
+    assert "def foo(): pass" in sys_p
+    assert "{code}" not in sys_p
+
+
+def test_run_unknown_placeholder_left_unchanged():
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(system_prompt="Context: {missing_key}"),
+        llm,
+    )
+    agent.run({"request": "task"})
+    sys_p, _ = llm.calls[0]
+    assert "{missing_key}" in sys_p
+
+
+def test_run_interpolate_false_leaves_prompt_unchanged():
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(system_prompt="Review: {code}", interpolate=False),
+        llm,
+    )
+    agent.run({"request": "task", "code": "def foo(): pass"})
+    sys_p, _ = llm.calls[0]
+    assert "{code}" in sys_p
+    assert "def foo(): pass" not in sys_p
+
+
+def test_run_interpolates_multiple_keys():
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(system_prompt="Plan: {plan}\nCode: {code}"),
+        llm,
+    )
+    agent.run({"request": "task", "plan": "step 1", "code": "x = 1"})
+    sys_p, _ = llm.calls[0]
+    assert "step 1" in sys_p
+    assert "x = 1" in sys_p
+
+
+def test_run_interpolate_none_value_unchanged():
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(system_prompt="Plan: {plan}"),
+        llm,
+    )
+    agent.run({"request": "task", "plan": None})
+    sys_p, _ = llm.calls[0]
+    assert "{plan}" in sys_p
+
+
+def test_run_interpolate_and_input_key_both_work():
+    """Interpolation on system prompt + input_key for user message are independent."""
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(
+            system_prompt="Context: {context}",
+            input_key="query",
+        ),
+        llm,
+    )
+    agent.run({"query": "user question", "context": "background info"})
+    sys_p, user_p = llm.calls[0]
+    assert "background info" in sys_p
+    assert "user question" in user_p
+
+
+def test_interpolation_in_custom_team_pipeline():
+    """Interpolation must work end-to-end through a CustomTeam."""
+    from antcrew.testing import SequencedLLM
+    from antcrew.teams.custom_team import CustomTeam
+
+    llm = SequencedLLM(["step1 output", "review done"])
+    steps = [
+        {"name": "producer", "system_prompt": "Produce output.", "output_key": "produced"},
+        {"name": "consumer",
+         "system_prompt": "Consume this: {produced}",
+         "output_key": "review"},
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert result["produced"] == "step1 output"
+    assert result["review"] == "review done"

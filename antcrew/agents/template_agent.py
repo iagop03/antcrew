@@ -11,9 +11,17 @@ YAML format::
         You are a senior security engineer. Review the provided code for
         SQL injection, XSS, and authentication weaknesses. Return your
         findings as structured JSON.
+
+        Code under review:
+        {code}                       # {key} → replaced with state["key"] at runtime
+
+        Plan that drove this code:
+        {plan}
     input_key: request               # optional (default: "request")
     output_key: security_review      # optional (default: "{name}_output")
     max_tokens: 4096                 # optional
+    interpolate: true                # optional (default: true); set false to keep
+                                     # {placeholders} literal in the prompt
 
 Usage::
 
@@ -40,6 +48,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -48,6 +57,24 @@ from antcrew.core.state import TeamState
 
 if TYPE_CHECKING:
     from antcrew.models.base import BaseLLM
+
+# Matches {identifier} placeholders — valid Python identifiers only.
+# JSON curly braces like {"key": "value"} are NOT matched (contain spaces /
+# colons / quotes), so they pass through unchanged.
+_INTERP_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def _interpolate(template: str, state: dict) -> str:
+    """Replace ``{key}`` placeholders in *template* with ``state[key]``.
+
+    - Unknown keys (not in state or value is ``None``) are left as ``{key}``.
+    - Only matches ``{identifier}`` patterns — JSON / format-spec syntax
+      (``{"x": 1}``, ``{0}``, ``{:.2f}``) is untouched.
+    """
+    def _sub(m: re.Match) -> str:
+        val = state.get(m.group(1))
+        return str(val) if val is not None else m.group(0)
+    return _INTERP_RE.sub(_sub, template)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +173,7 @@ class TemplateAgent(BaseAgent):
         self._system_prompt: str = cfg["system_prompt"]
         self._input_key: str = cfg.get("input_key", "request")
         self._output_key: str = cfg.get("output_key", f"{self.name}_output")
+        self._interpolate: bool = bool(cfg.get("interpolate", True))
 
         # max_tokens in config acts as a default; explicit kwarg takes precedence
         if "max_tokens" in cfg and "max_tokens" not in kwargs:
@@ -160,11 +188,20 @@ class TemplateAgent(BaseAgent):
     def run(self, state: TeamState) -> dict:  # type: ignore[override]
         """Call the LLM with this agent's system prompt and return the result.
 
+        If ``interpolate`` is true (default), ``{key}`` placeholders in the
+        system prompt are replaced with ``str(state[key])`` before the call.
+        Unknown or ``None`` values are left as ``{key}`` in the prompt.
+
         Reads ``state[input_key]`` (default ``"request"``) as the user message.
         Writes the LLM response to ``{output_key}`` in the returned dict.
         """
-        raw = state.get(self._input_key)
+        prompt = (
+            _interpolate(self._system_prompt, state)
+            if self._interpolate
+            else self._system_prompt
+        )
 
+        raw = state.get(self._input_key)
         if raw is None:
             user_msg = ""
         elif isinstance(raw, str):
@@ -174,7 +211,7 @@ class TemplateAgent(BaseAgent):
         else:
             user_msg = str(raw)
 
-        response = self.system(self._system_prompt, user_msg)
+        response = self.system(prompt, user_msg)
         return {self._output_key: response}
 
 
