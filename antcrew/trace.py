@@ -165,6 +165,120 @@ class TraceLog:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def list_runs_filtered(
+        self,
+        *,
+        team: Optional[str] = None,
+        status: Optional[str] = None,
+        since: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Return filtered runs, newest first.
+
+        Args:
+            team:   Filter to runs whose team column equals this value.
+            status: Filter to ``done`` or ``error`` runs (``None`` = all).
+            since:  ISO timestamp string; only runs started at or after this
+                    moment are included.
+            limit:  Maximum number of rows to return.
+        """
+        clauses: list[str] = []
+        params: list = []
+        if team:
+            clauses.append("team = ?")
+            params.append(team)
+        if status and status != "all":
+            clauses.append("status = ?")
+            params.append(status)
+        if since:
+            clauses.append("started_at >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self._conn.execute(
+            f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_stats(
+        self,
+        *,
+        team: Optional[str] = None,
+        since: Optional[str] = None,
+    ) -> dict:
+        """Return aggregate statistics, optionally scoped to *team* / *since*.
+
+        Returns a dict with keys:
+            total_runs, done_runs, error_runs, total_cost_usd, avg_cost_usd,
+            total_input_tokens, total_output_tokens, first_run, last_run,
+            by_team (list of {team, runs, done, cost_usd}).
+        """
+        clauses: list[str] = []
+        params: list = []
+        if team:
+            clauses.append("r.team = ?")
+            params.append(team)
+        if since:
+            clauses.append("r.started_at >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+        row = self._conn.execute(
+            f"""
+            SELECT
+                COUNT(*) as total_runs,
+                SUM(CASE WHEN status = 'done'  THEN 1 ELSE 0 END) as done_runs,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_runs,
+                COALESCE(SUM(cost_usd), 0.0)  as total_cost_usd,
+                COALESCE(AVG(cost_usd), 0.0)  as avg_cost_usd,
+                MIN(started_at) as first_run,
+                MAX(started_at) as last_run
+            FROM runs r
+            {where.replace('r.team', 'team').replace('r.started_at', 'started_at')}
+            """,
+            params,
+        ).fetchone()
+
+        tok_row = self._conn.execute(
+            f"""
+            SELECT
+                COALESCE(SUM(ac.input_tokens),  0) as total_input,
+                COALESCE(SUM(ac.output_tokens), 0) as total_output
+            FROM agent_calls ac
+            JOIN runs r ON ac.run_id = r.id
+            {where}
+            """,
+            params,
+        ).fetchone()
+
+        by_team_rows = self._conn.execute(
+            f"""
+            SELECT
+                team,
+                COUNT(*) as runs,
+                SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done,
+                COALESCE(SUM(cost_usd), 0.0) as cost_usd
+            FROM runs r
+            {where.replace('r.team', 'team').replace('r.started_at', 'started_at')}
+            GROUP BY team
+            ORDER BY runs DESC
+            """,
+            params,
+        ).fetchall()
+
+        return {
+            "total_runs":          int(row["total_runs"] or 0),
+            "done_runs":           int(row["done_runs"] or 0),
+            "error_runs":          int(row["error_runs"] or 0),
+            "total_cost_usd":      float(row["total_cost_usd"] or 0.0),
+            "avg_cost_usd":        float(row["avg_cost_usd"] or 0.0),
+            "total_input_tokens":  int(tok_row["total_input"] or 0),
+            "total_output_tokens": int(tok_row["total_output"] or 0),
+            "first_run":           row["first_run"],
+            "last_run":            row["last_run"],
+            "by_team": [dict(r) for r in by_team_rows],
+        }
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._conn.close()

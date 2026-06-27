@@ -5,6 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.2] — 2026-06-27
+
+### Added
+- **`TemplateAgent`** — define custom agents in YAML/JSON without writing Python.
+  - Declare `name`, `system_prompt`, optional `input_key` / `output_key`,
+    `role_description`, and `max_tokens` in a plain config file or dict.
+  - `load_template_agent(path, llm)` convenience factory for loading from a file.
+  - Inline template agents in `agentteam.yaml`: any agent block that includes
+    `system_prompt:` (or a `template:` file reference) is automatically
+    constructed as a `TemplateAgent` — no custom Python class required.
+  - Exported from the top-level `antcrew` namespace.
+  - 32 tests in `tests/test_template_agent.py`.
+- **`TraceLog`** — SQLite-backed per-run recorder for agent call data.
+  - Records timing, token counts, and cost for every `llm.system()` call.
+  - Attach to any team with `team._trace_log = TraceLog(path)` or via
+    `antcrew run --trace <file.db>`.
+  - Read API: `list_runs()`, `get_run()`, `get_calls()`, `list_runs_filtered()`,
+    `get_stats()` — use directly or through the CLI commands below.
+- **`antcrew history <trace.db>`** — aggregate statistics browser for TraceLog files.
+  - Summary panel: total runs, success rate, cost, token usage, date range.
+  - By-team breakdown table (hidden when `--team` filter is active).
+  - Filterable run table with `--team`, `--status` (done/error/all),
+    `--since` (YYYY-MM-DD or relative, e.g. `7d`), and `--limit`.
+  - `--stats` prints the summary panel only (no per-run table).
+  - `--export <file.csv>` exports the filtered run list to CSV.
+  - 24 tests in `tests/test_cli_history.py`.
+- **`antcrew.core.validation`** — internal Pydantic helper (`_validate_schema`)
+  supporting both `BaseModel` subclasses and generic type annotations via
+  `TypeAdapter`.
+- **`antcrew.testing`** — public testing sub-package; `SequencedLLM` is now
+  importable from `antcrew.testing` in addition to `antcrew.testing.llms`.
+
+---
+
 ## [0.8.1] — 2026-06-26
 
 ### Added

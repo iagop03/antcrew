@@ -362,8 +362,35 @@ def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel, ag
     }
     cls = registry.get(name)
     if cls is None:
+        # Allow inline template agents: any unknown name with a system_prompt
+        # or a "template:" file reference is treated as a TemplateAgent.
+        if "system_prompt" in agent_cfg or "template" in agent_cfg:
+            from antcrew.agents.template_agent import TemplateAgent
+            cfg: dict = dict(agent_cfg)
+            cfg.setdefault("name", name)
+            if "template" in cfg:
+                from pathlib import Path as _P
+                import yaml as _yaml  # type: ignore[import]
+                tpl_path = _P(cfg["template"])
+                file_cfg = _yaml.safe_load(tpl_path.read_text(encoding="utf-8"))
+                file_cfg.update({k: v for k, v in cfg.items() if k != "template"})
+                cfg = file_cfg
+                cfg.setdefault("name", name)
+            kwargs: dict = dict(llm=llm, approval_required=approval)
+            if options:
+                kwargs["response_options"] = options
+            if channel:
+                kwargs["channel"] = channel
+            if "max_tokens" in cfg:
+                kwargs["max_tokens"] = int(cfg["max_tokens"])
+            if "system_prompt_suffix" in cfg:
+                kwargs["system_prompt_suffix"] = str(cfg["system_prompt_suffix"])
+            if "preset" in cfg:
+                kwargs["preset"] = str(cfg["preset"])
+            return TemplateAgent(cfg, **kwargs)
         raise ValueError(
-            f"Unknown agent '{name}'. Known agents: {list(registry)}"
+            f"Unknown agent '{name}'. Known agents: {list(registry)}\n"
+            "To define a custom agent inline, add 'system_prompt:' to its config block."
         )
     kwargs: dict = dict(llm=llm, approval_required=approval)
     if options:
