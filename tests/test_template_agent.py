@@ -8,6 +8,7 @@ import pytest
 
 from antcrew.agents.template_agent import TemplateAgent, load_template_agent, _load_cfg
 from antcrew.models.simulated import SimulatedLLM
+from antcrew.testing import SequencedLLM
 
 
 # ---------------------------------------------------------------------------
@@ -448,3 +449,80 @@ def test_interpolation_in_custom_team_pipeline():
     result = team.run("task")
     assert result["produced"] == "step1 output"
     assert result["review"] == "review done"
+
+
+# ===========================================================================
+# JSON output mode — output_json / output_parse_retries
+# ===========================================================================
+
+def test_output_json_default_false():
+    agent = TemplateAgent(_basic_cfg(), _llm())
+    assert agent._output_json is False
+
+
+def test_output_json_true_from_config():
+    agent = TemplateAgent(_basic_cfg(output_json=True), _llm())
+    assert agent._output_json is True
+
+
+def test_output_parse_retries_default_zero():
+    agent = TemplateAgent(_basic_cfg(), _llm())
+    assert agent._output_parse_retries == 0
+
+
+def test_output_parse_retries_from_config():
+    agent = TemplateAgent(_basic_cfg(output_parse_retries=3), _llm())
+    assert agent._output_parse_retries == 3
+
+
+def test_run_output_json_returns_dict():
+    """output_json:true → run() stores a parsed dict in state."""
+    llm = SequencedLLM(['{"steps": ["a", "b"], "hours": 4}'])
+    agent = TemplateAgent(_basic_cfg(output_json=True, output_key="plan"), llm)
+    out = agent.run({"request": "plan task"})
+    assert out["plan"] == {"steps": ["a", "b"], "hours": 4}
+
+
+def test_run_output_json_false_returns_string():
+    """Default mode (output_json omitted) still returns a plain string."""
+    llm = SequencedLLM(['{"key": "value"}'])
+    agent = TemplateAgent(_basic_cfg(output_key="raw"), llm)
+    out = agent.run({"request": "task"})
+    assert isinstance(out["raw"], str)
+
+
+def test_run_output_json_invalid_raises():
+    """Bad JSON with no retries must raise a parsing error."""
+    import pytest
+    llm = SequencedLLM(["not valid json"])
+    agent = TemplateAgent(_basic_cfg(output_json=True), llm)
+    with pytest.raises(Exception):
+        agent.run({"request": "task"})
+
+
+def test_run_output_json_with_retries_recovers():
+    """With output_parse_retries>0, the agent retries and recovers."""
+    llm = SequencedLLM(["bad json", '{"ok": true}'])
+    agent = TemplateAgent(
+        _basic_cfg(output_json=True, output_parse_retries=1, output_key="result"),
+        llm,
+    )
+    out = agent.run({"request": "task"})
+    assert out["result"] == {"ok": True}
+
+
+def test_output_json_in_custom_team_pipeline():
+    """Structured output from one step is available to the next in state."""
+    from antcrew.teams.custom_team import CustomTeam
+
+    planner_out = '{"steps": ["build", "test"], "hours": 2}'
+    llm = SequencedLLM([planner_out, "done"])
+    steps = [
+        {"name": "planner", "system_prompt": "Plan.", "output_key": "plan", "output_json": True},
+        {"name": "executor", "system_prompt": "Execute.", "output_key": "result"},
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert isinstance(result["plan"], dict)
+    assert result["plan"]["hours"] == 2
+    assert result["result"] == "done"

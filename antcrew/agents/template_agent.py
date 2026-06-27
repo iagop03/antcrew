@@ -22,6 +22,10 @@ YAML format::
     max_tokens: 4096                 # optional
     interpolate: true                # optional (default: true); set false to keep
                                      # {placeholders} literal in the prompt
+    output_json: false               # optional (default: false); parse LLM response
+                                     # as JSON — output_key stores a dict, not a str
+    output_parse_retries: 0          # optional (default: 0); extra retries on JSON
+                                     # parse failure (only when output_json is true)
 
 Usage::
 
@@ -174,6 +178,8 @@ class TemplateAgent(BaseAgent):
         self._input_key: str = cfg.get("input_key", "request")
         self._output_key: str = cfg.get("output_key", f"{self.name}_output")
         self._interpolate: bool = bool(cfg.get("interpolate", True))
+        self._output_json: bool = bool(cfg.get("output_json", False))
+        self._output_parse_retries: int = int(cfg.get("output_parse_retries", 0))
 
         # max_tokens in config acts as a default; explicit kwarg takes precedence
         if "max_tokens" in cfg and "max_tokens" not in kwargs:
@@ -211,8 +217,15 @@ class TemplateAgent(BaseAgent):
         else:
             user_msg = str(raw)
 
-        response = self.system(prompt, user_msg)
-        return {self._output_key: response}
+        if self._output_json:
+            result = self.system_parsed(
+                prompt, user_msg, dict,
+                max_retries=self._output_parse_retries,
+            )
+        else:
+            result = self.system(prompt, user_msg)
+
+        return {self._output_key: result}
 
 
 # ---------------------------------------------------------------------------

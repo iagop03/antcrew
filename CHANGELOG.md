@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.8] — 2026-06-27
+
+### Added
+- **JSON output mode in `TemplateAgent`** — two new config keys:
+  - `output_json: true` — tells the step to call `system_parsed()` instead of
+    `system()`, so the LLM response is parsed as JSON and the output key stores
+    a Python `dict` rather than a raw string.  Downstream steps and interpolation
+    (`{plan}` → `str(dict)`) both receive the structured value.
+  - `output_parse_retries: N` — on JSON parse failure the agent retries up to *N*
+    extra times, each time sending the previous invalid response back to the model
+    with a correction hint (delegates to `BaseAgent.system_parsed`).
+  - Both keys pass through `CustomTeam` YAML pipelines unchanged; they are
+    TemplateAgent-level config, not stripped by `_TEAM_KEYS`.
+  - 9 new tests added to `tests/test_template_agent.py` (59 total).
+
+---
+
 ## [0.8.7] — 2026-06-27
 
 ### Added
