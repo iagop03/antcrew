@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.6] — 2026-06-27
+
+### Added
+- **Conditional steps in `CustomTeam`** — each step config accepts an optional
+  ``condition`` key that guards execution:
+  - A single key name (str): the step runs only if ``state[key]`` is truthy.
+  - A list of key names: the step runs only if **all** keys are truthy.
+  - Missing or falsy condition → step is silently skipped; its ``output_key``
+    is not written to state.
+  - Works for sequential steps and steps inside ``parallel:`` groups (only the
+    passing members of a parallel group are submitted to the thread pool).
+  - ``condition`` is stripped before the config is forwarded to `TemplateAgent`.
+  - Internal ``_condition_met()`` helper and ``_parse_condition()`` normaliser
+    added (both tested independently).
+  - 15 new tests added to `tests/test_custom_team.py` (60 total).
+
+---
+
 ## [0.8.5] — 2026-06-27
 
 ### Added

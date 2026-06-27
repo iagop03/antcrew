@@ -627,6 +627,173 @@ def test_config_retry_from_yaml(tmp_path):
     assert step.retry_delay == pytest.approx(0.5)
 
 
+# ===========================================================================
+# Conditional steps
+# ===========================================================================
+
+def test_condition_none_always_runs():
+    from antcrew.teams.custom_team import _parse_condition, _Step, _condition_met
+    step = _Step(agent=None, condition=None)  # type: ignore[arg-type]
+    assert _condition_met(step, {}) is True
+
+
+def test_parse_condition_string():
+    from antcrew.teams.custom_team import _parse_condition
+    assert _parse_condition("plan") == ["plan"]
+
+
+def test_parse_condition_list():
+    from antcrew.teams.custom_team import _parse_condition
+    assert _parse_condition(["plan", "tickets"]) == ["plan", "tickets"]
+
+
+def test_parse_condition_none():
+    from antcrew.teams.custom_team import _parse_condition
+    assert _parse_condition(None) is None
+
+
+def test_parse_condition_empty_list_returns_none():
+    from antcrew.teams.custom_team import _parse_condition
+    assert _parse_condition([]) is None
+
+
+def test_parse_condition_invalid_type_raises():
+    from antcrew.teams.custom_team import _parse_condition
+    with pytest.raises(ValueError):
+        _parse_condition(42)
+
+
+def test_condition_key_truthy_runs():
+    steps = [
+        {"name": "producer", "system_prompt": "Produce.", "output_key": "data"},
+        {"name": "consumer", "system_prompt": "Consume: {data}",
+         "input_key": "data", "output_key": "result", "condition": "data"},
+    ]
+    team = CustomTeam(steps, _llm())
+    result = team.run("task")
+    # producer sets "data"; consumer condition met → result must be present
+    assert "result" in result.state
+
+
+def test_condition_key_missing_skips():
+    steps = [
+        {"name": "skipped", "system_prompt": "Skip me.", "output_key": "skipped_out",
+         "condition": "nonexistent_key"},
+    ]
+    team = CustomTeam(steps, _llm())
+    result = team.run("task")
+    assert "skipped_out" not in result.state
+
+
+def test_condition_key_falsy_skips():
+    """Step with condition on a key that holds an empty string must be skipped."""
+    from antcrew.testing import SequencedLLM
+    llm = SequencedLLM([""])   # producer returns empty string
+    steps = [
+        {"name": "producer", "system_prompt": "Produce.", "output_key": "data"},
+        {"name": "consumer", "system_prompt": "Consume.", "output_key": "result",
+         "condition": "data"},
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert "result" not in result.state
+
+
+def test_condition_not_forwarded_to_template_agent():
+    steps = [{"name": "x", "system_prompt": "s.", "output_key": "o", "condition": "plan"}]
+    team = CustomTeam(steps, _llm())
+    agent = team._agents[0]
+    assert not hasattr(agent, "condition")
+
+
+def test_condition_list_all_truthy_runs():
+    from antcrew.testing import SequencedLLM
+    llm = SequencedLLM(["plan-ok", "tickets-ok", "review-done"])
+    steps = [
+        {"name": "planner",  "system_prompt": "Plan.",    "output_key": "plan"},
+        {"name": "ticketer", "system_prompt": "Tickets.", "output_key": "tickets"},
+        {"name": "reviewer", "system_prompt": "Review.",  "output_key": "review",
+         "condition": ["plan", "tickets"]},
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert "review" in result.state
+
+
+def test_condition_list_one_falsy_skips():
+    from antcrew.testing import SequencedLLM
+    llm = SequencedLLM(["plan-ok", ""])   # tickets step returns empty
+    steps = [
+        {"name": "planner",  "system_prompt": "Plan.",    "output_key": "plan"},
+        {"name": "ticketer", "system_prompt": "Tickets.", "output_key": "tickets"},
+        {"name": "reviewer", "system_prompt": "Review.",  "output_key": "review",
+         "condition": ["plan", "tickets"]},
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert "review" not in result.state
+
+
+def test_condition_skipped_step_not_called():
+    """A skipped step must not call the LLM at all."""
+    calls = [0]
+
+    class _CountLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            calls[0] += 1
+            return super().complete(messages, **kw)
+
+    steps = [
+        {"name": "skipped", "system_prompt": "Skip me.", "output_key": "out",
+         "condition": "missing"},
+    ]
+    team = CustomTeam(steps, _CountLLM())
+    team.run("task")
+    assert calls[0] == 0
+
+
+def test_condition_in_parallel_group_some_skipped():
+    """Inside a parallel group, only steps whose condition is met run."""
+    from antcrew.testing import SequencedLLM
+    # Only one LLM call should happen (backend runs, frontend is skipped)
+    llm = SequencedLLM(["backend-result"])
+    steps = [
+        {"parallel": [
+            {"name": "backend",  "system_prompt": "Backend.",  "output_key": "backend_code"},
+            {"name": "frontend", "system_prompt": "Frontend.", "output_key": "frontend_code",
+             "condition": "missing_key"},
+        ]}
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert "backend_code" in result.state
+    assert "frontend_code" not in result.state
+
+
+def test_condition_in_yaml_config(tmp_path):
+    import yaml
+    from antcrew.config import load
+
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "planner",  "system_prompt": "Plan.", "output_key": "plan"},
+            {"name": "reviewer", "system_prompt": "Review: {plan}.", "output_key": "review",
+             "condition": "plan"},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+
+    team = load(p)
+    step = team._step_groups[1][0]
+    assert step.condition == ["plan"]
+
+    result = team.run("Build login")
+    assert "review" in result.state
+
+
 def test_config_parallel_steps(tmp_path):
     import yaml
     from antcrew.config import load

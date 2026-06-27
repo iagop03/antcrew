@@ -81,15 +81,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Keys consumed by CustomTeam itself — not forwarded to TemplateAgent config.
-_TEAM_KEYS = frozenset({"max_retries", "retry_delay", "parallel"})
+_TEAM_KEYS = frozenset({"max_retries", "retry_delay", "parallel", "condition"})
 
 
 @dataclass
 class _Step:
-    """One executable step: an agent + its retry policy."""
+    """One executable step: agent + retry policy + run condition."""
     agent: TemplateAgent
     max_retries: int = 0
     retry_delay: float = 0.0
+    # condition: one state key (str) or a list of keys (all must be truthy).
+    # None → always run.
+    condition: "Optional[list[str]]" = None
 
 
 # A step group is a list of Steps.  len==1 → sequential; len>1 → parallel.
@@ -101,18 +104,36 @@ def _agent_cfg(raw: dict) -> dict:
     return {k: v for k, v in raw.items() if k not in _TEAM_KEYS}
 
 
+def _parse_condition(raw: "Any") -> "Optional[list[str]]":
+    """Normalise the raw 'condition' value to a list of key names or None."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        if not raw:
+            return None
+        return [str(k) for k in raw]
+    raise ValueError(
+        f"'condition' must be a key name (str) or a list of key names; got {type(raw).__name__}"
+    )
+
+
 def _make_step(raw: Any, llm: "BaseLLM") -> _Step:
     """Build one _Step from a raw config (dict / Path / YAML str)."""
     max_retries = 0
     retry_delay = 0.0
+    condition = None
     if isinstance(raw, dict):
         max_retries = int(raw.get("max_retries", 0))
         retry_delay = float(raw.get("retry_delay", 0.0))
+        condition = _parse_condition(raw.get("condition"))
         raw = _agent_cfg(raw)
     return _Step(
         agent=TemplateAgent(raw, llm),
         max_retries=max_retries,
         retry_delay=retry_delay,
+        condition=condition,
     )
 
 
@@ -132,6 +153,13 @@ def _parse_steps(raw_steps: list[Any], llm: "BaseLLM") -> list[_StepGroup]:
         else:
             groups.append([_make_step(item, llm)])
     return groups
+
+
+def _condition_met(step: _Step, state: dict) -> bool:
+    """Return True if the step's condition is satisfied (or there is none)."""
+    if step.condition is None:
+        return True
+    return all(bool(state.get(key)) for key in step.condition)
 
 
 def _run_step(step: _Step, state: dict) -> dict:
@@ -243,10 +271,19 @@ class CustomTeam:
             for group in self._step_groups:
                 if len(group) == 1:
                     step = group[0]
+                    if not _condition_met(step, state):
+                        log.debug("custom_team step=%s skipped (condition not met)", step.agent.name)
+                        continue
                     log.debug("custom_team step=%s", step.agent.name)
                     state.update(_run_step(step, state))
                 else:
-                    state.update(self._run_parallel(group, state))
+                    # For parallel groups, filter to steps whose condition is met.
+                    runnable = [s for s in group if _condition_met(s, state)]
+                    skipped = [s for s in group if not _condition_met(s, state)]
+                    for s in skipped:
+                        log.debug("custom_team parallel step=%s skipped (condition not met)", s.agent.name)
+                    if runnable:
+                        state.update(self._run_parallel(runnable, state))
 
             cost = self.llm.get_usage_summary().get("total_cost_usd", 0.0)
 
