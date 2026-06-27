@@ -1,4 +1,4 @@
-"""Tests for CustomTeam (v0.8.3)."""
+"""Tests for CustomTeam (v0.8.3 – v0.8.5)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -417,6 +417,215 @@ def test_parallel_state_snapshot_isolation():
 # ===========================================================================
 # Parallel in YAML config
 # ===========================================================================
+
+# ===========================================================================
+# Retry policy — _Step dataclass and _run_step helper
+# ===========================================================================
+
+def test_retry_keys_not_forwarded_to_template_agent():
+    """max_retries / retry_delay must not reach TemplateAgent as config keys."""
+    steps = [{"name": "x", "system_prompt": "Do x.", "output_key": "out",
+              "max_retries": 2, "retry_delay": 0.5}]
+    team = CustomTeam(steps, _llm())
+    agent = team._agents[0]
+    # TemplateAgent should not have stored these as attributes
+    assert not hasattr(agent, "max_retries")
+    assert not hasattr(agent, "retry_delay")
+
+
+def test_step_default_retries_zero():
+    from antcrew.teams.custom_team import _parse_steps
+    groups = _parse_steps([{"name": "a", "system_prompt": "s.", "output_key": "o"}], _llm())
+    step = groups[0][0]
+    assert step.max_retries == 0
+    assert step.retry_delay == 0.0
+
+
+def test_step_parses_max_retries():
+    from antcrew.teams.custom_team import _parse_steps
+    groups = _parse_steps(
+        [{"name": "a", "system_prompt": "s.", "output_key": "o",
+          "max_retries": 3, "retry_delay": 0.1}],
+        _llm(),
+    )
+    step = groups[0][0]
+    assert step.max_retries == 3
+    assert step.retry_delay == pytest.approx(0.1)
+
+
+def test_retry_succeeds_on_second_attempt():
+    """Agent fails once then succeeds — result should be the success value."""
+    calls = [0]
+
+    class _FlakyLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            calls[0] += 1
+            if calls[0] == 1:
+                raise RuntimeError("transient error")
+            return super().complete(messages, **kw)
+
+    steps = [{"name": "x", "system_prompt": "Do x.", "output_key": "out",
+              "max_retries": 1}]
+    team = CustomTeam(steps, _FlakyLLM())
+    result = team.run("task")
+    assert "out" in result.state
+    assert calls[0] == 2  # failed once, succeeded on retry
+
+
+def test_retry_exhausted_raises():
+    """After all retries are spent the original exception must propagate."""
+    class _AlwaysFailLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            raise RuntimeError("always fails")
+
+    steps = [{"name": "x", "system_prompt": "Do x.", "output_key": "out",
+              "max_retries": 2}]
+    team = CustomTeam(steps, _AlwaysFailLLM())
+    with pytest.raises(RuntimeError, match="always fails"):
+        team.run("task")
+
+
+def test_retry_attempt_count(monkeypatch):
+    """With max_retries=3 the LLM must be called exactly 4 times (1 + 3)."""
+    calls = [0]
+
+    class _CountLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            calls[0] += 1
+            raise RuntimeError("boom")
+
+    # Suppress sleep to keep tests fast
+    monkeypatch.setattr("antcrew.teams.custom_team.time.sleep", lambda _: None)
+
+    steps = [{"name": "x", "system_prompt": "s.", "output_key": "o", "max_retries": 3}]
+    team = CustomTeam(steps, _CountLLM())
+    with pytest.raises(RuntimeError):
+        team.run("task")
+    assert calls[0] == 4
+
+
+def test_retry_delay_called(monkeypatch):
+    """retry_delay > 0 must call time.sleep between attempts."""
+    slept: list[float] = []
+    monkeypatch.setattr("antcrew.teams.custom_team.time.sleep", slept.append)
+
+    calls = [0]
+
+    class _FlakyLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            calls[0] += 1
+            if calls[0] < 3:
+                raise RuntimeError("transient")
+            return super().complete(messages, **kw)
+
+    steps = [{"name": "x", "system_prompt": "s.", "output_key": "o",
+              "max_retries": 3, "retry_delay": 0.5}]
+    team = CustomTeam(steps, _FlakyLLM())
+    team.run("task")
+    assert len(slept) == 2           # slept between attempt 1→2 and 2→3
+    assert all(s == pytest.approx(0.5) for s in slept)
+
+
+def test_no_sleep_when_retry_delay_zero(monkeypatch):
+    slept: list[float] = []
+    monkeypatch.setattr("antcrew.teams.custom_team.time.sleep", slept.append)
+    calls = [0]
+
+    class _FlakyLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            calls[0] += 1
+            if calls[0] == 1:
+                raise RuntimeError("transient")
+            return super().complete(messages, **kw)
+
+    steps = [{"name": "x", "system_prompt": "s.", "output_key": "o",
+              "max_retries": 1, "retry_delay": 0.0}]
+    team = CustomTeam(steps, _FlakyLLM())
+    team.run("task")
+    assert slept == []
+
+
+def test_retry_on_second_step_only():
+    """Only the failing step retries; the first step must run exactly once."""
+    first_calls = [0]
+    second_calls = [0]
+
+    class _SelectiveLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            # Distinguish agents by their system prompt (messages[0])
+            sys_content = messages[0].content if messages else ""
+            if "step1" in sys_content:
+                first_calls[0] += 1
+                return super().complete(messages, **kw)
+            else:
+                second_calls[0] += 1
+                if second_calls[0] == 1:
+                    raise RuntimeError("step2 fails first time")
+                return super().complete(messages, **kw)
+
+    steps = [
+        {"name": "step1", "system_prompt": "step1 task", "output_key": "out1"},
+        {"name": "step2", "system_prompt": "step2 task", "output_key": "out2",
+         "max_retries": 1},
+    ]
+    team = CustomTeam(steps, _SelectiveLLM())
+    result = team.run("task")
+    assert "out1" in result.state
+    assert "out2" in result.state
+    assert first_calls[0] == 1
+    assert second_calls[0] == 2
+
+
+def test_retry_in_parallel_group(monkeypatch):
+    """Retry policy must also work for steps inside a parallel group."""
+    monkeypatch.setattr("antcrew.teams.custom_team.time.sleep", lambda _: None)
+    calls: dict[str, int] = {"a": 0, "b": 0}
+
+    class _FlakyLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            # Distinguish agents by their system prompt (messages[0])
+            sys_content = messages[0].content if messages else ""
+            if "Task A" in sys_content:
+                calls["a"] += 1
+                if calls["a"] == 1:
+                    raise RuntimeError("a fails")
+            else:
+                calls["b"] += 1
+            return super().complete(messages, **kw)
+
+    steps = [{"parallel": [
+        {"name": "a", "system_prompt": "Task A.", "output_key": "out_a", "max_retries": 1},
+        {"name": "b", "system_prompt": "Task B.", "output_key": "out_b"},
+    ]}]
+    team = CustomTeam(steps, _FlakyLLM())
+    result = team.run("task")
+    assert "out_a" in result.state
+    assert "out_b" in result.state
+    assert calls["a"] == 2
+
+
+def test_config_retry_from_yaml(tmp_path):
+    """max_retries and retry_delay must be parsed from a YAML config file."""
+    import yaml
+    from antcrew.config import load
+    from antcrew.teams.custom_team import _parse_steps
+
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "x", "system_prompt": "Do x.", "output_key": "out",
+             "max_retries": 2, "retry_delay": 0.5},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+
+    team = load(p)
+    step = team._step_groups[0][0]
+    assert step.max_retries == 2
+    assert step.retry_delay == pytest.approx(0.5)
+
 
 def test_config_parallel_steps(tmp_path):
     import yaml

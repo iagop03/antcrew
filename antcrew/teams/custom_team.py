@@ -1,27 +1,28 @@
-"""CustomTeam — a sequential (or mixed parallel) pipeline defined in YAML/dicts.
+"""CustomTeam — sequential / parallel pipeline defined in YAML/dicts.
 
 Runs a list of :class:`~antcrew.agents.template_agent.TemplateAgent` steps in
 order.  Each step's output key is written into the shared state dict and is
 available to all subsequent steps via their ``input_key``.
 
-Steps can optionally be grouped under a ``parallel:`` key to run concurrently
-using a thread pool — their outputs are merged into state once all complete.
+Steps can optionally be grouped under a ``parallel:`` key to run concurrently.
+Individual steps can declare ``max_retries`` and ``retry_delay`` to tolerate
+transient LLM failures.
 
-Usage — Python (sequential)::
+Usage — Python (sequential with retries)::
 
     from antcrew.teams.custom_team import CustomTeam
     from antcrew.models.simulated import SimulatedLLM
 
     team = CustomTeam(
         steps=[
-            {"name": "planner",  "system_prompt": "Plan the task.",  "output_key": "plan"},
-            {"name": "executor", "system_prompt": "Execute: {plan}", "input_key": "plan",
-             "output_key": "result"},
+            {"name": "planner",  "system_prompt": "Plan the task.",
+             "output_key": "plan", "max_retries": 2, "retry_delay": 1.0},
+            {"name": "executor", "system_prompt": "Execute: {plan}",
+             "input_key": "plan", "output_key": "result"},
         ],
         llm=SimulatedLLM(),
     )
     result = team.run("Build a login module")
-    print(result["result"])
 
 Usage — Python (with parallel group)::
 
@@ -34,9 +35,6 @@ Usage — Python (with parallel group)::
                 {"name": "frontend", "system_prompt": "Frontend: {plan}",
                  "input_key": "plan", "output_key": "frontend_code"},
             ]},
-            {"name": "reviewer",
-             "system_prompt": "Review: {backend_code} {frontend_code}",
-             "output_key": "review"},
         ],
         llm=SimulatedLLM(),
     )
@@ -48,8 +46,10 @@ Usage — YAML (agentteam.yaml)::
     steps:
       - name: planner
         system_prompt: |
-          You are a project planner.  Create a numbered step-by-step plan.
+          You are a project planner. Create a numbered plan.
         output_key: plan
+        max_retries: 2       # retry up to 2 times on LLM error
+        retry_delay: 1.0     # seconds between retries
       - parallel:
         - name: backend
           system_prompt: "Write backend code for: {plan}"
@@ -66,7 +66,9 @@ Usage — YAML (agentteam.yaml)::
 from __future__ import annotations
 
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.agents.template_agent import TemplateAgent
@@ -78,16 +80,47 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Each "step group" is a list of agents.  A group of 1 = sequential step;
-# a group of N > 1 = parallel step (agents run concurrently).
-_StepGroup = list[TemplateAgent]
+# Keys consumed by CustomTeam itself — not forwarded to TemplateAgent config.
+_TEAM_KEYS = frozenset({"max_retries", "retry_delay", "parallel"})
+
+
+@dataclass
+class _Step:
+    """One executable step: an agent + its retry policy."""
+    agent: TemplateAgent
+    max_retries: int = 0
+    retry_delay: float = 0.0
+
+
+# A step group is a list of Steps.  len==1 → sequential; len>1 → parallel.
+_StepGroup = list[_Step]
+
+
+def _agent_cfg(raw: dict) -> dict:
+    """Strip team-level keys before passing a config dict to TemplateAgent."""
+    return {k: v for k, v in raw.items() if k not in _TEAM_KEYS}
+
+
+def _make_step(raw: Any, llm: "BaseLLM") -> _Step:
+    """Build one _Step from a raw config (dict / Path / YAML str)."""
+    max_retries = 0
+    retry_delay = 0.0
+    if isinstance(raw, dict):
+        max_retries = int(raw.get("max_retries", 0))
+        retry_delay = float(raw.get("retry_delay", 0.0))
+        raw = _agent_cfg(raw)
+    return _Step(
+        agent=TemplateAgent(raw, llm),
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+    )
 
 
 def _parse_steps(raw_steps: list[Any], llm: "BaseLLM") -> list[_StepGroup]:
-    """Convert raw step configs into ordered groups of TemplateAgent instances.
+    """Convert raw step configs into ordered groups of _Step instances.
 
-    A plain dict / str / Path → single-agent group (sequential).
-    A dict with a ``"parallel"`` key → multi-agent group (concurrent).
+    A plain dict / str / Path  →  single-step group (sequential).
+    ``{"parallel": [cfg, …]}``  →  multi-step group (concurrent).
     """
     groups: list[_StepGroup] = []
     for item in raw_steps:
@@ -95,21 +128,37 @@ def _parse_steps(raw_steps: list[Any], llm: "BaseLLM") -> list[_StepGroup]:
             parallel_cfgs = item["parallel"]
             if not parallel_cfgs:
                 raise ValueError("A 'parallel:' group must contain at least one step.")
-            groups.append([TemplateAgent(cfg, llm) for cfg in parallel_cfgs])
+            groups.append([_make_step(cfg, llm) for cfg in parallel_cfgs])
         else:
-            groups.append([TemplateAgent(item, llm)])
+            groups.append([_make_step(item, llm)])
     return groups
 
 
+def _run_step(step: _Step, state: dict) -> dict:
+    """Run *step* with its retry policy; raise on final failure."""
+    attempts = step.max_retries + 1
+    last_exc: Exception = RuntimeError("unreachable")
+    for attempt in range(attempts):
+        try:
+            return step.agent.run(state)
+        except Exception as exc:
+            last_exc = exc
+            log.warning(
+                "custom_team step=%s attempt %d/%d failed: %s",
+                step.agent.name, attempt + 1, attempts, exc,
+            )
+            if attempt < attempts - 1 and step.retry_delay > 0:
+                time.sleep(step.retry_delay)
+    raise last_exc
+
+
 class CustomTeam:
-    """Sequential (or mixed parallel) pipeline of TemplateAgent steps.
+    """Sequential / parallel pipeline of TemplateAgent steps.
 
     Each sequential step runs in declaration order.  A ``parallel`` group
     runs all its agents concurrently in a thread pool and merges their outputs
-    before the next step begins.
-
-    The shared *state* dict starts as ``{"request": request}`` and is updated
-    after every step / group, so later agents can read prior outputs.
+    before the next step begins.  Every step supports ``max_retries`` and
+    ``retry_delay`` to tolerate transient LLM errors.
 
     Compatible with :class:`~antcrew.core.pipeline.Pipeline` (implements
     ``run(request, thread_id=…)`` and ``_initial_state(request)``).
@@ -117,10 +166,11 @@ class CustomTeam:
     Args:
         steps:        Ordered list of step configs.  Each item is one of:
 
-                      - A plain TemplateAgent config (dict / Path / YAML str)
-                        → single sequential step.
-                      - A dict ``{"parallel": [cfg, cfg, …]}``
-                        → group of agents run concurrently.
+                      - A plain TemplateAgent config (dict / Path / YAML str).
+                        Optional keys: ``max_retries`` (int, default 0),
+                        ``retry_delay`` (float seconds, default 0).
+                      - A dict ``{"parallel": [cfg, …]}`` — runs agents
+                        concurrently.  Retry keys are per-cfg inside the list.
 
         llm:          The LLM shared across all steps.
         max_cost_usd: Abort if cumulative LLM cost exceeds this budget.
@@ -128,7 +178,7 @@ class CustomTeam:
         trace_log:    Optional :class:`~antcrew.trace.TraceLog`.
 
     Raises:
-        ValueError: If *steps* is empty or a parallel group is empty.
+        ValueError: If *steps* is empty or a ``parallel:`` group is empty.
     """
 
     def __init__(
@@ -153,9 +203,9 @@ class CustomTeam:
 
         self._step_groups: list[_StepGroup] = _parse_steps(steps, llm)
 
-        # Flat list kept for backward compatibility and easy introspection.
+        # Flat list for backward compatibility and easy introspection.
         self._agents: list[TemplateAgent] = [
-            agent for group in self._step_groups for agent in group
+            s.agent for group in self._step_groups for s in group
         ]
 
     # ------------------------------------------------------------------
@@ -167,9 +217,6 @@ class CustomTeam:
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Run all step groups in order and return the merged state.
-
-        Sequential groups run one after another.  Parallel groups run all
-        their agents concurrently; outputs are merged once all finish.
 
         Args:
             request:   The task description — available to all steps as
@@ -195,9 +242,9 @@ class CustomTeam:
         try:
             for group in self._step_groups:
                 if len(group) == 1:
-                    agent = group[0]
-                    log.debug("custom_team step=%s", agent.name)
-                    state.update(agent.run(state))
+                    step = group[0]
+                    log.debug("custom_team step=%s", step.agent.name)
+                    state.update(_run_step(step, state))
                 else:
                     state.update(self._run_parallel(group, state))
 
@@ -217,15 +264,14 @@ class CustomTeam:
     # Internal
     # ------------------------------------------------------------------
 
-    def _run_parallel(self, agents: list[TemplateAgent], state: dict) -> dict:
-        """Run *agents* concurrently; merge and return their combined output."""
-        # Each agent gets a snapshot of current state so reads don't race.
+    def _run_parallel(self, group: _StepGroup, state: dict) -> dict:
+        """Run all steps in *group* concurrently; merge and return outputs."""
         snapshot = dict(state)
         merged: dict = {}
-        with ThreadPoolExecutor(max_workers=min(self._max_workers, len(agents))) as pool:
-            futures = {pool.submit(agent.run, snapshot): agent for agent in agents}
+        with ThreadPoolExecutor(max_workers=min(self._max_workers, len(group))) as pool:
+            futures = {pool.submit(_run_step, step, snapshot): step for step in group}
             for future in as_completed(futures):
-                agent = futures[future]
-                log.debug("custom_team parallel step=%s done", agent.name)
+                step = futures[future]
+                log.debug("custom_team parallel step=%s done", step.agent.name)
                 merged.update(future.result())
         return merged

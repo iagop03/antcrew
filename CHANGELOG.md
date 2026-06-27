@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.5] — 2026-06-27
+
+### Added
+- **Per-step retry policy in `CustomTeam`** — each step config accepts two
+  optional keys:
+  - ``max_retries`` (int, default 0) — number of additional attempts after the
+    first failure.
+  - ``retry_delay`` (float seconds, default 0) — sleep between attempts; skipped
+    when 0 to keep test suites fast.
+  - Works for both sequential steps and steps inside ``parallel:`` groups.
+  - Retry keys are stripped before the config is forwarded to `TemplateAgent`
+    so they don't pollute the agent's config.
+  - Internal `_Step` dataclass wraps each `TemplateAgent` with its retry policy;
+    `_agents` (flat list) remains unchanged for backward compatibility.
+  - 11 new tests added to `tests/test_custom_team.py` (45 total).
+
+---
+
 ## [0.8.4] — 2026-06-27
 
 ### Added
