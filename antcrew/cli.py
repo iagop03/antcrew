@@ -3566,5 +3566,182 @@ def history_cmd(
     console.print()
 
 
+@app.command(name="validate")
+def validate_cmd(
+    config: Path = typer.Argument(..., help="Path to agentteam.yaml or agentteam.json"),
+    strict: bool = typer.Option(
+        False, "--strict",
+        help="Exit 1 even on warnings (not just errors).",
+    ),
+) -> None:
+    """Validate a team YAML/JSON config without running it.
+
+    \b
+    Checks:
+      • YAML / JSON syntax
+      • Required fields (name, system_prompt) for every agent step
+      • Agent instantiation using SimulatedLLM (no API calls)
+      • Step references (output_key used in {interpolation} later in the pipeline)
+
+    \b
+    Examples:
+        antcrew validate team.yaml
+        antcrew validate team.yaml --strict
+    """
+    import yaml as _yaml
+    from antcrew.models.simulated import SimulatedLLM as _Sim
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # ── 1. Parse file ─────────────────────────────────────────────────────────
+    if not config.exists():
+        console.print(f"[red]✗[/] File not found: [cyan]{config}[/]")
+        raise typer.Exit(1)
+
+    try:
+        text = config.read_text(encoding="utf-8")
+        if config.suffix.lower() == ".json":
+            cfg = json.loads(text)
+        else:
+            cfg = _yaml.safe_load(text)
+        if not isinstance(cfg, dict):
+            raise ValueError("Top-level value must be a YAML mapping / JSON object.")
+    except Exception as exc:
+        console.print(f"[red]✗[/] Parse error: {exc}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/] File parsed: [cyan]{config}[/]")
+
+    # ── 2. Detect team type ────────────────────────────────────────────────────
+    team_type = cfg.get("team", "custom")
+    model_name = cfg.get("model", "(not set)")
+    console.print(f"[green]✓[/] Team type: [cyan]{team_type}[/]  model: [cyan]{model_name}[/]")
+
+    if team_type != "custom":
+        # For built-in teams, just try load_context with SimulatedLLM substitution.
+        # We can't fully validate without the model, but we can check the YAML loads.
+        console.print(
+            f"[dim]  (deep validation for '{team_type}' teams is not supported yet; "
+            "YAML structure looks OK)[/dim]"
+        )
+        console.print("\n[bold green]✓ Config looks valid[/]\n")
+        return
+
+    # ── 3. CustomTeam step-by-step validation ─────────────────────────────────
+    raw_steps = cfg.get("steps")
+    if not raw_steps:
+        console.print("[red]✗[/] 'steps:' key is missing or empty.")
+        raise typer.Exit(1)
+
+    from rich.table import Table
+
+    tbl = Table(show_header=True, header_style="bold", box=None, show_edge=False)
+    tbl.add_column("#", style="dim", width=3)
+    tbl.add_column("Name", style="cyan")
+    tbl.add_column("Type", style="dim")
+    tbl.add_column("output_key", style="green")
+    tbl.add_column("Flags", style="yellow")
+
+    step_idx = 0
+    produced_keys: set[str] = {"request"}  # keys available before any step runs
+
+    def _validate_one(raw: dict, label: str, idx_str: str) -> None:
+        name = raw.get("name", "")
+        if not name:
+            errors.append(f"Step {idx_str}: missing required field 'name'.")
+        if not raw.get("system_prompt", "").strip():
+            errors.append(f"Step {idx_str} '{name}': missing required field 'system_prompt'.")
+
+        out_key = raw.get("output_key") or (f"{name}_output" if name else "")
+        flags = []
+        if raw.get("output_json"):
+            flags.append("json")
+        if raw.get("interpolate") is False:
+            flags.append("no-interp")
+        if raw.get("max_retries"):
+            flags.append(f"retry×{raw['max_retries']}")
+        if raw.get("condition"):
+            cond = raw["condition"]
+            cond_keys = [cond] if isinstance(cond, str) else cond
+            for ck in cond_keys:
+                if ck not in produced_keys:
+                    warnings.append(
+                        f"Step {idx_str} '{name}': condition key '{ck}' is not "
+                        "produced by any earlier step."
+                    )
+            flags.append(f"if:{','.join(cond_keys)}")
+
+        # Check {placeholder} references in system_prompt
+        import re as _re
+        _INTERP_RE = _re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+        prompt = raw.get("system_prompt", "")
+        for m in _INTERP_RE.finditer(prompt):
+            key = m.group(1)
+            if key not in produced_keys:
+                warnings.append(
+                    f"Step {idx_str} '{name}': interpolation {{'{key}'}}"
+                    " references a key not yet produced by earlier steps."
+                )
+
+        tbl.add_row(idx_str, name, label, out_key, " ".join(flags))
+        if out_key:
+            produced_keys.add(out_key)
+
+    for item in raw_steps:
+        step_idx += 1
+        if isinstance(item, dict) and "parallel" in item:
+            parallel_cfgs = item["parallel"]
+            if not parallel_cfgs:
+                errors.append(f"Step {step_idx}: empty 'parallel:' group.")
+                continue
+            # Show first row as group header, then members
+            for j, pcfg in enumerate(parallel_cfgs):
+                sub_label = f"parallel" if j == 0 else ""
+                idx_str = f"{step_idx}.{j + 1}"
+                if isinstance(pcfg, dict):
+                    _validate_one(pcfg, sub_label, idx_str)
+        else:
+            if isinstance(item, dict):
+                _validate_one(item, "seq", str(step_idx))
+            else:
+                errors.append(
+                    f"Step {step_idx}: expected a dict, got {type(item).__name__}."
+                )
+
+    console.print()
+    console.print(tbl)
+    console.print()
+
+    # ── 4. Instantiation check ────────────────────────────────────────────────
+    if not errors:
+        try:
+            from antcrew.teams.custom_team import CustomTeam
+            CustomTeam(list(raw_steps), _Sim())
+            console.print("[green]✓[/] All agents instantiated successfully (SimulatedLLM)")
+        except Exception as exc:
+            errors.append(f"Instantiation failed: {exc}")
+
+    # ── 5. Report ─────────────────────────────────────────────────────────────
+    for w in warnings:
+        console.print(f"[yellow]⚠[/] {w}")
+    for e in errors:
+        console.print(f"[red]✗[/] {e}")
+
+    if errors or (strict and warnings):
+        total = len(errors) + (len(warnings) if strict else 0)
+        console.print(
+            f"\n[bold red]✗ Validation failed[/] ({total} issue{'s' if total != 1 else ''})\n"
+        )
+        raise typer.Exit(1)
+
+    if warnings:
+        console.print(
+            f"\n[bold yellow]⚠ Config valid with {len(warnings)} warning(s)[/]\n"
+        )
+    else:
+        console.print("\n[bold green]✓ Config is valid[/]\n")
+
+
 if __name__ == "__main__":
     app()

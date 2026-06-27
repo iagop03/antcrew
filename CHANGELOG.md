@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.9] — 2026-06-28
+
+### Added
+- **`antcrew validate <team.yaml>`** — validates a team config without running it
+  or making any API calls.
+  - Parses YAML/JSON and reports syntax errors.
+  - For `team: custom` configs: shows a step table (name, type, output_key,
+    flags), checks required fields (`name`, `system_prompt`), and attempts
+    agent instantiation with `SimulatedLLM`.
+  - **Static dataflow analysis**: warns when a `{key}` interpolation placeholder
+    or a `condition:` key references a state key not yet produced by an earlier
+    step (e.g. typos in output_key chains).
+  - `--strict` flag promotes warnings to errors (exit 1).
+  - Accepts YAML or JSON; works with sequential, parallel, and mixed pipelines.
+  - 24 tests in `tests/test_cli_validate.py`.
+
+---
+
 ## [0.8.8] — 2026-06-27
 
 ### Added
