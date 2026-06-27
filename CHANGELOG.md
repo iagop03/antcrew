@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.4] — 2026-06-27
+
+### Added
+- **Parallel steps in `CustomTeam`** — group agents under a ``parallel:`` key
+  to run them concurrently in a thread pool, then merge their outputs before
+  the next sequential step begins.
+  - Each parallel agent receives a snapshot of the current state so reads
+    don't race; writes are merged atomically after all agents in the group
+    finish.
+  - Configurable thread-pool size via the ``max_workers`` constructor argument
+    (default: 4).
+  - Supported in both Python (`{"parallel": [cfg, …]}` dict) and YAML
+    (`parallel:` list under `steps:`).
+  - `_step_groups` attribute on `CustomTeam` exposes the parsed structure;
+    `_agents` remains a flat list of all agents for backward compatibility.
+  - 10 new tests added to `tests/test_custom_team.py` (34 total).
+
+---
+
 ## [0.8.3] — 2026-06-27
 
 ### Added

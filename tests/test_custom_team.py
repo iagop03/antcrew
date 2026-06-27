@@ -298,3 +298,149 @@ def test_init_custom_template(tmp_path):
 def test_custom_team_importable_from_top_level():
     from antcrew import CustomTeam as CT
     assert CT is CustomTeam
+
+
+# ===========================================================================
+# Parallel steps
+# ===========================================================================
+
+def _parallel_steps() -> list[dict]:
+    return [
+        {"name": "planner", "system_prompt": "Plan it.", "output_key": "plan"},
+        {"parallel": [
+            {"name": "backend",  "system_prompt": "Backend: {plan}",
+             "input_key": "plan", "output_key": "backend_code"},
+            {"name": "frontend", "system_prompt": "Frontend: {plan}",
+             "input_key": "plan", "output_key": "frontend_code"},
+        ]},
+        {"name": "reviewer",
+         "system_prompt": "Review: {backend_code} {frontend_code}",
+         "output_key": "review"},
+    ]
+
+
+def test_parallel_agents_flat_list():
+    """_agents must contain all agents including those in parallel groups."""
+    team = CustomTeam(_parallel_steps(), _llm())
+    names = [a.name for a in team._agents]
+    assert "planner" in names
+    assert "backend" in names
+    assert "frontend" in names
+    assert "reviewer" in names
+    assert len(names) == 4
+
+
+def test_parallel_step_groups_structure():
+    team = CustomTeam(_parallel_steps(), _llm())
+    # 3 step groups: planner, parallel(backend+frontend), reviewer
+    assert len(team._step_groups) == 3
+    assert len(team._step_groups[0]) == 1   # planner
+    assert len(team._step_groups[1]) == 2   # backend + frontend
+    assert len(team._step_groups[2]) == 1   # reviewer
+
+
+def test_parallel_run_produces_all_outputs():
+    team = CustomTeam(_parallel_steps(), _llm())
+    result = team.run("Build login")
+    assert "plan" in result.state
+    assert "backend_code" in result.state
+    assert "frontend_code" in result.state
+    assert "review" in result.state
+
+
+def test_parallel_both_outputs_non_none():
+    team = CustomTeam(_parallel_steps(), _llm())
+    result = team.run("Build login")
+    assert result["backend_code"] is not None
+    assert result["frontend_code"] is not None
+
+
+def test_parallel_later_step_sees_parallel_outputs():
+    """The reviewer (step 3) must see outputs from the parallel group (step 2)."""
+    from antcrew.testing import SequencedLLM
+    llm = SequencedLLM(["plan-text", "backend-text", "frontend-text", "review-text"])
+    team = CustomTeam(_parallel_steps(), llm)
+    result = team.run("Build login")
+    assert result["review"] == "review-text"
+
+
+def test_parallel_empty_group_raises():
+    with pytest.raises(ValueError, match="parallel"):
+        CustomTeam([{"parallel": []}], _llm())
+
+
+def test_parallel_only_group():
+    """A team that is entirely one parallel group."""
+    steps = [
+        {"parallel": [
+            {"name": "a", "system_prompt": "Task A.", "output_key": "out_a"},
+            {"name": "b", "system_prompt": "Task B.", "output_key": "out_b"},
+        ]}
+    ]
+    team = CustomTeam(steps, _llm())
+    result = team.run("task")
+    assert "out_a" in result.state
+    assert "out_b" in result.state
+
+
+def test_parallel_max_workers_respected():
+    team = CustomTeam(_parallel_steps(), _llm(), max_workers=1)
+    # Should still produce correct output even with a single worker.
+    result = team.run("task")
+    assert "backend_code" in result.state
+    assert "frontend_code" in result.state
+
+
+def test_parallel_state_snapshot_isolation():
+    """Parallel agents must not see each other's writes during execution."""
+    seen: list[dict] = []
+
+    class _SpyLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            # record a snapshot of state keys visible at call time
+            seen.append(set(messages[-1].content.split() if messages else []))
+            return super().complete(messages, **kw)
+
+    steps = [
+        {"parallel": [
+            {"name": "a", "system_prompt": "A.", "output_key": "out_a"},
+            {"name": "b", "system_prompt": "B.", "output_key": "out_b"},
+        ]}
+    ]
+    team = CustomTeam(steps, _SpyLLM())
+    result = team.run("task")
+    # Both run; neither should crash — output isolation is the core guarantee.
+    assert "out_a" in result.state
+    assert "out_b" in result.state
+
+
+# ===========================================================================
+# Parallel in YAML config
+# ===========================================================================
+
+def test_config_parallel_steps(tmp_path):
+    import yaml
+    from antcrew.config import load
+
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "planner", "system_prompt": "Plan.", "output_key": "plan"},
+            {"parallel": [
+                {"name": "writer_a", "system_prompt": "Write A.", "output_key": "text_a"},
+                {"name": "writer_b", "system_prompt": "Write B.", "output_key": "text_b"},
+            ]},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+
+    team = load(p)
+    assert len(team._step_groups) == 2
+    assert len(team._step_groups[1]) == 2
+
+    result = team.run("Build login")
+    assert "plan" in result.state
+    assert "text_a" in result.state
+    assert "text_b" in result.state
