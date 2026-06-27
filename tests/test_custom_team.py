@@ -1,4 +1,4 @@
-"""Tests for CustomTeam (v0.8.3 – v0.8.5)."""
+"""Tests for CustomTeam (v0.8.3 – v0.9.0)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -820,3 +820,171 @@ def test_config_parallel_steps(tmp_path):
     assert "plan" in result.state
     assert "text_a" in result.state
     assert "text_b" in result.state
+
+
+# ===========================================================================
+# Step progress callback  (_on_step)
+# ===========================================================================
+
+def test_on_step_default_none():
+    team = CustomTeam(_steps(), _llm())
+    assert team._on_step is None
+
+
+def test_on_step_called_start_and_done():
+    from antcrew.testing import SequencedLLM
+    events: list[tuple[str, str]] = []
+
+    team = CustomTeam(
+        [{"name": "planner", "system_prompt": "Plan.", "output_key": "plan"}],
+        SequencedLLM(["a plan"]),
+    )
+    team._on_step = lambda name, event: events.append((name, event))
+    team.run("task")
+
+    assert ("planner", "start") in events
+    assert ("planner", "done") in events
+
+
+def test_on_step_order_matches_pipeline():
+    from antcrew.testing import SequencedLLM
+    events: list[tuple[str, str]] = []
+
+    team = CustomTeam(
+        [
+            {"name": "a", "system_prompt": "A.", "output_key": "out_a"},
+            {"name": "b", "system_prompt": "B.", "output_key": "out_b"},
+            {"name": "c", "system_prompt": "C.", "output_key": "out_c"},
+        ],
+        SequencedLLM(["x", "y", "z"]),
+    )
+    team._on_step = lambda name, event: events.append((name, event))
+    team.run("task")
+
+    # start/done pairs in order: a, b, c
+    starts = [name for name, ev in events if ev == "start"]
+    assert starts == ["a", "b", "c"]
+
+
+def test_on_step_skip_fired_for_skipped_step():
+    from antcrew.testing import SequencedLLM
+    events: list[tuple[str, str]] = []
+
+    team = CustomTeam(
+        [
+            {"name": "a", "system_prompt": "A.", "output_key": "out_a"},
+            {"name": "b", "system_prompt": "B.", "output_key": "out_b",
+             "condition": "nonexistent_key"},
+        ],
+        SequencedLLM(["result_a"]),
+    )
+    team._on_step = lambda name, event: events.append((name, event))
+    team.run("task")
+
+    assert ("b", "skip") in events
+    assert ("b", "start") not in events
+    assert ("b", "done") not in events
+
+
+def test_on_step_parallel_group_uses_combined_name():
+    from antcrew.testing import SequencedLLM
+    events: list[tuple[str, str]] = []
+
+    team = CustomTeam(
+        [
+            {"parallel": [
+                {"name": "be", "system_prompt": "Backend.", "output_key": "be_out"},
+                {"name": "fe", "system_prompt": "Frontend.", "output_key": "fe_out"},
+            ]},
+        ],
+        SequencedLLM(["be result", "fe result"]),
+    )
+    team._on_step = lambda name, event: events.append((name, event))
+    team.run("task")
+
+    # The parallel group fires one start and one done for the combined name
+    starts = [name for name, ev in events if ev == "start"]
+    dones  = [name for name, ev in events if ev == "done"]
+    assert len(starts) == 1
+    assert "be" in starts[0] and "fe" in starts[0]
+    assert len(dones) == 1
+
+
+def test_on_step_callback_exception_does_not_abort_pipeline():
+    """A buggy callback must never kill the pipeline run."""
+    from antcrew.testing import SequencedLLM
+
+    def _bad_cb(name, event):
+        raise RuntimeError("callback exploded")
+
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "A.", "output_key": "out"}],
+        SequencedLLM(["result"]),
+    )
+    team._on_step = _bad_cb
+    result = team.run("task")  # must NOT raise
+    assert result["out"] == "result"
+
+
+def test_on_step_not_called_after_run():
+    """_on_step set by the CLI should be cleaned up after the run (no leak)."""
+    from antcrew.testing import SequencedLLM
+
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "A.", "output_key": "out"}],
+        SequencedLLM(["result"]),
+    )
+    team._on_step = lambda name, event: None
+    team.run("task")
+    # _on_step is a public attribute — the CLI cleans it up after run;
+    # we just verify the pipeline didn't clear it internally (that's the CLI's job)
+    assert team._on_step is not None  # still set — cleanup is caller's responsibility
+
+
+# ---------------------------------------------------------------------------
+# CLI integration — progress lines appear in output
+# ---------------------------------------------------------------------------
+
+def test_cli_run_shows_step_names(tmp_path):
+    """antcrew run --config team.yaml shows step names as progress."""
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "planner",  "system_prompt": "Plan.", "output_key": "plan"},
+            {"name": "executor", "system_prompt": "Execute.", "output_key": "result"},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+
+    r = CliRunner().invoke(app, ["run", "Build login", "--config", str(p), "--no-stream"])
+    assert r.exit_code == 0
+    assert "planner" in r.output
+    assert "executor" in r.output
+
+
+def test_cli_run_shows_skip_for_unfulfilled_condition(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "a", "system_prompt": "A.", "output_key": "out_a"},
+            {"name": "b", "system_prompt": "B.", "output_key": "out_b",
+             "condition": "ghost_key"},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+
+    r = CliRunner().invoke(app, ["run", "task", "--config", str(p), "--no-stream"])
+    assert r.exit_code == 0
+    assert "skipped" in r.output

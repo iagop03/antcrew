@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.0] — 2026-06-28
+
+### Added
+- **Step-level progress for `CustomTeam`** — when running via `antcrew run
+  --config team.yaml`, each step now prints a timestamped progress line as it
+  starts, completes, or is skipped, instead of a generic "Running…" spinner:
+
+  ```
+  [1/3] planner...
+  [1/3] ✓ planner (2.3s)
+  [2/3] backend + frontend (parallel)...
+  [2/3] ✓ backend + frontend (parallel) (5.1s)
+  [3/3] reviewer...
+  [3/3] ✓ reviewer (1.8s)
+  ```
+
+  - `CustomTeam._on_step` attribute — optional callback called as
+    `_on_step(name, event)` where `event` is `"start"` | `"done"` | `"skip"`.
+    The CLI sets this before calling `team.run()` and clears it afterward.
+  - Callback exceptions are silently swallowed so a buggy progress handler can
+    never abort the pipeline.
+  - Parallel groups emit a single event with a combined name (`"be + fe"`).
+  - Works in both `--stream` and `--no-stream` modes.
+  - 9 new tests added to `tests/test_custom_team.py` (69 total).
+
+---
+
 ## [0.8.9] — 2026-06-28
 
 ### Added

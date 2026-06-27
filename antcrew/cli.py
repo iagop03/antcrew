@@ -252,11 +252,92 @@ def _print_usage(llm) -> None:
 # Streaming helper
 # ---------------------------------------------------------------------------
 
+def _run_custom_with_progress(team, request: str, thread: str, *, stream: bool, llm=None):
+    """Run a CustomTeam with per-step Rich progress output."""
+    import time as _time
+    from rich.live import Live
+    from rich.panel import Panel as _Panel
+    from rich.text import Text
+
+    total = len(team._step_groups)
+    _state: dict = {"n": 0, "name": "", "t0": 0.0}
+
+    def _on_step(name: str, event: str) -> None:
+        if event == "start":
+            _state["n"] += 1
+            _state["name"] = name
+            _state["t0"] = _time.monotonic()
+        elif event == "done":
+            elapsed = _time.monotonic() - _state["t0"]
+            console.print(
+                f"  [dim][{_state['n']}/{total}][/dim] "
+                f"[green]✓[/] [bold]{name}[/bold] "
+                f"[dim]({elapsed:.1f}s)[/dim]"
+            )
+        elif event == "skip":
+            _state["n"] += 1
+            console.print(
+                f"  [dim][{_state['n']}/{total}] ○ {name} (skipped)[/dim]"
+            )
+
+    if stream and llm is not None:
+        # Streaming mode: show step progress lines + live token panel.
+        display: dict = {"agent": "", "text": "", "panel": None}
+
+        def _on_token(token: str) -> None:
+            if llm.current_agent != display["agent"]:
+                display["agent"] = llm.current_agent
+                display["text"] = ""
+            display["text"] += token
+            live.update(_Panel(
+                Text(display["text"][-800:], overflow="fold"),
+                title=f"[bold cyan]{display['agent'] or _state['name'] or '…'}[/bold cyan]",
+                border_style="cyan",
+            ))
+
+        llm.on_token = _on_token
+        team._on_step = _on_step
+        try:
+            with Live(
+                _Panel("Starting…", border_style="dim"),
+                console=console,
+                refresh_per_second=15,
+                transient=True,
+            ) as live:
+                state = team.run(request, thread_id=thread)
+        finally:
+            llm.on_token = None
+            team._on_step = None
+    else:
+        # Non-streaming: just print each step event.
+        team._on_step = _on_step
+        try:
+            with console.status(
+                f"[bold]Running pipeline ({total} step{'s' if total != 1 else ''})…[/bold]",
+                spinner="dots",
+            ):
+                state = team.run(request, thread_id=thread)
+        finally:
+            team._on_step = None
+
+    return state
+
+
 def _run_with_stream(team, request: str, thread: str, stream: bool, llm=None):
     """Run the pipeline, optionally showing tokens live with Rich."""
     from rich.live import Live
     from rich.panel import Panel as _Panel
     from rich.text import Text
+
+    # CustomTeam: show per-step progress instead of a generic spinner.
+    try:
+        from antcrew.teams.custom_team import CustomTeam as _CT
+        _is_custom = isinstance(team, _CT)
+    except ImportError:
+        _is_custom = False
+
+    if _is_custom:
+        return _run_custom_with_progress(team, request, thread, stream=stream, llm=llm)
 
     if not stream or llm is None:
         with console.status("[bold]Running…[/]"):

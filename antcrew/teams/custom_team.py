@@ -236,6 +236,10 @@ class CustomTeam:
             s.agent for group in self._step_groups for s in group
         ]
 
+        # Optional progress callback: called as _on_step(name, event) where
+        # event is "start" | "done" | "skip".  Set by the CLI for live display.
+        self._on_step: Optional[Any] = None
+
     # ------------------------------------------------------------------
     # Pipeline / InteractiveMixin contract
     # ------------------------------------------------------------------
@@ -267,23 +271,38 @@ class CustomTeam:
             self.llm.trace = self._trace_log
             self.llm._trace_run_id = _run_id
 
+        def _notify(name: str, event: str) -> None:
+            if self._on_step is not None:
+                try:
+                    self._on_step(name, event)
+                except Exception:
+                    pass  # never let a progress callback kill the pipeline
+
         try:
             for group in self._step_groups:
                 if len(group) == 1:
                     step = group[0]
                     if not _condition_met(step, state):
                         log.debug("custom_team step=%s skipped (condition not met)", step.agent.name)
+                        _notify(step.agent.name, "skip")
                         continue
+                    _notify(step.agent.name, "start")
                     log.debug("custom_team step=%s", step.agent.name)
                     state.update(_run_step(step, state))
+                    _notify(step.agent.name, "done")
                 else:
                     # For parallel groups, filter to steps whose condition is met.
                     runnable = [s for s in group if _condition_met(s, state)]
                     skipped = [s for s in group if not _condition_met(s, state)]
                     for s in skipped:
                         log.debug("custom_team parallel step=%s skipped (condition not met)", s.agent.name)
+                    group_name = " + ".join(s.agent.name for s in group)
                     if runnable:
+                        _notify(group_name, "start")
                         state.update(self._run_parallel(runnable, state))
+                        _notify(group_name, "done")
+                    else:
+                        _notify(group_name, "skip")
 
             cost = self.llm.get_usage_summary().get("total_cost_usd", 0.0)
 
