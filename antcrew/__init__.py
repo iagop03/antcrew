@@ -148,4 +148,4 @@ __all__ = [
     "TemplateAgent",
     "load_template_agent",
 ]
-__version__ = "0.9.0"
+__version__ = "0.9.1"

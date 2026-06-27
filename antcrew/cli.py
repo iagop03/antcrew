@@ -3731,8 +3731,27 @@ def validate_cmd(
         name = raw.get("name", "")
         if not name:
             errors.append(f"Step {idx_str}: missing required field 'name'.")
-        if not raw.get("system_prompt", "").strip():
-            errors.append(f"Step {idx_str} '{name}': missing required field 'system_prompt'.")
+        has_prompt = bool(raw.get("system_prompt", "").strip())
+        has_prompt_file = bool(raw.get("system_prompt_file"))
+        if has_prompt and has_prompt_file:
+            errors.append(
+                f"Step {idx_str} '{name}': use 'system_prompt' or "
+                "'system_prompt_file', not both."
+            )
+        elif not has_prompt and not has_prompt_file:
+            errors.append(
+                f"Step {idx_str} '{name}': missing 'system_prompt' or 'system_prompt_file'."
+            )
+        elif has_prompt_file:
+            # Static check: file must exist (resolved from CWD)
+            import os as _os
+            spf = Path(raw["system_prompt_file"])
+            if not spf.is_absolute():
+                spf = Path(_os.getcwd()) / spf
+            if not spf.exists():
+                warnings.append(
+                    f"Step {idx_str} '{name}': system_prompt_file not found: {spf}"
+                )
 
         out_key = raw.get("output_key") or (f"{name}_output" if name else "")
         flags = []
@@ -3800,6 +3819,9 @@ def validate_cmd(
             from antcrew.teams.custom_team import CustomTeam
             CustomTeam(list(raw_steps), _Sim())
             console.print("[green]✓[/] All agents instantiated successfully (SimulatedLLM)")
+        except FileNotFoundError as exc:
+            # Missing system_prompt_file: already a warning above; skip instantiation.
+            warnings.append(f"Instantiation skipped (file not found): {exc}")
         except Exception as exc:
             errors.append(f"Instantiation failed: {exc}")
 

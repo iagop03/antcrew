@@ -7,7 +7,7 @@ YAML format::
 
     name: security_reviewer          # required
     role_description: "Reviews code" # optional
-    system_prompt: |                 # required
+    system_prompt: |                 # required (or use system_prompt_file)
         You are a senior security engineer. Review the provided code for
         SQL injection, XSS, and authentication weaknesses. Return your
         findings as structured JSON.
@@ -17,8 +17,10 @@ YAML format::
 
         Plan that drove this code:
         {plan}
+    # system_prompt_file: prompts/security_reviewer.md  # alternative to system_prompt
     input_key: request               # optional (default: "request")
     output_key: security_review      # optional (default: "{name}_output")
+    save_output: artifacts/review.md # optional; writes output_key value to this file
     max_tokens: 4096                 # optional
     interpolate: true                # optional (default: true); set false to keep
                                      # {placeholders} literal in the prompt
@@ -54,7 +56,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.core.agent import BaseAgent
 from antcrew.core.state import TeamState
@@ -126,13 +128,36 @@ def _load_cfg(config: "dict | str | Path") -> dict:
     )
 
 
+def _resolve_prompt_file(cfg: dict, base_dir: Path) -> dict:
+    """If *cfg* has ``system_prompt_file``, load it and inject into ``system_prompt``.
+
+    *base_dir* is used to resolve relative paths.  The original dict is never
+    mutated — a new dict is returned when a substitution is made.
+    """
+    if "system_prompt_file" not in cfg:
+        return cfg
+    if "system_prompt" in cfg:
+        raise ValueError(
+            "Use either 'system_prompt' or 'system_prompt_file', not both."
+        )
+    p = Path(cfg["system_prompt_file"])
+    if not p.is_absolute():
+        p = base_dir / p
+    if not p.exists():
+        raise FileNotFoundError(
+            f"system_prompt_file not found: {p}"
+        )
+    return {**cfg, "system_prompt": p.read_text(encoding="utf-8")}
+
+
 def _validate_cfg(cfg: dict) -> None:
     """Raise ValueError for any missing required keys."""
     missing = [k for k in ("name", "system_prompt") if not cfg.get(k)]
     if missing:
         raise ValueError(
             f"TemplateAgent config is missing required key(s): {missing}\n"
-            "Both 'name' and 'system_prompt' must be non-empty strings."
+            "Both 'name' and 'system_prompt' (or 'system_prompt_file') must be "
+            "non-empty strings."
         )
 
 
@@ -169,7 +194,15 @@ class TemplateAgent(BaseAgent):
         llm: "BaseLLM",
         **kwargs: Any,
     ) -> None:
+        # Determine the base directory for resolving relative file paths.
+        # When config is a file path, use its parent; otherwise use CWD.
+        if isinstance(config, (str, Path)):
+            _base = Path(config).parent if Path(config).exists() else Path.cwd()
+        else:
+            _base = Path.cwd()
+
         cfg = _load_cfg(config)
+        cfg = _resolve_prompt_file(cfg, _base)
         _validate_cfg(cfg)
 
         self.name = cfg["name"]
@@ -180,6 +213,9 @@ class TemplateAgent(BaseAgent):
         self._interpolate: bool = bool(cfg.get("interpolate", True))
         self._output_json: bool = bool(cfg.get("output_json", False))
         self._output_parse_retries: int = int(cfg.get("output_parse_retries", 0))
+        self._save_output: "Optional[Path]" = (
+            Path(cfg["save_output"]) if cfg.get("save_output") else None
+        )
 
         # max_tokens in config acts as a default; explicit kwarg takes precedence
         if "max_tokens" in cfg and "max_tokens" not in kwargs:
@@ -224,6 +260,14 @@ class TemplateAgent(BaseAgent):
             )
         else:
             result = self.system(prompt, user_msg)
+
+        if self._save_output is not None:
+            out_path = self._save_output
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(
+                result if isinstance(result, str) else json.dumps(result, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
         return {self._output_key: result}
 

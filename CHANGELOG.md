@@ -5,6 +5,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.1] — 2026-06-28
+
+### Added
+- **`system_prompt_file`** — alternative to `system_prompt` for long prompts:
+
+  ```yaml
+  steps:
+    - name: planner
+      system_prompt_file: prompts/planner.md   # loaded at agent init time
+      output_key: plan
+  ```
+
+  - Mutually exclusive with `system_prompt` (both → `ValueError`).
+  - Relative paths are resolved relative to the YAML config file's parent
+    directory when loading from a file; relative to CWD when loading from a
+    dict/string.
+  - Full interpolation (`{key}`) and all other TemplateAgent features work
+    on the loaded content.
+  - `antcrew validate` accepts `system_prompt_file` and warns (not errors) if
+    the referenced file does not exist at validation time.
+
+- **`save_output`** — automatically persist a step's output to a file:
+
+  ```yaml
+  steps:
+    - name: planner
+      system_prompt: "Plan the task."
+      output_key: plan
+      save_output: artifacts/plan.md   # created after the step completes
+  ```
+
+  - Parent directories are created automatically (`mkdir -p`).
+  - String outputs are written as-is; dict outputs (`output_json: true`)
+    are serialized as pretty-printed JSON.
+  - Resolved relative to the working directory at run time.
+  - 16 new tests added to `tests/test_template_agent.py` (75 total).
+
+---
+
 ## [0.9.0] — 2026-06-28
 
 ### Added

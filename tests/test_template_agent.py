@@ -526,3 +526,197 @@ def test_output_json_in_custom_team_pipeline():
     assert isinstance(result["plan"], dict)
     assert result["plan"]["hours"] == 2
     assert result["result"] == "done"
+
+
+# ===========================================================================
+# system_prompt_file
+# ===========================================================================
+
+def test_system_prompt_file_loads_content(tmp_path):
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("You are a helpful assistant.", encoding="utf-8")
+    cfg = {"name": "a", "system_prompt_file": str(prompt_file)}
+    agent = TemplateAgent(cfg, _llm())
+    assert agent._system_prompt == "You are a helpful assistant."
+
+
+def test_system_prompt_file_relative_to_config_file(tmp_path):
+    prompt_file = tmp_path / "prompts" / "agent.md"
+    prompt_file.parent.mkdir()
+    prompt_file.write_text("Prompt from file.", encoding="utf-8")
+    cfg_file = tmp_path / "team.yaml"
+    cfg_file.write_text(
+        f"name: a\nsystem_prompt_file: prompts/agent.md\n",
+        encoding="utf-8"
+    )
+    agent = TemplateAgent(cfg_file, _llm())
+    assert agent._system_prompt == "Prompt from file."
+
+
+def test_system_prompt_file_missing_raises():
+    cfg = {"name": "a", "system_prompt_file": "/nonexistent/prompt.md"}
+    with pytest.raises(FileNotFoundError, match="system_prompt_file"):
+        TemplateAgent(cfg, _llm())
+
+
+def test_system_prompt_and_system_prompt_file_mutual_exclusive():
+    cfg = {
+        "name": "a",
+        "system_prompt": "Inline prompt.",
+        "system_prompt_file": "/some/file.md",
+    }
+    with pytest.raises(ValueError, match="not both"):
+        TemplateAgent(cfg, _llm())
+
+
+def test_system_prompt_file_used_in_run(tmp_path):
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("Do the task.", encoding="utf-8")
+    llm = _CaptureLLM()
+    agent = TemplateAgent({"name": "a", "system_prompt_file": str(prompt_file)}, llm)
+    agent.run({"request": "go"})
+    sys_p, _ = llm.calls[0]
+    assert "Do the task." in sys_p
+
+
+def test_system_prompt_file_with_interpolation(tmp_path):
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("Plan: {plan}", encoding="utf-8")
+    llm = _CaptureLLM()
+    agent = TemplateAgent({"name": "a", "system_prompt_file": str(prompt_file)}, llm)
+    agent.run({"request": "go", "plan": "build it"})
+    sys_p, _ = llm.calls[0]
+    assert "build it" in sys_p
+
+
+def test_system_prompt_file_in_custom_team(tmp_path):
+    from antcrew.teams.custom_team import CustomTeam
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("Execute the task.", encoding="utf-8")
+    llm = SequencedLLM(["done"])
+    steps = [
+        {"name": "a", "system_prompt_file": str(prompt_file), "output_key": "out"},
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert result["out"] == "done"
+
+
+# ===========================================================================
+# save_output
+# ===========================================================================
+
+def test_save_output_default_none():
+    agent = TemplateAgent(_basic_cfg(), _llm())
+    assert agent._save_output is None
+
+
+def test_save_output_stored_as_path():
+    agent = TemplateAgent(_basic_cfg(save_output="out/result.md"), _llm())
+    from pathlib import Path
+    assert agent._save_output == Path("out/result.md")
+
+
+def test_save_output_writes_file(tmp_path):
+    out_file = tmp_path / "result.txt"
+    llm = SequencedLLM(["hello world"])
+    agent = TemplateAgent(
+        _basic_cfg(save_output=str(out_file), output_key="out"),
+        llm,
+    )
+    agent.run({"request": "task"})
+    assert out_file.exists()
+    assert out_file.read_text(encoding="utf-8") == "hello world"
+
+
+def test_save_output_creates_parent_dirs(tmp_path):
+    out_file = tmp_path / "deep" / "nested" / "result.txt"
+    llm = SequencedLLM(["content"])
+    agent = TemplateAgent(
+        _basic_cfg(save_output=str(out_file), output_key="out"),
+        llm,
+    )
+    agent.run({"request": "task"})
+    assert out_file.exists()
+    assert out_file.read_text(encoding="utf-8") == "content"
+
+
+def test_save_output_json_writes_json(tmp_path):
+    out_file = tmp_path / "data.json"
+    llm = SequencedLLM(['{"key": "value"}'])
+    agent = TemplateAgent(
+        _basic_cfg(save_output=str(out_file), output_key="out", output_json=True),
+        llm,
+    )
+    agent.run({"request": "task"})
+    import json as _json
+    assert _json.loads(out_file.read_text(encoding="utf-8")) == {"key": "value"}
+
+
+def test_save_output_in_custom_team(tmp_path):
+    from antcrew.teams.custom_team import CustomTeam
+    out_file = tmp_path / "plan.md"
+    llm = SequencedLLM(["the plan", "done"])
+    steps = [
+        {"name": "planner", "system_prompt": "Plan.", "output_key": "plan",
+         "save_output": str(out_file)},
+        {"name": "executor", "system_prompt": "Execute.", "output_key": "result"},
+    ]
+    team = CustomTeam(steps, llm)
+    team.run("task")
+    assert out_file.read_text(encoding="utf-8") == "the plan"
+
+
+# ---------------------------------------------------------------------------
+# validate CLI: system_prompt_file acceptance
+# ---------------------------------------------------------------------------
+
+def test_validate_accepts_system_prompt_file(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    prompt_file = tmp_path / "p.md"
+    prompt_file.write_text("You are an agent.", encoding="utf-8")
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt_file": str(prompt_file), "output_key": "out"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 0
+
+
+def test_validate_warns_missing_system_prompt_file(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt_file": "nonexistent.md", "output_key": "out"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    # Missing file → warning (not error), still exits 0
+    assert r.exit_code == 0
+    assert "warning" in r.output.lower() or "not found" in r.output.lower()
+
+
+def test_validate_errors_on_both_prompt_fields(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "steps": [{
+            "name": "a",
+            "system_prompt": "Inline.",
+            "system_prompt_file": "p.md",
+            "output_key": "out",
+        }],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 1
