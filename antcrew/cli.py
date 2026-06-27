@@ -144,6 +144,18 @@ def _print_state(state: dict, team: str) -> None:
                 border_style="magenta",
             ))
 
+    elif team == "custom":
+        _SKIP = {"request", "messages", "errors", "metadata", "current_agent"}
+        for key, value in state.items():
+            if key in _SKIP or value is None:
+                continue
+            text = str(value)
+            console.print(Panel(
+                text[:3000] + (" …" if len(text) > 3000 else ""),
+                title=f"[bold]{key}[/]",
+                border_style="cyan",
+            ))
+
     if state.get("errors"):
         for err in state["errors"]:
             console.print(f"[red]Error:[/] {err}")
@@ -510,6 +522,7 @@ def init(
         "fullstack_team": (_YAML_FULLSTACK,  _MAIN_FULLSTACK),
         "research_team":  (_YAML_RESEARCH,   _MAIN_RESEARCH),
         "content_team":   (_YAML_CONTENT,    _MAIN_CONTENT),
+        "custom":         (_YAML_CUSTOM,     _MAIN_CUSTOM),
     }
 
     if template not in templates:
@@ -1776,6 +1789,90 @@ if piece:
     print(f"Words    : {piece.word_count or \'?\'}")
     print()
     print(piece.body)
+'''
+
+
+_YAML_CUSTOM = """\
+# AntCrew — Custom Team configuration
+# Define your own pipeline as a sequence of YAML-configured agents.
+# No Python required: each step is a TemplateAgent run in order.
+team: custom
+model: claude          # claude | gpt-4o | gemini | ollama:<name> | groq:<name> | simulated
+
+steps:
+  - name: planner
+    system_prompt: |
+      You are an expert project planner.
+      Break the following task into a clear, numbered step-by-step plan.
+      Output only the plan — no preamble, no explanations.
+    output_key: plan
+
+  - name: executor
+    system_prompt: |
+      You are a senior software engineer.
+      Implement the following plan and return production-ready code with brief comments.
+
+      Plan:
+      {plan}
+    input_key: plan
+    output_key: code
+
+  - name: reviewer
+    system_prompt: |
+      You are a code reviewer.
+      Review the code below for correctness, security, and clarity.
+      Provide concise, actionable feedback.
+
+      Code:
+      {code}
+    input_key: code
+    output_key: review
+
+# Optional: per-step model override — add 'model:' inside the step block
+# (not yet supported; use a Python Pipeline of CustomTeams for mixed models)
+
+# Optional: LLM response cache
+# cache: ~/.antcrew/cache.db
+
+# Optional: per-run cost limit
+# max_cost_usd: 2.00
+"""
+
+_MAIN_CUSTOM = '''\
+from antcrew import CustomTeam
+from antcrew.models import AnthropicModel
+
+team = CustomTeam(
+    steps=[
+        {
+            "name": "planner",
+            "system_prompt": "Break the task into a numbered step-by-step plan.",
+            "output_key": "plan",
+        },
+        {
+            "name": "executor",
+            "system_prompt": "Implement the following plan:\\n\\n{plan}",
+            "input_key": "plan",
+            "output_key": "code",
+        },
+        {
+            "name": "reviewer",
+            "system_prompt": "Review this code for correctness and security:\\n\\n{code}",
+            "input_key": "code",
+            "output_key": "review",
+        },
+    ],
+    llm=AnthropicModel(),
+)
+
+result = team.run("Build a JWT authentication module")
+
+print("\\n=== Plan ===")
+print(result.get("plan", ""))
+print("\\n=== Code ===")
+print(result.get("code", ""))
+print("\\n=== Review ===")
+print(result.get("review", ""))
 '''
 
 

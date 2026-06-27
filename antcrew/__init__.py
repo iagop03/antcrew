@@ -53,6 +53,7 @@ from antcrew.memory.repo_index import RepoIndex
 from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResult
 from antcrew.presets import AgentPreset, get_preset, CONCISE, STRICT, VERBOSE, CAREFUL
 from antcrew.agents.template_agent import TemplateAgent, load_template_agent
+from antcrew.teams.custom_team import CustomTeam
 
 __all__ = [
     # Teams
@@ -60,6 +61,7 @@ __all__ = [
     "FullStackTeam",
     "ResearchTeam",
     "ContentTeam",
+    "CustomTeam",
     # Async teams
     "AsyncDevTeam",
     "AsyncFullStackTeam",
@@ -146,4 +148,4 @@ __all__ = [
     "TemplateAgent",
     "load_template_agent",
 ]
-__version__ = "0.8.2"
+__version__ = "0.8.3"

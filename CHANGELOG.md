@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.8.3] — 2026-06-27
+
+### Added
+- **`CustomTeam`** — a sequential multi-agent pipeline defined entirely in
+  YAML/dicts, no Python required.
+  - Declare an ordered `steps:` list of TemplateAgent configs; each step's
+    `output_key` is automatically available to subsequent steps via `input_key`.
+  - Supports `max_cost_usd`, `trace_log`, and
+    :class:`~antcrew.core.pipeline.Pipeline` carry-over (`_initial_state`).
+  - `team: custom` in `agentteam.yaml` activates it via `config.py`; the
+    `steps:` list is parsed and each entry is built as a TemplateAgent.
+  - `antcrew init --template custom` generates a ready-to-run three-step
+    (planner → executor → reviewer) YAML + `main.py`.
+  - `antcrew run --config team.yaml` output panel shows all step outputs
+    automatically (generic key → value rendering).
+  - Exported from the top-level `antcrew` namespace as `CustomTeam`.
+  - 24 tests in `tests/test_custom_team.py`.
+
+---
+
 ## [0.8.2] — 2026-06-27
 
 ### Added

@@ -231,8 +231,18 @@ def load(path: str | Path):
         return ContentTeam(model=default_llm, agents=agent_overrides, supervisor=supervisor,
                            max_cost_usd=max_cost_usd)
 
+    if team_type == "custom":
+        steps = cfg.get("steps")
+        if not steps:
+            raise ValueError(
+                "'team: custom' requires a non-empty 'steps:' list of agent configs.\n"
+                "Each step must have at least 'name' and 'system_prompt'."
+            )
+        from antcrew.teams.custom_team import CustomTeam
+        return CustomTeam(list(steps), default_llm, max_cost_usd=max_cost_usd)
+
     raise ValueError(
-        f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content."
+        f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content, custom."
     )
 
 
