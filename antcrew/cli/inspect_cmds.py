@@ -26,11 +26,11 @@ def show(
 
     raw = load_state(path)
 
-    console.print(f"\n[bold green]AntCrew show[/] — [cyan]{path}[/]\n")
-
     if output_json:
-        console.print_json(json.dumps(raw))
+        typer.echo(json.dumps(raw, indent=2))
         return
+
+    console.print(f"\n[bold green]AntCrew show[/] — [cyan]{path}[/]\n")
 
     # ── detect team type from available keys ─────────────────────────────────
     if raw.get("prd") or raw.get("tickets") or raw.get("code_artifacts"):

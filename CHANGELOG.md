@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.4] — 2026-06-28
+
+### Added
+- **`antcrew scan --output FILE`** — save scan results to a JSON file instead of stdout;
+  combines with `--model` to persist LLM analysis: `antcrew scan ./src --model claude --output scan.json`
+- **`antcrew show --json` now outputs pure JSON** — the header was printed even in JSON mode,
+  breaking `antcrew show run.json --json | jq '...'`; fixed to emit only the JSON object
+- **`tests/test_inspect_cmds.py`** — 23 new tests covering `antcrew show` (inc. codebase scan
+  display), `antcrew extract` (code/test/devops, --no-tests, --no-devops, --dry-run),
+  and `antcrew agents --json`
+
+### Fixed
+- `antcrew show --json` printed the "AntCrew show" header before the JSON; now pure JSON output
+
+---
+
 ## [0.10.2] — 2026-06-28
 
 ### Added

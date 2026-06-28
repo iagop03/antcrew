@@ -22,6 +22,10 @@ def scan_cmd(
     ),
     no_tree: bool = typer.Option(False, "--no-tree", help="Skip the file tree display."),
     output_json: bool = typer.Option(False, "--json", help="Output analysis as JSON (suppresses Rich output)."),
+    output_file: Optional[Path] = typer.Option(
+        None, "--output", "-o",
+        help="Write JSON results to FILE instead of stdout (implies --json).",
+    ),
 ) -> None:
     """Preview what CodebaseScannerAgent sees in one or more project directories.
 
@@ -141,8 +145,14 @@ def scan_cmd(
 
         json_results.append(component)
 
-    if output_json:
+    if output_json or output_file:
         out = json_results[0] if len(json_results) == 1 else {"components": json_results}
-        typer.echo(_json.dumps(out, indent=2))
+        serialized = _json.dumps(out, indent=2)
+        if output_file:
+            output_file.write_text(serialized, encoding="utf-8")
+            if not output_json:
+                console.print(f"[green]Scan saved →[/] [cyan]{output_file}[/]\n")
+        else:
+            typer.echo(serialized)
     else:
         console.print()

@@ -140,6 +140,25 @@ class TestScanCmd:
         assert result.exit_code == 0
         assert "Tech stack" in result.output or "tech_stack" in result.output.lower()
 
+    def test_scan_output_file_saves_json(self, tmp_path):
+        import json
+        (tmp_path / "main.py").write_text("x=1")
+        out = tmp_path / "scan.json"
+        result = runner.invoke(app, ["scan", str(tmp_path), "--output", str(out)])
+        assert result.exit_code == 0
+        assert out.exists()
+        data = json.loads(out.read_text())
+        assert "label" in data
+
+    def test_scan_output_file_with_model(self, tmp_path):
+        import json
+        (tmp_path / "README.md").write_text("# App")
+        out = tmp_path / "scan.json"
+        result = runner.invoke(app, ["scan", str(tmp_path), "--model", "simulated", "--output", str(out)])
+        assert result.exit_code == 0
+        data = json.loads(out.read_text())
+        assert "tech_stack" in data
+
 
 # ── antcrew run --project-dir warnings ───────────────────────────────────────
 
