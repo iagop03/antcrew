@@ -720,3 +720,179 @@ def test_validate_errors_on_both_prompt_fields(tmp_path):
     p.write_text(yaml.dump(cfg), encoding="utf-8")
     r = CliRunner().invoke(app, ["validate", str(p)])
     assert r.exit_code == 1
+
+
+# ===========================================================================
+# user_template
+# ===========================================================================
+
+def test_user_template_default_none():
+    agent = TemplateAgent(_basic_cfg(), _llm())
+    assert agent._user_template is None
+
+
+def test_user_template_stored_from_config():
+    agent = TemplateAgent(_basic_cfg(user_template="Plan: {plan}"), _llm())
+    assert agent._user_template == "Plan: {plan}"
+
+
+def test_user_template_and_input_key_mutual_exclusive():
+    cfg = _basic_cfg(user_template="Use {plan}.", input_key="plan")
+    with pytest.raises(ValueError, match="not both"):
+        TemplateAgent(cfg, _llm())
+
+
+def test_user_template_sent_as_user_message():
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(user_template="Plan: {plan}\nCode: {code}"),
+        llm,
+    )
+    agent.run({"request": "task", "plan": "step 1", "code": "x = 1"})
+    _, user_p = llm.calls[0]
+    assert "step 1" in user_p
+    assert "x = 1" in user_p
+
+
+def test_user_template_unknown_key_left_unchanged():
+    llm = _CaptureLLM()
+    agent = TemplateAgent(_basic_cfg(user_template="Plan: {ghost}"), llm)
+    agent.run({"request": "task"})
+    _, user_p = llm.calls[0]
+    assert "{ghost}" in user_p
+
+
+def test_user_template_overrides_input_key():
+    """When user_template is set, input_key is ignored (not read from state)."""
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(user_template="Template message: {plan}"),
+        llm,
+    )
+    agent.run({"request": "should not appear", "plan": "the plan"})
+    _, user_p = llm.calls[0]
+    assert "the plan" in user_p
+    # input_key="request" is not consulted — request value absent from user_p
+    assert "should not appear" not in user_p
+
+
+def test_user_template_with_output_json():
+    llm = SequencedLLM(['{"score": 9}'])
+    agent = TemplateAgent(
+        _basic_cfg(
+            user_template="Code: {code}",
+            output_key="score",
+            output_json=True,
+        ),
+        llm,
+    )
+    result = agent.run({"request": "task", "code": "def f(): pass"})
+    assert result["score"] == {"score": 9}
+
+
+def test_user_template_interpolation_disabled_by_interpolate_false():
+    """interpolate:false only affects the system prompt, not user_template."""
+    # user_template always uses _interpolate regardless of self._interpolate
+    llm = _CaptureLLM()
+    agent = TemplateAgent(
+        _basic_cfg(
+            system_prompt="System: {request}",
+            user_template="User: {plan}",
+            interpolate=False,
+        ),
+        llm,
+    )
+    agent.run({"request": "req_val", "plan": "plan_val"})
+    sys_p, user_p = llm.calls[0]
+    # system_prompt NOT interpolated (interpolate=False)
+    assert "{request}" in sys_p
+    # user_template ALWAYS interpolated
+    assert "plan_val" in user_p
+
+
+def test_user_template_in_custom_team_pipeline():
+    """user_template should compose cleanly in a multi-step pipeline."""
+    llm = SequencedLLM(["the plan", "the review"])
+    steps = [
+        {"name": "planner", "system_prompt": "Plan.", "output_key": "plan"},
+        {
+            "name": "reviewer",
+            "system_prompt": "Review the following artifacts.",
+            "user_template": "Plan:\n{plan}\nRequest: {request}",
+            "output_key": "review",
+        },
+    ]
+    from antcrew.teams.custom_team import CustomTeam
+    team = CustomTeam(steps, llm)
+    result = team.run("Build auth")
+    assert result["plan"] == "the plan"
+    assert result["review"] == "the review"
+
+
+# ---------------------------------------------------------------------------
+# validate CLI: user_template checks
+# ---------------------------------------------------------------------------
+
+def test_validate_accepts_user_template(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "steps": [
+            {"name": "a", "system_prompt": "Do.", "output_key": "out"},
+            {
+                "name": "b",
+                "system_prompt": "Review.",
+                "user_template": "Input: {out}",
+                "output_key": "review",
+            },
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 0
+    assert "user_tmpl" in r.output
+
+
+def test_validate_warns_unknown_user_template_key(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "steps": [
+            {
+                "name": "a",
+                "system_prompt": "Do.",
+                "user_template": "Input: {ghost_key}",
+                "output_key": "out",
+            },
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 0
+    assert "warning" in r.output.lower()
+
+
+def test_validate_errors_user_template_and_input_key(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "steps": [{
+            "name": "a",
+            "system_prompt": "Do.",
+            "user_template": "Use {out}.",
+            "input_key": "out",
+            "output_key": "result",
+        }],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 1

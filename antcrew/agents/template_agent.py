@@ -18,7 +18,13 @@ YAML format::
         Plan that drove this code:
         {plan}
     # system_prompt_file: prompts/security_reviewer.md  # alternative to system_prompt
-    input_key: request               # optional (default: "request")
+    input_key: request               # optional (default: "request"); mutually
+                                     # exclusive with user_template
+    user_template: |                 # optional; format string for the user message —
+        Plan: {plan}                 # {key} placeholders resolved from state.
+        Backend code: {backend}      # Mutually exclusive with input_key.
+        Frontend code: {frontend}
+        Review all three artifacts for security and correctness.
     output_key: security_review      # optional (default: "{name}_output")
     save_output: artifacts/review.md # optional; writes output_key value to this file
     max_tokens: 4096                 # optional
@@ -209,6 +215,7 @@ class TemplateAgent(BaseAgent):
         self.role_description = cfg.get("role_description", "")
         self._system_prompt: str = cfg["system_prompt"]
         self._input_key: str = cfg.get("input_key", "request")
+        self._user_template: "Optional[str]" = cfg.get("user_template") or None
         self._output_key: str = cfg.get("output_key", f"{self.name}_output")
         self._interpolate: bool = bool(cfg.get("interpolate", True))
         self._output_json: bool = bool(cfg.get("output_json", False))
@@ -216,6 +223,11 @@ class TemplateAgent(BaseAgent):
         self._save_output: "Optional[Path]" = (
             Path(cfg["save_output"]) if cfg.get("save_output") else None
         )
+
+        if self._user_template is not None and cfg.get("input_key"):
+            raise ValueError(
+                "Use 'input_key' or 'user_template', not both."
+            )
 
         # max_tokens in config acts as a default; explicit kwarg takes precedence
         if "max_tokens" in cfg and "max_tokens" not in kwargs:
@@ -234,7 +246,10 @@ class TemplateAgent(BaseAgent):
         system prompt are replaced with ``str(state[key])`` before the call.
         Unknown or ``None`` values are left as ``{key}`` in the prompt.
 
-        Reads ``state[input_key]`` (default ``"request"``) as the user message.
+        The user message is built from either:
+        - ``user_template`` (if set) — interpolated with the full state, or
+        - ``input_key`` — reads a single state value (default ``"request"``).
+
         Writes the LLM response to ``{output_key}`` in the returned dict.
         """
         prompt = (
@@ -243,15 +258,18 @@ class TemplateAgent(BaseAgent):
             else self._system_prompt
         )
 
-        raw = state.get(self._input_key)
-        if raw is None:
-            user_msg = ""
-        elif isinstance(raw, str):
-            user_msg = raw
-        elif isinstance(raw, list):
-            user_msg = str(raw[-1]) if raw else ""
+        if self._user_template is not None:
+            user_msg = _interpolate(self._user_template, state)
         else:
-            user_msg = str(raw)
+            raw = state.get(self._input_key)
+            if raw is None:
+                user_msg = ""
+            elif isinstance(raw, str):
+                user_msg = raw
+            elif isinstance(raw, list):
+                user_msg = str(raw[-1]) if raw else ""
+            else:
+                user_msg = str(raw)
 
         if self._output_json:
             result = self.system_parsed(

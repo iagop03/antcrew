@@ -5,6 +5,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.2] — 2026-06-28
+
+### Added
+- **`user_template`** — format string for the user message with `{key}`
+  interpolation, enabling clean multi-input steps without polluting the
+  system prompt with data:
+
+  ```yaml
+  - name: reviewer
+    system_prompt: "You are a senior code reviewer."
+    user_template: |
+      Plan:
+      {plan}
+
+      Backend code:
+      {backend}
+
+      Frontend code:
+      {frontend}
+
+      Identify issues across all three artifacts.
+    output_key: review
+  ```
+
+  - Mutually exclusive with `input_key` (both → `ValueError`).
+  - Always interpolated using `_interpolate()` (the `interpolate: false` flag
+    only suppresses system prompt interpolation).
+  - Unknown `{key}` placeholders are left as-is, consistent with system prompt
+    interpolation behaviour.
+  - `antcrew validate` checks `user_template` placeholder keys against the
+    dataflow graph (warns on unknown keys, errors on mutual-exclusion conflict),
+    and shows `user_tmpl` in the flags column.
+  - 12 new tests added to `tests/test_template_agent.py` (87 total).
+
+---
+
 ## [0.9.1] — 2026-06-28
 
 ### Added

@@ -3772,17 +3772,29 @@ def validate_cmd(
                     )
             flags.append(f"if:{','.join(cond_keys)}")
 
-        # Check {placeholder} references in system_prompt
+        # Mutual exclusivity: user_template and input_key
+        if raw.get("user_template") and raw.get("input_key"):
+            errors.append(
+                f"Step {idx_str} '{name}': use 'input_key' or 'user_template', not both."
+            )
+        if raw.get("user_template"):
+            flags.append("user_tmpl")
+
+        # Check {placeholder} references in system_prompt and user_template
         import re as _re
         _INTERP_RE = _re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
-        prompt = raw.get("system_prompt", "")
-        for m in _INTERP_RE.finditer(prompt):
-            key = m.group(1)
-            if key not in produced_keys:
-                warnings.append(
-                    f"Step {idx_str} '{name}': interpolation {{'{key}'}}"
-                    " references a key not yet produced by earlier steps."
-                )
+        for field_label, text in [
+            ("system_prompt", raw.get("system_prompt", "")),
+            ("user_template", raw.get("user_template", "")),
+        ]:
+            for m in _INTERP_RE.finditer(text):
+                key = m.group(1)
+                if key not in produced_keys:
+                    warnings.append(
+                        f"Step {idx_str} '{name}' ({field_label}): "
+                        f"interpolation {{'{key}'}} references a key not yet "
+                        "produced by earlier steps."
+                    )
 
         tbl.add_row(idx_str, name, label, out_key, " ".join(flags))
         if out_key:
