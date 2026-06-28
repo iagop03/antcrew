@@ -88,6 +88,12 @@ def run(
         help="SQLite file for per-agent call tracing (timing, tokens, cost). "
              "View with: antcrew trace <file.db>",
     ),
+    full_trace: bool = typer.Option(
+        False, "--full-trace",
+        help="Store complete prompts and responses in the trace DB "
+             "(not just 300-char snippets). Inspect with: antcrew trace <file.db> --run <id> --show-call N. "
+             "Increases storage but enables full prompt/response replay.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run",
         help="Show pipeline steps without running them (CustomTeam only).",
@@ -277,7 +283,7 @@ def run(
         # --trace flag attaches TraceLog for per-agent call recording
         if trace_db:
             from antcrew.trace import TraceLog as _TraceLog
-            active_team._trace_log = _TraceLog(trace_db)
+            active_team._trace_log = _TraceLog(trace_db, full_trace=full_trace)
 
         # --project flag creates / resumes a Project (overrides config project:)
         if project:

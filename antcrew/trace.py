@@ -55,9 +55,20 @@ CREATE TABLE IF NOT EXISTS agent_calls (
     output_tokens    INTEGER NOT NULL DEFAULT 0,
     cost_usd         REAL NOT NULL DEFAULT 0.0,
     prompt_snippet   TEXT NOT NULL DEFAULT '',
-    response_snippet TEXT NOT NULL DEFAULT ''
+    response_snippet TEXT NOT NULL DEFAULT '',
+    prompt_full      TEXT NOT NULL DEFAULT '',
+    response_full    TEXT NOT NULL DEFAULT ''
 );
 """
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the initial schema (idempotent)."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(agent_calls)").fetchall()}
+    for col in ("prompt_full", "response_full"):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE agent_calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    conn.commit()
 
 
 def _now_iso() -> str:
@@ -72,12 +83,14 @@ class TraceLog:
     ``agent_calls`` (one per ``llm.system()`` invocation).
     """
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, full_trace: bool = False) -> None:
         self._path = Path(db_path).expanduser()
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self.full_trace = full_trace
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        _migrate(self._conn)
         self._conn.commit()
 
     # ------------------------------------------------------------------
@@ -115,21 +128,36 @@ class TraceLog:
         cost_usd: float = 0.0,
         prompt_snippet: str = "",
         response_snippet: str = "",
-    ) -> None:
-        """Insert one agent_calls row (one per llm.system() invocation)."""
-        self._conn.execute(
+        prompt_full: str = "",
+        response_full: str = "",
+    ) -> int:
+        """Insert one agent_calls row (one per llm.system() invocation).
+
+        Returns the integer primary key of the inserted row.
+
+        When ``self.full_trace`` is True the complete prompt and response are
+        stored in ``prompt_full`` / ``response_full``; otherwise those columns
+        remain empty (snippets are always stored).
+        """
+        _psnip = prompt_snippet or (prompt_full[:300] if prompt_full else "")
+        _rsnip = response_snippet or (response_full[:300] if response_full else "")
+        cur = self._conn.execute(
             """INSERT INTO agent_calls
                (run_id, agent_name, started_at, duration_ms,
                 input_tokens, output_tokens, cost_usd,
-                prompt_snippet, response_snippet)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                prompt_snippet, response_snippet,
+                prompt_full, response_full)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 run_id, agent_name, _now_iso(), round(duration_ms, 2),
                 input_tokens, output_tokens, round(cost_usd, 6),
-                prompt_snippet[:300], response_snippet[:300],
+                _psnip[:300], _rsnip[:300],
+                prompt_full if self.full_trace else "",
+                response_full if self.full_trace else "",
             ),
         )
         self._conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
     # Read API (used by antcrew trace)
@@ -164,6 +192,18 @@ class TraceLog:
             (run_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_call_detail(self, call_id: int) -> Optional[dict]:
+        """Return a single agent_call by its integer primary key.
+
+        Includes ``prompt_full`` and ``response_full`` when they were recorded
+        (i.e., when the TraceLog was created with ``full_trace=True``).
+        Returns ``None`` if not found.
+        """
+        row = self._conn.execute(
+            "SELECT * FROM agent_calls WHERE id=?", (call_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
     def list_runs_filtered(
         self,

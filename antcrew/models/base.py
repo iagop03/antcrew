@@ -309,6 +309,8 @@ class BaseLLM(ABC):
                 cost_usd=sum(e["cost_usd"] for e in added),
                 prompt_snippet=prompt,
                 response_snippet=result,
+                prompt_full=prompt,
+                response_full=result,
             )
 
         return result

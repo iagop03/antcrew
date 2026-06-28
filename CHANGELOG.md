@@ -5,6 +5,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.5] — 2026-06-29
+
+### Added — Full prompt/response tracing (`--full-trace`)
+
+**Problem:** `TraceLog` stored only 300-character snippets, making it impossible
+to understand *why* an agent produced a given output.
+
+**Solution:** opt-in full-text capture with zero storage overhead when disabled.
+
+#### `TraceLog` changes
+- `TraceLog(db, full_trace=True)` — when set, stores the complete system prompt
+  and LLM response for every call in new `prompt_full` / `response_full` columns.
+- `record_call()` now accepts `prompt_full` and `response_full` kwargs and returns
+  the integer primary key of the inserted row (previously returned `None`).
+- `get_call_detail(call_id: int)` — fetch a single call by its primary key,
+  including full text when available.
+- **Schema migration** — existing DBs gain `prompt_full` / `response_full` columns
+  automatically on first open (idempotent `ALTER TABLE ADD COLUMN`).
+- Snippet columns (`prompt_snippet`, `response_snippet`) are always populated as
+  before; when `full_trace=False` (default) the full columns remain empty.
+
+#### CLI changes
+- `antcrew run … --full-trace` — enable full prompt/response capture.
+- `antcrew trace <db> --run <id> --show-call N` — display the complete prompt and
+  response for the Nth agent call (1-indexed) in a Rich panel. Falls back to
+  snippets with a warning when `--full-trace` was not used.
+- Detail view now shows a hint: either `--show-call N` is available or it tells
+  you to re-run with `--full-trace`.
+
+#### 10 new tests (`tests/test_trace.py`)
+`test_full_trace_flag_stores_complete_text`, `test_full_trace_off_by_default`,
+`test_record_call_returns_int_id`, `test_get_call_detail_returns_full_text`,
+`test_get_call_detail_returns_none_for_missing`, `test_migration_adds_columns_to_existing_db`,
+`test_cli_show_call_full_trace`, `test_cli_show_call_out_of_range`,
+`test_cli_show_call_requires_run_or_thread`, `test_cli_trace_detail_hints_when_no_full_trace`.
+
+---
+
 ## [0.11.4] — 2026-06-29
 
 ### Fixed

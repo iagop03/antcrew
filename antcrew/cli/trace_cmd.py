@@ -63,6 +63,11 @@ def trace_cmd(
     thread: Optional[str] = typer.Option(
         None, "--thread", help="Show the latest run for a thread_id"
     ),
+    show_call: Optional[int] = typer.Option(
+        None, "--show-call",
+        help="Show the full prompt + response for call N in the selected run (1-indexed). "
+             "Requires --run or --thread. Only available when run was recorded with --full-trace.",
+    ),
     limit: int = typer.Option(20, "--limit", "-n", help="Max runs to list"),
     prune: Optional[int] = typer.Option(
         None, "--prune",
@@ -88,6 +93,9 @@ def trace_cmd(
 
     Show agent calls for a specific run:
         antcrew trace ~/.antcrew/trace.db --run <run_id>
+
+    Show full prompt + response for call 2 (requires --full-trace at record time):
+        antcrew trace ~/.antcrew/trace.db --run <run_id> --show-call 2
 
     Show latest run for a thread:
         antcrew trace ~/.antcrew/trace.db --thread sprint-1
@@ -160,6 +168,23 @@ def trace_cmd(
             console.print(f"[red]No run found for thread:[/] {thread}")
             raise typer.Exit(1)
 
+    if show_call is not None and target_run is None:
+        console.print("[red]--show-call requires --run or --thread.[/]")
+        raise typer.Exit(1)
+
+    if show_call is not None and target_run is not None:
+        calls = tlog.get_calls(target_run["id"])
+        if show_call < 1 or show_call > len(calls):
+            console.print(
+                f"[red]Call {show_call} out of range.[/] "
+                f"Run has {len(calls)} call{'s' if len(calls) != 1 else ''}."
+            )
+            raise typer.Exit(1)
+        call = tlog.get_call_detail(calls[show_call - 1]["id"])
+        tlog.close()
+        _print_call_detail(target_run, call, show_call)
+        return
+
     if target_run is not None:
         _print_trace_detail(target_run, tlog.get_calls(target_run["id"]))
         return
@@ -226,21 +251,23 @@ def _print_trace_detail(run: dict, calls: list[dict]) -> None:
         console.print("[dim]No agent calls recorded for this run.[/dim]")
         return
 
+    has_full = any(c.get("prompt_full") for c in calls)
+
     tbl = Table(show_header=True, header_style="bold dim")
-    tbl.add_column("#",             style="dim",    justify="right", no_wrap=True)
-    tbl.add_column("Agent",         style="cyan",   no_wrap=True)
-    tbl.add_column("Duration",      justify="right", no_wrap=True)
-    tbl.add_column("In tokens",     justify="right")
-    tbl.add_column("Out tokens",    justify="right")
-    tbl.add_column("Cost",          justify="right")
-    tbl.add_column("Prompt (first 80 chars)", max_width=80)
+    tbl.add_column("#",          style="dim",    justify="right", no_wrap=True)
+    tbl.add_column("Agent",      style="cyan",   no_wrap=True)
+    tbl.add_column("Duration",   justify="right", no_wrap=True)
+    tbl.add_column("In",         justify="right")
+    tbl.add_column("Out",        justify="right")
+    tbl.add_column("Cost",       justify="right")
+    tbl.add_column("Prompt snippet", max_width=60)
 
     for i, c in enumerate(calls, 1):
         dur = c.get("duration_ms") or 0.0
         dur_str = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
         call_cost = c.get("cost_usd") or 0.0
         cost_str = f"${call_cost:.4f}" if call_cost else "—"
-        prompt = (c.get("prompt_snippet") or "")[:80]
+        snippet = (c.get("prompt_snippet") or "")[:60]
         tbl.add_row(
             str(i),
             c["agent_name"],
@@ -248,10 +275,66 @@ def _print_trace_detail(run: dict, calls: list[dict]) -> None:
             str(c.get("input_tokens", 0)),
             str(c.get("output_tokens", 0)),
             cost_str,
-            prompt,
+            snippet,
         )
 
     console.print(tbl)
+
+    if has_full:
+        console.print(
+            "\n[dim]Full prompt/response available — use "
+            "[bold]--show-call N[/bold] to inspect any call.[/dim]"
+        )
+    else:
+        console.print(
+            "\n[dim]Only snippets stored. Re-run with [bold]--full-trace[/bold] "
+            "to capture complete prompts.[/dim]"
+        )
+
+
+def _print_call_detail(run: dict, call: Optional[dict], call_number: int) -> None:
+    """Print the full prompt and response for a single agent call."""
+    if call is None:
+        console.print("[red]Call not found.[/]")
+        return
+
+    agent = call.get("agent_name", "?")
+    dur = call.get("duration_ms") or 0.0
+    dur_str = f"{dur:.0f}ms" if dur < 1000 else f"{dur/1000:.1f}s"
+    cost = call.get("cost_usd") or 0.0
+
+    console.print(Panel(
+        f"Run:    [cyan]{run['id'][:8]}…[/cyan]   Thread: [cyan]{run['thread_id']}[/cyan]\n"
+        f"Agent:  [bold yellow]{agent}[/bold yellow]   Call #{call_number}\n"
+        f"Tokens: [green]{call.get('input_tokens', 0)} in / "
+        f"{call.get('output_tokens', 0)} out[/green]   "
+        f"Duration: [dim]{dur_str}[/dim]   Cost: [cyan]${cost:.4f}[/cyan]",
+        title="Call detail",
+        border_style="dim",
+    ))
+
+    prompt_text = call.get("prompt_full") or call.get("prompt_snippet") or ""
+    response_text = call.get("response_full") or call.get("response_snippet") or ""
+    is_snippet = not call.get("prompt_full")
+
+    if is_snippet:
+        console.print(
+            "[yellow]Note:[/yellow] only snippets available. "
+            "Re-run with [bold]--full-trace[/bold] to store complete text.\n"
+        )
+
+    console.print(Panel(
+        prompt_text or "[dim](empty)[/dim]",
+        title=f"[bold]PROMPT[/bold]{' (snippet)' if is_snippet else ''}",
+        border_style="green",
+        padding=(0, 1),
+    ))
+    console.print(Panel(
+        response_text or "[dim](empty)[/dim]",
+        title=f"[bold]RESPONSE[/bold]{' (snippet)' if is_snippet else ''}",
+        border_style="blue",
+        padding=(0, 1),
+    ))
 
 
 # ---------------------------------------------------------------------------
