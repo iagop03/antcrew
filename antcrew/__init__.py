@@ -52,7 +52,7 @@ from antcrew.memory.chroma import ChromaMemory
 from antcrew.memory.repo_index import RepoIndex
 from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResult
 from antcrew.presets import AgentPreset, get_preset, CONCISE, STRICT, VERBOSE, CAREFUL
-from antcrew.agents.template_agent import TemplateAgent, load_template_agent
+from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
 from antcrew.teams.custom_team import CustomTeam
 
 __all__ = [
@@ -147,5 +147,6 @@ __all__ = [
     # Template agents
     "TemplateAgent",
     "load_template_agent",
+    "register_transform",
 ]
-__version__ = "0.9.5"
+__version__ = "0.9.7"

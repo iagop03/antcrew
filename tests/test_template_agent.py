@@ -1067,3 +1067,82 @@ def test_validate_errors_unknown_post_process(tmp_path):
     r = CliRunner().invoke(app, ["validate", str(p)])
     assert r.exit_code == 1
     assert "nonexistent" in r.output
+
+
+# ===========================================================================
+# register_transform
+# ===========================================================================
+
+def test_register_transform_makes_it_available():
+    from antcrew.agents.template_agent import register_transform, POST_PROCESS_TRANSFORMS
+    register_transform("reverse_test", lambda s: s[::-1])
+    assert "reverse_test" in POST_PROCESS_TRANSFORMS
+    assert POST_PROCESS_TRANSFORMS["reverse_test"]("abc") == "cba"
+
+
+def test_register_transform_used_in_post_process():
+    from antcrew.agents.template_agent import register_transform
+    register_transform("shout", lambda s: s.upper() + "!")
+
+    agent = TemplateAgent(
+        {"name": "a", "system_prompt": "Go.", "output_key": "out",
+         "post_process": "shout"},
+        SequencedLLM(["hello world"]),
+    )
+    result = agent.run({"request": "task"})
+    assert result["out"] == "HELLO WORLD!"
+
+
+def test_register_transform_overrides_existing():
+    from antcrew.agents.template_agent import register_transform, POST_PROCESS_TRANSFORMS
+    original = POST_PROCESS_TRANSFORMS.get("strip")
+    register_transform("strip", lambda s: "overridden")
+    assert POST_PROCESS_TRANSFORMS["strip"]("anything") == "overridden"
+    # Restore to avoid polluting other tests
+    POST_PROCESS_TRANSFORMS["strip"] = original
+
+
+def test_register_transform_exported_from_antcrew():
+    import antcrew
+    assert hasattr(antcrew, "register_transform")
+    assert callable(antcrew.register_transform)
+
+
+# ===========================================================================
+# antcrew agents CLI command
+# ===========================================================================
+
+def test_agents_cmd_exits_zero():
+    from typer.testing import CliRunner as _CR
+    from antcrew.cli import app
+    r = _CR().invoke(app, ["agents"])
+    assert r.exit_code == 0
+
+
+def test_agents_cmd_lists_built_in_agents():
+    from typer.testing import CliRunner as _CR
+    from antcrew.cli import app
+    r = _CR().invoke(app, ["agents"])
+    assert "backend_dev" in r.output
+    assert "researcher" in r.output
+    assert "reviewer" in r.output
+
+
+def test_agents_cmd_lists_transforms():
+    from typer.testing import CliRunner as _CR
+    from antcrew.cli import app
+    r = _CR().invoke(app, ["agents"])
+    assert "strip" in r.output
+    assert "strip_fences" in r.output
+
+
+def test_agents_cmd_shows_registered_transform():
+    from typer.testing import CliRunner as _CR
+    from antcrew.cli import app
+    from antcrew.agents.template_agent import register_transform, POST_PROCESS_TRANSFORMS
+
+    register_transform("my_custom_xform", str.title)
+    r = _CR().invoke(app, ["agents"])
+    assert "my_custom_xform" in r.output
+    # Cleanup
+    del POST_PROCESS_TRANSFORMS["my_custom_xform"]

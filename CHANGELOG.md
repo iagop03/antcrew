@@ -5,6 +5,54 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.7] — 2026-06-28
+
+### Added
+- **`register_transform(name, fn)`** — register a custom `post_process`
+  transform at runtime. Once registered, the name is available in
+  `post_process:` config fields everywhere.
+
+  ```python
+  from antcrew import register_transform
+
+  def slugify(text: str) -> str:
+      return text.lower().replace(" ", "-")
+
+  register_transform("slugify", slugify)
+  ```
+
+  Also exported from `antcrew` top-level namespace.
+
+- **`antcrew agents`** CLI command — lists all built-in agent types
+  (name, class, role description) plus all registered `post_process`
+  transforms. Useful for discovering what's available without opening docs.
+
+---
+
+## [0.9.6] — 2026-06-28
+
+### Added
+- **Optional `request` argument in `antcrew run`** — omitting the positional
+  argument now prompts interactively (`> Request:`) instead of showing a usage
+  error. Useful in terminal workflows and CI pipelines with stdin.
+
+- **`--request-file` / `-r`** — read the request from a file:
+  `antcrew run --config team.yaml --request-file task.md`. The file content is
+  stripped before use. Error if the file doesn't exist.
+
+- **`--output-dir` / `-O`** — save every step's `output_key` value to a
+  separate file in the specified directory (created if absent). String outputs
+  go to `<key>.txt`; dict outputs go to `<key>.json`. The `request` key is
+  never written.
+
+- **`--repl`** — interactive loop mode. Runs the pipeline repeatedly, reading
+  a new request each iteration. Type `quit`/`exit`/`q` or press Ctrl-C to
+  exit. Works with `--output-dir` (saves outputs after each iteration).
+
+- 16 new tests in `tests/test_cli_run_ergonomics.py` (covers all four features).
+
+---
+
 ## [0.9.5] — 2026-06-28
 
 ### Added

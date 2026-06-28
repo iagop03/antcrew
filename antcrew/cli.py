@@ -412,12 +412,70 @@ def _run_with_stream(team, request: str, thread: str, stream: bool, llm=None):
 
 
 # ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+_OUTPUT_DIR_SKIP = frozenset({"request", "messages", "errors", "metadata"})
+
+
+def _save_outputs_to_dir(state: Any, output_dir: Path) -> None:
+    """Write each non-None step output in *state* to a file in *output_dir*."""
+    raw: dict = state.state if hasattr(state, "state") else (state if isinstance(state, dict) else {})
+    output_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for key, value in raw.items():
+        if key in _OUTPUT_DIR_SKIP or value is None:
+            continue
+        if isinstance(value, dict):
+            p = output_dir / f"{key}.json"
+            p.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
+        else:
+            p = output_dir / f"{key}.txt"
+            p.write_text(str(value), encoding="utf-8")
+        count += 1
+    if count:
+        console.print(f"[dim]Outputs saved to [cyan]{output_dir}[/] ({count} file(s))[/dim]")
+
+
+def _run_repl(team: Any, *, stream: bool, llm: Any, output_dir: Optional[Path],
+              team_name: str) -> None:
+    """Interactive REPL loop — runs the pipeline until the user quits."""
+    console.print(
+        f"\n[bold green]AntCrew REPL[/] — team=[cyan]{team_name}[/]  "
+        "(type [bold]quit[/] or press Ctrl-C to exit)\n"
+    )
+    while True:
+        try:
+            raw = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Bye.[/dim]")
+            break
+        if not raw:
+            continue
+        if raw.lower() in ("quit", "exit", "q"):
+            console.print("[dim]Bye.[/dim]")
+            break
+        try:
+            state = _run_with_stream(team, raw, "repl", stream, llm=llm)
+        except Exception as exc:
+            console.print(f"[red bold]Error:[/] {exc}")
+            continue
+        _print_state(state, team_name)
+        if output_dir:
+            _save_outputs_to_dir(state, output_dir)
+        console.print()
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
 @app.command()
 def run(
-    request: str = typer.Argument(..., help="Task or topic for the team"),
+    request: Optional[str] = typer.Argument(
+        None,
+        help="Task or topic for the team (prompted interactively if omitted)",
+    ),
     team: str = typer.Option("dev", "--team", "-t", help=f"Team to use: {_TEAM_CHOICES}"),
     model: str = typer.Option("claude", "--model", "-m", help=_MODEL_HELP),
     config: Optional[Path] = typer.Option(
@@ -463,12 +521,32 @@ def run(
         False, "--dry-run",
         help="Show pipeline steps without running them (CustomTeam only).",
     ),
+    request_file: Optional[Path] = typer.Option(
+        None, "--request-file", "-r",
+        help="Read the request from a file instead of the command line.",
+    ),
+    output_dir: Optional[Path] = typer.Option(
+        None, "--output-dir", "-O",
+        help="Save each step output_key to a separate file in this directory.",
+    ),
+    repl: bool = typer.Option(
+        False, "--repl",
+        help="Interactive REPL mode — run the pipeline repeatedly in a loop.",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
     \b
     Basic usage:
         antcrew run "Build JWT auth" --team dev --model claude
+
+    \b
+    Interactive prompt (omit the request argument):
+        antcrew run --config team.yaml
+
+    \b
+    Request from file:
+        antcrew run --config team.yaml --request-file task.md
 
     \b
     Persistent project (state accumulates across runs):
@@ -498,6 +576,21 @@ def run(
             from antcrew.config import build_llm
             _llm_ref = build_llm(model)
             active_team = _build_team(team, model, integrations=[], llm=_llm_ref)
+
+        # Resolve the request from file, argument, or interactive prompt.
+        # Done here (after team is built) so --dry-run can still work without
+        # a request.
+        if request_file is not None:
+            if not request_file.exists():
+                console.print(f"[red]✗[/] Request file not found: {request_file}")
+                raise typer.Exit(1)
+            actual_request: str = request_file.read_text(encoding="utf-8").strip()
+        elif request is not None:
+            actual_request = request
+        elif not dry_run and not repl:
+            actual_request = typer.prompt("Request")
+        else:
+            actual_request = ""   # dry_run / repl don't need it yet
 
         # --dry-run: show pipeline structure and exit without LLM calls
         if dry_run:
@@ -558,6 +651,12 @@ def run(
                 _project_ref = Project(active_team, name=project.stem, path=project)
             _project_ref._team_spec = team_spec
 
+        # --repl: interactive loop
+        if repl:
+            _run_repl(active_team, stream=stream, llm=_llm_ref,
+                      output_dir=output_dir, team_name=team)
+            raise typer.Exit(0)
+
         # Run
         if _project_ref is not None:
             _p = _project_ref  # local alias so the lambda closes over it
@@ -573,12 +672,12 @@ def run(
                 f"project=[cyan]{project or getattr(_p, '_path', '')}[/]  "
                 f"[dim](run #{n_before + 1})[/dim]\n"
             )
-            state = _run_with_stream(_ProjRunner(), request, thread, stream, llm=_llm_ref)
+            state = _run_with_stream(_ProjRunner(), actual_request, thread, stream, llm=_llm_ref)
         else:
             console.print(
                 f"\n[bold green]AntCrew[/] v0.4  —  team=[cyan]{team}[/]  model=[cyan]{model}[/]\n"
             )
-            state = _run_with_stream(active_team, request, thread, stream, llm=_llm_ref)
+            state = _run_with_stream(active_team, actual_request, thread, stream, llm=_llm_ref)
 
     except typer.Exit:
         raise
@@ -641,6 +740,9 @@ def run(
                     f"[dim]Cache: {s['hits']} hits / {s['misses']} misses "
                     f"({s['hit_rate'] * 100:.0f}% hit rate)[/dim]"
                 )
+
+    if output_dir:
+        _save_outputs_to_dir(state, output_dir)
 
     if save:
         from antcrew.utils.persistence import save_state
@@ -1309,6 +1411,58 @@ def describe(
         )
     else:
         console.print("[bold green]Coherencia:[/] OK\n")
+
+
+@app.command(name="agents")
+def agents_cmd() -> None:
+    """List all built-in agent types with their role descriptions."""
+    from rich.table import Table
+
+    # Registry mirrors config._resolve_agent
+    _AGENT_REGISTRY = {
+        "business_analyst": ("antcrew.agents.business",      "BusinessAnalystAgent"),
+        "pm":               ("antcrew.agents.pm",             "PMAgent"),
+        "backend_dev":      ("antcrew.agents.backend_dev",    "BackendDevAgent"),
+        "frontend_dev":     ("antcrew.agents.frontend_dev",   "FrontendDevAgent"),
+        "qa":               ("antcrew.agents.qa",             "QAAgent"),
+        "reviewer":         ("antcrew.agents.reviewer",       "ReviewerAgent"),
+        "devops":           ("antcrew.agents.devops",         "DevOpsAgent"),
+        "researcher":       ("antcrew.agents.researcher",     "ResearcherAgent"),
+        "idea":             ("antcrew.agents.idea",           "IdeaAgent"),
+        "copywriter":       ("antcrew.agents.copywriter",     "CopywriterAgent"),
+        "editor":           ("antcrew.agents.editor",         "EditorAgent"),
+        "codebase_scanner": ("antcrew.agents.codebase_scanner", "CodebaseScannerAgent"),
+    }
+
+    tbl = Table(show_header=True, header_style="bold", box=None, show_edge=False)
+    tbl.add_column("Name", style="cyan", min_width=20)
+    tbl.add_column("Class", style="dim", min_width=22)
+    tbl.add_column("Role description", style="white")
+
+    for name, (module, cls_name) in _AGENT_REGISTRY.items():
+        role = ""
+        try:
+            import importlib
+            mod = importlib.import_module(module)
+            cls = getattr(mod, cls_name)
+            role = getattr(cls, "role_description", "") or ""
+        except Exception:
+            role = "[dim]unavailable[/dim]"
+        tbl.add_row(name, cls_name, role)
+
+    console.print("\n[bold]Built-in agent types[/bold]\n")
+    console.print(tbl)
+    console.print(
+        "\n[dim]Custom agents: set [cyan]team: custom[/] with a [cyan]steps:[/] list "
+        "and declare [cyan]system_prompt:[/] inline or via [cyan]system_prompt_file:[/].[/dim]\n"
+    )
+
+    # Also list registered post_process transforms
+    from antcrew.agents.template_agent import POST_PROCESS_TRANSFORMS
+    transforms = sorted(POST_PROCESS_TRANSFORMS)
+    console.print(
+        f"[dim]post_process transforms available: {', '.join(transforms)}[/dim]\n"
+    )
 
 
 def _print_state_raw(raw: dict, team: str) -> None:

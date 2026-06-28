@@ -112,6 +112,28 @@ POST_PROCESS_TRANSFORMS: dict[str, "Any"] = {
 }
 
 
+def register_transform(name: str, fn: "Any") -> None:
+    """Register a custom post-process transform.
+
+    After registration, the transform is available by *name* in
+    ``post_process:`` config fields and in ``_apply_post_process``.
+
+    Args:
+        name: Identifier string (no spaces).
+        fn:   Callable ``(str) -> str`` applied to the step output.
+
+    Example::
+
+        from antcrew.agents.template_agent import register_transform
+
+        def slugify(text: str) -> str:
+            return text.lower().replace(" ", "-")
+
+        register_transform("slugify", slugify)
+    """
+    POST_PROCESS_TRANSFORMS[name] = fn
+
+
 def _apply_post_process(text: str, transforms: list[str]) -> str:
     """Apply named transforms in order; raise ``ValueError`` for unknown names."""
     for name in transforms:
