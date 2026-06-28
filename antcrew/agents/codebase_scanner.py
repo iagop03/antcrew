@@ -125,6 +125,15 @@ class CodebaseScannerAgent(BaseAgent):
         self._ignore = _IGNORE_DIRS | set(extra_ignore_dirs or [])
 
     def run(self, state: TeamState) -> dict:
+        # Short-circuit: if pre-computed context was injected, skip the scan.
+        if state.get("codebase_analysis") is not None or state.get("codebase_analyses"):
+            return {
+                "current_agent": self.name,
+                "codebase_analysis": state.get("codebase_analysis"),
+                "codebase_analyses": state.get("codebase_analyses"),
+                "messages": [{"role": "assistant", "content": "[Scanner] Using pre-computed context."}],
+            }
+
         # Build the label → path mapping from whichever source is set.
         dirs: dict[str, str] = {}
 

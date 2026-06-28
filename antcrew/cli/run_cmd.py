@@ -115,6 +115,11 @@ def run(
              "Repeat for multiple components: --project-dir backend:./src --project-dir frontend:./client. "
              "Without a label prefix the directory name is used as the label.",
     ),
+    scan_context: Optional[Path] = typer.Option(
+        None, "--context",
+        help="Pre-computed scan JSON from 'antcrew scan --output'. Injects codebase_analysis "
+             "into the initial state so CodebaseScannerAgent is skipped (saves cost).",
+    ),
     repl: bool = typer.Option(
         False, "--repl",
         help="Interactive REPL mode — run the pipeline repeatedly in a loop.",
@@ -172,9 +177,16 @@ def run(
                     f"[bold]fullstack[/] team (CodebaseScannerAgent). "
                     f"Current team [bold]{team}[/] will ignore it."
                 )
+            _ctx: "dict | None" = None
+            if scan_context is not None:
+                if not scan_context.exists():
+                    console.print(f"[red]Context file not found:[/] {scan_context}")
+                    raise typer.Exit(1)
+                import json as _json
+                _ctx = _json.loads(scan_context.read_text(encoding="utf-8"))
             active_team = _build_team(
                 team, model, integrations=[], llm=_llm_ref,
-                project_dir=_pd, project_dirs=_pds,
+                project_dir=_pd, project_dirs=_pds, scan_context=_ctx,
             )
 
         # Resolve the request from file, argument, or interactive prompt.

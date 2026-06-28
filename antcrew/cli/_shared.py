@@ -21,6 +21,7 @@ def _build_team(
     *,
     project_dir: "str | None" = None,
     project_dirs: "dict | None" = None,
+    scan_context: "dict | None" = None,
 ):
     from antcrew.config import build_llm
 
@@ -34,6 +35,7 @@ def _build_team(
         return FullStackTeam(
             model=llm, integrations=integrations,
             project_dir=project_dir, project_dirs=project_dirs,
+            scan_context=scan_context,
         )
     if team == "research":
         from antcrew.teams.research_team import ResearchTeam

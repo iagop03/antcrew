@@ -96,6 +96,7 @@ class FullStackTeam(InteractiveMixin):
         sprint_size: int = 4,
         project_dir: Optional[str] = None,
         project_dirs: Optional[dict] = None,
+        scan_context: Optional[dict] = None,
         checkpointer: "Optional[BaseCheckpointSaver]" = None,
         max_cost_usd: Optional[float] = None,
         trace_log: "Optional[TraceLog]" = None,
@@ -111,6 +112,7 @@ class FullStackTeam(InteractiveMixin):
             self.llm.max_cost_usd = max_cost_usd
         self.project_dir: Optional[str] = project_dir
         self.project_dirs: Optional[dict] = project_dirs
+        self.scan_context: Optional[dict] = scan_context
 
         _am = agent_models or {}
         defaults = {
@@ -142,14 +144,31 @@ class FullStackTeam(InteractiveMixin):
             for agent in self._agents.values():
                 agent.repo_index = self.repo_index
 
+    def _parse_scan_context(self):
+        """Return (codebase_analysis, codebase_analyses) from self.scan_context or (None, None)."""
+        if not self.scan_context:
+            return None, None
+        from antcrew.core.artifacts import CodebaseAnalysis
+        ctx = self.scan_context
+        if "components" in ctx:
+            analyses = [CodebaseAnalysis(**{k: v for k, v in c.items()
+                                           if k in CodebaseAnalysis.model_fields})
+                        for c in ctx["components"]]
+            return analyses[0] if analyses else None, analyses or None
+        # Single-component format
+        ca = CodebaseAnalysis(**{k: v for k, v in ctx.items()
+                                 if k in CodebaseAnalysis.model_fields})
+        return ca, None
+
     def _initial_state(self, request: str) -> TeamState:
+        pre_ca, pre_cas = self._parse_scan_context()
         return {
             "request": request,
             "messages": [{"role": "user", "content": request}],
             "project_dir": self.project_dir or None,
             "project_dirs": self.project_dirs or None,
-            "codebase_analysis": None,
-            "codebase_analyses": None,
+            "codebase_analysis": pre_ca,
+            "codebase_analyses": pre_cas,
             "prd": None,
             "tickets": None,
             "sprint_backlog": None,

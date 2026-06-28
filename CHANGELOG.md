@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.5] — 2026-06-28
+
+### Added
+- **`antcrew run --context FILE`** — skip CodebaseScannerAgent by injecting a pre-computed
+  scan result from `antcrew scan --output ctx.json`. Enables the two-step brownfield workflow:
+  ```
+  antcrew scan ./src --model claude --output ctx.json   # one-time scan
+  antcrew run "Add billing" --team fullstack --context ctx.json  # no re-scan
+  antcrew run "Add tests"   --team fullstack --context ctx.json  # reuse same context
+  ```
+- **`FullStackTeam(scan_context=…)`** — programmatic equivalent of `--context`; accepts
+  the same JSON dict returned by `antcrew scan --json`
+- **`CodebaseScannerAgent` short-circuit** — if `codebase_analysis` (or `codebase_analyses`)
+  is already set in the state when the scanner runs, it passes through without an LLM call
+- **+8 tests**: `TestScannerShortCircuit` (3) and `TestFullStackTeamScanContext` (5) covering
+  short-circuit logic, single/multi-component injection, CLI `--context` flag, and
+  missing-file exit-code check
+
+---
+
 ## [0.10.4] — 2026-06-28
 
 ### Added

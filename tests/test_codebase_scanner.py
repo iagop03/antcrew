@@ -174,6 +174,118 @@ class TestCodebaseScannerAgent:
 
 # ── Integration: FullStackTeam + CodebaseScannerAgent ────────────────────────
 
+class TestScannerShortCircuit:
+    """CodebaseScannerAgent.run() skips scanning if analysis already in state."""
+
+    def test_skips_when_codebase_analysis_present(self):
+        agent = _agent()
+        pre = CodebaseAnalysis(label="pre", tech_stack=["Django"])
+        result = agent.run({"codebase_analysis": pre})
+        assert result["codebase_analysis"] is pre
+        assert "pre-computed" in result["messages"][0]["content"].lower()
+
+    def test_skips_when_codebase_analyses_present(self):
+        agent = _agent()
+        pre = CodebaseAnalysis(label="api", tech_stack=["FastAPI"])
+        result = agent.run({"codebase_analyses": [pre]})
+        assert result["codebase_analyses"] == [pre]
+
+    def test_no_short_circuit_when_both_none(self, tmp_path):
+        (tmp_path / "app.py").write_text("x=1")
+        agent = _agent()
+        result = agent.run({
+            "codebase_analysis": None,
+            "codebase_analyses": None,
+            "project_dir": str(tmp_path),
+        })
+        assert result["codebase_analysis"] is not None
+        assert "pre-computed" not in result["messages"][0]["content"].lower()
+
+
+class TestFullStackTeamScanContext:
+    """FullStackTeam.scan_context injects pre-computed analysis without re-scanning."""
+
+    def test_single_component_context_injected(self):
+        from antcrew.teams.fullstack_team import FullStackTeam
+        ctx = {
+            "label": "backend",
+            "tech_stack": ["FastAPI", "Python 3.12"],
+            "existing_modules": ["src/auth"],
+            "what_exists": "Auth system",
+            "what_is_missing": "Billing",
+            "continuation_context": "MVP stage",
+        }
+        team = FullStackTeam(model=SimulatedLLM(), scan_context=ctx)
+        result = team.run("Add billing")
+        raw = result.state if hasattr(result, "state") else result
+        ca = raw.get("codebase_analysis")
+        assert ca is not None
+        assert "FastAPI" in ca.tech_stack
+
+    def test_multi_component_context_injected(self):
+        from antcrew.teams.fullstack_team import FullStackTeam
+        ctx = {
+            "components": [
+                {"label": "api",     "tech_stack": ["FastAPI"]},
+                {"label": "frontend","tech_stack": ["React"]},
+            ]
+        }
+        team = FullStackTeam(model=SimulatedLLM(), scan_context=ctx)
+        result = team.run("Add billing")
+        raw = result.state if hasattr(result, "state") else result
+        cas = raw.get("codebase_analyses")
+        assert cas is not None
+        labels = {ca.label for ca in cas}
+        assert "api" in labels and "frontend" in labels
+
+    def test_context_skips_llm_scan(self):
+        """When scan_context is set, scanner messages say 'pre-computed'."""
+        from antcrew.teams.fullstack_team import FullStackTeam
+        ctx = {"label": "app", "tech_stack": ["Django"]}
+        team = FullStackTeam(model=SimulatedLLM(), scan_context=ctx)
+        result = team.run("Add auth")
+        raw = result.state if hasattr(result, "state") else result
+        msgs = raw.get("messages") or []
+        def _content(m):
+            return m["content"] if isinstance(m, dict) else getattr(m, "content", "")
+        scanner_msg = next(
+            (_content(m) for m in msgs if "pre-computed" in _content(m).lower()), None
+        )
+        assert scanner_msg is not None
+
+    def test_context_file_via_cli(self, tmp_path):
+        import json
+        from typer.testing import CliRunner
+        from antcrew.cli._app import app
+        ctx_file = tmp_path / "ctx.json"
+        ctx_file.write_text(json.dumps({
+            "label": "backend",
+            "tech_stack": ["FastAPI"],
+            "existing_modules": [],
+        }), encoding="utf-8")
+        result = CliRunner().invoke(app, [
+            "run", "Add billing",
+            "--team", "fullstack",
+            "--model", "simulated",
+            "--no-stream",
+            "--context", str(ctx_file),
+        ])
+        assert result.exit_code == 0
+
+    def test_context_file_not_found_exits_1(self, tmp_path):
+        from typer.testing import CliRunner
+        from antcrew.cli._app import app
+        result = CliRunner().invoke(app, [
+            "run", "Add billing",
+            "--team", "fullstack",
+            "--model", "simulated",
+            "--no-stream",
+            "--context", str(tmp_path / "nope.json"),
+        ])
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower()
+
+
 class TestBrownfieldIntegration:
     """Full pipeline: scan → FullStackTeam → write_back."""
 
