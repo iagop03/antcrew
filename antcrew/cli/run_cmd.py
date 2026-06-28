@@ -72,6 +72,15 @@ def run(
         None, "--output-dir", "-O",
         help="Save each step output_key to a separate file in this directory.",
     ),
+    write_back: Optional[Path] = typer.Option(
+        None, "--write-back", "-W",
+        help="After run, write code/test/devops artifacts to this directory "
+             "(respects each artifact's file_path). Use '.' for the current directory.",
+    ),
+    write_back_yes: bool = typer.Option(
+        False, "--write-back-yes",
+        help="With --write-back: overwrite existing files without confirmation.",
+    ),
     repl: bool = typer.Option(
         False, "--repl",
         help="Interactive REPL mode — run the pipeline repeatedly in a loop.",
@@ -291,6 +300,18 @@ def run(
 
     if output_dir:
         _save_outputs_to_dir(state, output_dir)
+
+    if write_back is not None:
+        from antcrew.core.writeback import write_back as _wb
+        root = Path(write_back).resolve()
+        console.print(f"\nWriting artifacts to [cyan]{root}[/cyan]\n")
+        _wb(
+            state, root,
+            dry_run=False,
+            yes=write_back_yes,
+            confirm_fn=(None if write_back_yes else lambda p: typer.confirm(p, default=False)),
+            print_fn=console.print,
+        )
 
     if save:
         from antcrew.utils.persistence import save_state

@@ -662,6 +662,58 @@ antcrew flow validate pipeline.yaml
 
 ---
 
+## Brownfield write-back
+
+Use `CodebaseScannerAgent` to give the pipeline context about your existing codebase,
+then write the generated artifacts back to the real files instead of `./generated/`.
+
+```bash
+# Step 1 — run the pipeline and save state
+antcrew run "Add rate limiting to the auth API" \
+  --team fullstack --config agentteam.yaml --save run.json
+
+# Step 2 — preview what would change (no writes)
+antcrew write-back run.json --project-root ~/myproject --dry-run
+
+# Step 3 — apply: new files are created, existing files show a diff and ask for confirmation
+antcrew write-back run.json --project-root ~/myproject
+
+# Or skip confirmation entirely (e.g. in a script after reviewing the dry run)
+antcrew write-back run.json --project-root ~/myproject --yes
+```
+
+Or write back immediately after a run:
+
+```bash
+antcrew run "Add rate limiting" --team fullstack \
+  --write-back ~/myproject --write-back-yes
+```
+
+`write-back` resolves each artifact's `file_path` relative to `project-root`:
+- **New files** are created (including parent directories).
+- **Existing files** are shown as a unified diff and require confirmation (unless `--yes`).
+- Files where the content is **identical** are silently skipped.
+
+Point the scanner at your repo so agents understand what already exists:
+
+```yaml
+# agentteam.yaml
+team: fullstack
+model: claude
+project_dirs:
+  backend: ./src
+  frontend: ./client
+  infra: ./terraform
+```
+
+```bash
+antcrew run "Migrate auth from JWT to OAuth2" --config agentteam.yaml --save run.json
+antcrew write-back run.json --project-root . --dry-run  # review
+antcrew write-back run.json --project-root . --yes       # apply
+```
+
+---
+
 ## Web Dashboard
 
 A React SPA served directly from `antcrew serve` at `/ui/`.
