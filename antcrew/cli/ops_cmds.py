@@ -27,6 +27,10 @@ def benchmark_cmd(
     ),
     parallel: int = typer.Option(1, "--parallel", "-p", help="Number of cases to run in parallel."),
     timeout: float = typer.Option(300.0, "--timeout", help="Per-case timeout in seconds (0 = no limit)."),
+    context: Optional[Path] = typer.Option(
+        None, "--context", "-c",
+        help="Pre-computed scan JSON (antcrew scan --output) injected for fullstack cases.",
+    ),
 ) -> None:
     """Run a batch of pipeline requests and compare metrics.
 
@@ -61,6 +65,17 @@ def benchmark_cmd(
         console.print("[red]Cases file must contain a JSON array of case objects.[/]")
         raise typer.Exit(1)
 
+    _scan_ctx: "dict | None" = None
+    if context is not None:
+        if not context.exists():
+            console.print(f"[red]--context file not found:[/] {context}")
+            raise typer.Exit(1)
+        try:
+            _scan_ctx = json.loads(context.read_text(encoding="utf-8"))
+        except Exception as exc:
+            console.print(f"[red]Failed to parse --context file:[/] {exc}")
+            raise typer.Exit(1)
+
     def _run_case(idx: int, case: dict) -> dict:
         label = case.get("label") or f"case-{idx + 1}"
         req   = case.get("request", "")
@@ -78,7 +93,7 @@ def benchmark_cmd(
                 return DevTeam(model=llm)
             if t in ("fullstack", "full"):
                 from antcrew.teams.fullstack_team import FullStackTeam
-                return FullStackTeam(model=llm)
+                return FullStackTeam(model=llm, scan_context=_scan_ctx)
             if t == "research":
                 from antcrew.teams.research_team import ResearchTeam
                 return ResearchTeam(model=llm)
@@ -214,6 +229,10 @@ def watch_cmd(
         None, "--project-dir",
         help="Existing project directory for CodebaseScannerAgent context (fullstack team).",
     ),
+    context: Optional[Path] = typer.Option(
+        None, "--context",
+        help="Pre-computed scan JSON (antcrew scan --output) injected for fullstack team.",
+    ),
     write_back: Optional[Path] = typer.Option(
         None, "--write-back", "-W",
         help="After each run, write artifacts to this directory (respects file_path).",
@@ -246,6 +265,23 @@ def watch_cmd(
             f"Current team [bold]{team}[/] will ignore it."
         )
 
+    _watch_ctx: "dict | None" = None
+    if context is not None:
+        if not context.exists():
+            console.print(f"[red]--context file not found:[/] {context}")
+            raise typer.Exit(1)
+        if team not in ("fullstack", "full"):
+            console.print(
+                f"[yellow]Warning:[/] --context is only used by the "
+                f"[bold]fullstack[/] team. Current team [bold]{team}[/] will ignore it."
+            )
+        else:
+            try:
+                _watch_ctx = json.loads(context.read_text(encoding="utf-8"))
+            except Exception as exc:
+                console.print(f"[red]Failed to parse --context file:[/] {exc}")
+                raise typer.Exit(1)
+
     try:
         from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler
@@ -271,7 +307,7 @@ def watch_cmd(
             return DevTeam(model=llm)
         if t in ("fullstack", "full"):
             from antcrew.teams.fullstack_team import FullStackTeam
-            return FullStackTeam(model=llm, project_dir=project_dir)
+            return FullStackTeam(model=llm, project_dir=project_dir, scan_context=_watch_ctx)
         if t == "research":
             from antcrew.teams.research_team import ResearchTeam
             return ResearchTeam(model=llm)

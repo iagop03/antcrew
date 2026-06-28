@@ -282,7 +282,7 @@ def describe(
         try:
             from antcrew.trace import TraceLog
             tl = TraceLog(str(trace_path))
-            stats = tl.stats()
+            stats = tl.get_stats()
             total = stats.get("total_runs", 0)
             if total:
                 avg = stats.get("avg_cost_usd", 0.0)

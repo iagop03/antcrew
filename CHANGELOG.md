@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.8] — 2026-06-28
+
+### Fixed
+- **`describe --trace` bug** — `tl.stats()` was silently failing because the method
+  was renamed to `get_stats()` in v0.10.0. The `except Exception: pass` guard hid the
+  error. Now calls the correct method; historical cost shows in `describe` output.
+
+### Added
+- **`antcrew sprint`** — new standalone command: divides a ticket backlog (JSON array or
+  file) into fixed-size sprints and renders them as Rich panels. Flags: `--size N`,
+  `--json`, `--output FILE`. Accepts both plain string arrays and `{"title": ...}` objects;
+  also understands `{"tickets": [...]}` run-state format from `antcrew run`.
+- **`antcrew benchmark --context FILE`** — pre-computed scan context (from
+  `antcrew scan --output`) is now passed to `FullStackTeam` for all fullstack benchmark
+  cases, skipping the scanner LLM call and making benchmark runs faster and repeatable.
+- **`antcrew watch --context FILE`** — pre-computed scan context is now accepted by
+  `watch_cmd`; injected into `FullStackTeam` on every re-run. Warns if team is not
+  `fullstack`; errors on missing file.
+- **+26 tests** across `test_sprint_cmd.py` (15), `test_describe_trace.py` (4),
+  `test_watch_benchmark_context.py` (7), closing all coverage gaps from v0.10.7.
+
+---
+
 ## [0.10.7] — 2026-06-28
 
 ### Added
