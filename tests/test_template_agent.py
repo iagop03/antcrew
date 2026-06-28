@@ -896,3 +896,174 @@ def test_validate_errors_user_template_and_input_key(tmp_path):
     p.write_text(yaml.dump(cfg), encoding="utf-8")
     r = CliRunner().invoke(app, ["validate", str(p)])
     assert r.exit_code == 1
+
+
+# ===========================================================================
+# post_process transforms
+# ===========================================================================
+
+def test_post_process_default_empty():
+    agent = TemplateAgent(_basic_cfg(), _llm())
+    assert agent._post_process == []
+
+
+def test_post_process_string_stored_as_list():
+    agent = TemplateAgent(_basic_cfg(post_process="strip"), _llm())
+    assert agent._post_process == ["strip"]
+
+
+def test_post_process_list_stored():
+    agent = TemplateAgent(_basic_cfg(post_process=["strip_fences", "strip"]), _llm())
+    assert agent._post_process == ["strip_fences", "strip"]
+
+
+def test_post_process_unknown_raises_at_runtime():
+    llm = SequencedLLM(["output"])
+    agent = TemplateAgent(_basic_cfg(post_process="nonexistent_transform"), llm)
+    with pytest.raises(ValueError, match="Unknown post_process"):
+        agent.run({"request": "task"})
+
+
+# --- strip ---
+
+def test_post_process_strip():
+    llm = SequencedLLM(["  hello world  "])
+    agent = TemplateAgent(_basic_cfg(post_process="strip", output_key="out"), llm)
+    result = agent.run({"request": "task"})
+    assert result["out"] == "hello world"
+
+
+# --- lower / upper ---
+
+def test_post_process_lower():
+    llm = SequencedLLM(["HELLO"])
+    agent = TemplateAgent(_basic_cfg(post_process="lower", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == "hello"
+
+
+def test_post_process_upper():
+    llm = SequencedLLM(["hello"])
+    agent = TemplateAgent(_basic_cfg(post_process="upper", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == "HELLO"
+
+
+# --- first_line / last_line ---
+
+def test_post_process_first_line():
+    llm = SequencedLLM(["first\nsecond\nthird"])
+    agent = TemplateAgent(_basic_cfg(post_process="first_line", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == "first"
+
+
+def test_post_process_last_line():
+    llm = SequencedLLM(["first\nsecond\nthird"])
+    agent = TemplateAgent(_basic_cfg(post_process="last_line", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == "third"
+
+
+def test_post_process_first_line_skips_blank():
+    llm = SequencedLLM(["\n\nactual first\nsecond"])
+    agent = TemplateAgent(_basic_cfg(post_process="first_line", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == "actual first"
+
+
+# --- strip_fences ---
+
+def test_post_process_strip_fences_removes_code_fence():
+    llm = SequencedLLM(["```python\nprint('hello')\n```"])
+    agent = TemplateAgent(_basic_cfg(post_process="strip_fences", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == "print('hello')"
+
+
+def test_post_process_strip_fences_no_fence_unchanged():
+    llm = SequencedLLM(["plain text"])
+    agent = TemplateAgent(_basic_cfg(post_process="strip_fences", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == "plain text"
+
+
+def test_post_process_strip_fences_language_agnostic():
+    llm = SequencedLLM(["```json\n{\"key\": 1}\n```"])
+    agent = TemplateAgent(_basic_cfg(post_process="strip_fences", output_key="out"), llm)
+    assert agent.run({"request": "task"})["out"] == '{"key": 1}'
+
+
+# --- chaining ---
+
+def test_post_process_chain_fences_then_strip():
+    llm = SequencedLLM(["```\n  content  \n```"])
+    agent = TemplateAgent(
+        _basic_cfg(post_process=["strip_fences", "strip"], output_key="out"), llm
+    )
+    assert agent.run({"request": "task"})["out"] == "content"
+
+
+def test_post_process_not_applied_to_dict_output():
+    """post_process is skipped when output_json is True (result is a dict)."""
+    llm = SequencedLLM(['{"key": "value"}'])
+    agent = TemplateAgent(
+        _basic_cfg(post_process="upper", output_key="out", output_json=True), llm
+    )
+    result = agent.run({"request": "task"})["out"]
+    assert isinstance(result, dict)  # dict, NOT uppercased string
+
+
+def test_post_process_save_output_uses_post_processed_value(tmp_path):
+    """save_output should store the post-processed result."""
+    out_file = tmp_path / "out.txt"
+    llm = SequencedLLM(["  trimmed  "])
+    agent = TemplateAgent(
+        _basic_cfg(post_process="strip", save_output=str(out_file), output_key="out"),
+        llm,
+    )
+    agent.run({"request": "task"})
+    assert out_file.read_text(encoding="utf-8") == "trimmed"
+
+
+def test_post_process_in_custom_team(tmp_path):
+    """post_process works end-to-end through CustomTeam."""
+    from antcrew.teams.custom_team import CustomTeam
+    llm = SequencedLLM(["```python\ndef hello(): pass\n```", "done"])
+    steps = [
+        {"name": "coder", "system_prompt": "Write code.", "output_key": "code",
+         "post_process": "strip_fences"},
+        {"name": "reviewer", "system_prompt": "Review.", "output_key": "review"},
+    ]
+    team = CustomTeam(steps, llm)
+    result = team.run("task")
+    assert result["code"] == "def hello(): pass"
+
+
+# ---------------------------------------------------------------------------
+# validate CLI: post_process checks
+# ---------------------------------------------------------------------------
+
+def test_validate_shows_post_process_in_flags(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Do.",
+                   "output_key": "out", "post_process": "strip_fences"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 0
+    assert "strip_fences" in r.output or "pp:" in r.output
+
+
+def test_validate_errors_unknown_post_process(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Do.",
+                   "output_key": "out", "post_process": "nonexistent"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 1
+    assert "nonexistent" in r.output

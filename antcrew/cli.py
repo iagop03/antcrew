@@ -3780,6 +3780,20 @@ def validate_cmd(
         if raw.get("user_template"):
             flags.append("user_tmpl")
 
+        # Validate post_process transform names
+        raw_pp = raw.get("post_process")
+        if raw_pp is not None:
+            from antcrew.agents.template_agent import POST_PROCESS_TRANSFORMS
+            pp_list = [raw_pp] if isinstance(raw_pp, str) else list(raw_pp)
+            unknown_pp = [t for t in pp_list if t not in POST_PROCESS_TRANSFORMS]
+            if unknown_pp:
+                errors.append(
+                    f"Step {idx_str} '{name}': unknown post_process transform(s): "
+                    f"{unknown_pp}. Available: {sorted(POST_PROCESS_TRANSFORMS)}"
+                )
+            else:
+                flags.append(f"pp:({','.join(pp_list)})")
+
         # Check {placeholder} references in system_prompt and user_template
         import re as _re
         _INTERP_RE = _re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")

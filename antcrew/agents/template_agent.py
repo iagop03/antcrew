@@ -34,6 +34,10 @@ YAML format::
                                      # as JSON — output_key stores a dict, not a str
     output_parse_retries: 0          # optional (default: 0); extra retries on JSON
                                      # parse failure (only when output_json is true)
+    post_process: strip_fences       # optional; named transform(s) applied to the
+                                     # output string before storing. A single name
+                                     # or a list. Available: strip, lower, upper,
+                                     # first_line, last_line, strip_fences.
 
 Usage::
 
@@ -74,6 +78,52 @@ if TYPE_CHECKING:
 # JSON curly braces like {"key": "value"} are NOT matched (contain spaces /
 # colons / quotes), so they pass through unchanged.
 _INTERP_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+# ---------------------------------------------------------------------------
+# Output post-processing transforms
+# ---------------------------------------------------------------------------
+_FENCE_RE = re.compile(r"^\s*```[^\n]*\n(.*?)\n```\s*$", re.DOTALL)
+
+
+def _strip_fences(text: str) -> str:
+    """Remove a single outer markdown code fence (``` ... ```)."""
+    m = _FENCE_RE.match(text)
+    return m.group(1) if m else text
+
+
+def _first_line(text: str) -> str:
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return lines[0] if lines else text
+
+
+def _last_line(text: str) -> str:
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return lines[-1] if lines else text
+
+
+#: Callable transforms available via ``post_process:`` in config.
+POST_PROCESS_TRANSFORMS: dict[str, "Any"] = {
+    "strip":        str.strip,
+    "lower":        str.lower,
+    "upper":        str.upper,
+    "first_line":   _first_line,
+    "last_line":    _last_line,
+    "strip_fences": _strip_fences,
+}
+
+
+def _apply_post_process(text: str, transforms: list[str]) -> str:
+    """Apply named transforms in order; raise ``ValueError`` for unknown names."""
+    for name in transforms:
+        fn = POST_PROCESS_TRANSFORMS.get(name)
+        if fn is None:
+            known = ", ".join(sorted(POST_PROCESS_TRANSFORMS))
+            raise ValueError(
+                f"Unknown post_process transform {name!r}. "
+                f"Available: {known}"
+            )
+        text = fn(text)
+    return text
 
 
 def _interpolate(template: str, state: dict) -> str:
@@ -224,6 +274,14 @@ class TemplateAgent(BaseAgent):
             Path(cfg["save_output"]) if cfg.get("save_output") else None
         )
 
+        raw_pp = cfg.get("post_process")
+        if raw_pp is None:
+            self._post_process: list[str] = []
+        elif isinstance(raw_pp, str):
+            self._post_process = [raw_pp]
+        else:
+            self._post_process = [str(t) for t in raw_pp]
+
         if self._user_template is not None and cfg.get("input_key"):
             raise ValueError(
                 "Use 'input_key' or 'user_template', not both."
@@ -278,6 +336,9 @@ class TemplateAgent(BaseAgent):
             )
         else:
             result = self.system(prompt, user_msg)
+
+        if self._post_process and isinstance(result, str):
+            result = _apply_post_process(result, self._post_process)
 
         if self._save_output is not None:
             out_path = self._save_output

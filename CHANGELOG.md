@@ -5,6 +5,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.3] — 2026-06-28
+
+### Added
+- **`post_process`** — declarative output transforms applied before storing to
+  state (and before `save_output`).  Accepts a single name or a list:
+
+  ```yaml
+  - name: code_gen
+    system_prompt: "Generate Python code."
+    output_key: code
+    post_process: strip_fences            # single transform
+  
+  - name: summariser
+    system_prompt: "Summarise in one line."
+    output_key: summary
+    post_process: [strip_fences, strip]   # chained transforms
+  ```
+
+  Built-in transforms:
+
+  | Name            | Effect                                          |
+  |-----------------|------------------------------------------------|
+  | `strip`         | `str.strip()`                                  |
+  | `lower`         | `str.lower()`                                  |
+  | `upper`         | `str.upper()`                                  |
+  | `first_line`    | First non-blank line                           |
+  | `last_line`     | Last non-blank line                            |
+  | `strip_fences`  | Remove outer ` ``` lang … ``` ` code fence     |
+
+  - Transforms are applied to string outputs only; `output_json: true` results
+    (dict) pass through unchanged.
+  - `save_output` persists the post-processed value.
+  - `antcrew validate` validates transform names at static analysis time and
+    shows them in the flags column as `pp:(name,…)`.
+  - `POST_PROCESS_TRANSFORMS` dict exported from `antcrew.agents.template_agent`
+    for programmatic registration of custom transforms.
+  - 19 new tests added to `tests/test_template_agent.py` (106 total).
+
+---
+
 ## [0.9.2] — 2026-06-28
 
 ### Added
