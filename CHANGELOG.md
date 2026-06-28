@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.0] — 2026-06-28
+
+### Fixed
+- **`coverage.json` untracked** — was accidentally committed in v0.10.9 before
+  the gitignore entry took effect; removed via `git rm --cached`.
+
+### Added
+- **+20 tests** (`test_coverage_other_teams.py`, 1769 total):
+  - **AGENT_REGISTRY** — 7 tests verifying `sprint_planner`/`doc_writer` are in
+    the registry, `get_agent_class()` returns the right class, `instantiate_agent()`
+    produces a working instance, and `antcrew agents --json` lists both names.
+  - **`watch --repo-index`** — 3 tests: nonexistent path exits 1; non-fullstack team
+    prints warning then exits (monkeypatched watchdog); file (not directory) exits 1.
+  - **ContentTeam** — 5 tests: trace_log run, trace_log error path, max_cost_usd,
+    memory propagated to agents, memory.store_run called on run.
+    Coverage: **73 % → 98 %**.
+  - **ResearchTeam** — 5 tests: same pattern as ContentTeam.
+    Coverage: **72 % → 98 %**.
+- Overall coverage: **83 % → 84 %** (1769 tests).
+
+---
+
 ## [0.10.9] — 2026-06-28
 
 ### Fixed
