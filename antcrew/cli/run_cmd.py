@@ -182,8 +182,19 @@ def run(
                 if not scan_context.exists():
                     console.print(f"[red]Context file not found:[/] {scan_context}")
                     raise typer.Exit(1)
-                import json as _json
-                _ctx = _json.loads(scan_context.read_text(encoding="utf-8"))
+                if team != "fullstack":
+                    console.print(
+                        f"[yellow]Warning:[/] --context is only used by the "
+                        f"[bold]fullstack[/] team. Current team [bold]{team}[/] will ignore it."
+                    )
+                else:
+                    import json as _json
+                    _ctx = _json.loads(scan_context.read_text(encoding="utf-8"))
+                    if project_dir:
+                        console.print(
+                            "[yellow]Note:[/] --context takes precedence; "
+                            "--project-dir will not trigger a new scan."
+                        )
             active_team = _build_team(
                 team, model, integrations=[], llm=_llm_ref,
                 project_dir=_pd, project_dirs=_pds, scan_context=_ctx,

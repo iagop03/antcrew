@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.6] — 2026-06-28
+
+### Added
+- **`antcrew run --context` warnings** — consistent with `--project-dir` warnings:
+  - Non-fullstack team with `--context`: yellow Warning (flag is ignored)
+  - `--context` + `--project-dir` together: yellow Note that `--context` takes
+    precedence and `--project-dir` will not trigger a new scan
+- **`tests/test_describe_cmd.py`** — 19 new tests covering `antcrew describe`:
+  - No-config mode: all four team presets, Consumes/Produces columns, Coherencia OK
+  - `--team fullstack` shows `codebase_scanner` in the agent table
+  - `--team fullstack` shows `project_dir` in the Consumes column
+  - `--config YAML` with dev, custom, and fullstack configs
+  - JSON config accepted
+  - Missing config exits 1
+- **`TestContextWarnings`** (3 tests in `test_describe_cmd.py`):
+  - `--context` with dev team prints Warning
+  - `--context` with fullstack team: no spurious warning
+  - `--context` + `--project-dir`: shows precedence Note
+
+---
+
 ## [0.10.5] — 2026-06-28
 
 ### Added
