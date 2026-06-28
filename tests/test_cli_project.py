@@ -440,7 +440,7 @@ class TestDashboardTestResults:
         con = Console(file=buf, highlight=False)
 
         # Patch the module-level console
-        import antcrew.cli as cli_mod
+        import antcrew.cli._shared as cli_mod
         original = cli_mod.console
         cli_mod.console = con
 
@@ -467,7 +467,7 @@ class TestDashboardTestResults:
         buf = StringIO()
         con = Console(file=buf, highlight=False)
 
-        import antcrew.cli as cli_mod
+        import antcrew.cli._shared as cli_mod
         original = cli_mod.console
         cli_mod.console = con
 
@@ -493,7 +493,7 @@ class TestDashboardTestResults:
         buf = StringIO()
         con = Console(file=buf, highlight=False)
 
-        import antcrew.cli as cli_mod
+        import antcrew.cli._shared as cli_mod
         original = cli_mod.console
         cli_mod.console = con
 

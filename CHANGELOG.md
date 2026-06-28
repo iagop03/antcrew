@@ -8,17 +8,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [0.9.9] — 2026-06-28
 
 ### Refactored
-- **`antcrew/cli/` package** — `antcrew/cli.py` (4 188 lines) converted to a
-  proper Python package:
-  - `antcrew/cli/_app.py` — Typer `app` / `_flow_app` / `_project_app`,
-    `console`, `_TEAM_CHOICES`, `_MODEL_HELP` (single source of truth for
-    app-level singletons).
-  - `antcrew/cli/_templates.py` — `_YAML_*` / `_MAIN_*` init scaffold
-    strings (382 lines, previously embedded in the main file).
-  - `antcrew/cli/validate_cmd.py` — `validate` command extracted to its own
-    module; imports `app` / `console` from `_app.py`.
-  - `antcrew/cli/__init__.py` — residual entry point (~3 480 lines); imports
-    from the above submodules so public API is unchanged.
+- **`antcrew/cli/` package — full split** — `antcrew/cli.py` (4 188 lines)
+  fully decomposed into 18 focused modules; `__init__.py` is now 35 lines:
+  - `_app.py` — Typer singletons (`app`, `_flow_app`, `_project_app`,
+    `console`, `_TEAM_CHOICES`, `_MODEL_HELP`)
+  - `_shared.py` — shared display helpers (`_build_team`, `_print_state`,
+    `_print_test_results`, `_print_usage`, `_print_state_raw`)
+  - `_run_helpers.py` — streaming/REPL helpers (`_print_dry_run`,
+    `_run_with_stream`, `_save_outputs_to_dir`, `_run_repl`)
+  - `_templates.py` — `_YAML_*` / `_MAIN_*` init scaffold strings
+  - `run_cmd.py` — `run` command
+  - `init_cmd.py` — `init` command
+  - `setup_cmds.py` — `setup`, `cache-clear`, `cache-stats`, `serve`
+  - `eval_cmds.py` — `interactive`, `eval`
+  - `inspect_cmds.py` — `show`, `extract`, `describe`, `agents`
+  - `project_cmds.py` — `project run/show/history`
+  - `flow_cmds.py` — `flow show/validate`
+  - `trace_cmd.py` — `trace`, `replay`
+  - `publish_cmd.py` — `publish`
+  - `ops_cmds.py` — `benchmark`, `watch`, `export`, `diff`, `test`
+  - `graph_cmd.py` — `graph`, `lint`
+  - `history_cmd.py` — `history`
+  - `validate_cmd.py` — `validate`
 - **`antcrew/agents/registry.py`** — central agent registry replacing the
   duplicate dicts in `config.py` and `cli.py`.  `AGENT_REGISTRY`,
   `get_agent_class()`, and `instantiate_agent()` are the single source of
