@@ -119,10 +119,26 @@ def write_back(
         print_fn("[dim]No file artifacts found in state.[/dim]")
         return result
 
+    root_resolved = project_root.resolve()
+
     for file_path, content, atype in artifacts:
         # Resolve: strip leading slash so Path doesn't treat it as absolute
         rel = file_path.lstrip("/\\")
-        target = project_root / rel
+        target = (project_root / rel).resolve()
+
+        # Guard against path traversal (e.g. file_path = "../../etc/passwd")
+        if not target.is_relative_to(root_resolved):
+            print_fn(
+                f"  [red]SECURITY: skipped[/] {file_path!r} "
+                f"— resolves outside project root ({target})"
+            )
+            entry = WriteEntry(
+                file_path=file_path, operation="create",
+                artifact_type=atype, skipped=True,
+            )
+            result.entries.append(entry)
+            continue
+
         exists = target.exists()
         operation = "modify" if exists else "create"
 
@@ -156,7 +172,7 @@ def write_back(
                     continue
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
+        target.write_text(content, encoding="utf-8")  # target already resolved/validated
         entry.written = True
         op_str = "[yellow]modified[/]" if operation == "modify" else "[green]created[/]"
         print_fn(f"  {op_str}  {rel}")

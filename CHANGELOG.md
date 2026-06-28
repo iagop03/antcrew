@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.1] — 2026-06-28
+
+### Security
+- **Path traversal fix in `write_back()`** — `file_path` values from LLM-generated
+  artifacts are now checked with `Path.is_relative_to()` after resolution. Any path
+  that escapes `project_root` (e.g. `../../etc/passwd`, `../secret.env`) is silently
+  skipped and a `SECURITY: skipped` message is printed. The fix is applied before any
+  file I/O, including `dry_run` mode. Safe paths are unaffected.
+- **API key authentication for `antcrew serve`** — the REST server now reads
+  `ANTCREW_API_KEY` from the environment. When set, every request must carry
+  `Authorization: Bearer <key>` or receive a `401 Unauthorized` with a
+  `WWW-Authenticate: Bearer` header. When the env var is unset the server runs in
+  open mode (backward-compatible for local dev). The `serve` CLI command gains a
+  `--api-key` flag (also settable via `ANTCREW_API_KEY`) and prints a yellow warning
+  when no key is configured and the host is not localhost.
+
+### Added
+- **18 security tests** in `test_security.py`:
+  - `TestPathTraversal` (8): normal write, `../`, deep `../../`, leading-slash strip,
+    skipped-entry metadata, mixed safe+unsafe batch, security message printed, dry-run.
+  - `TestServerAuth` (7): open access when key unset, 401 without header, 401 wrong
+    key, 200 correct key, `WWW-Authenticate` header present, POST protected, POST
+    succeeds with auth.
+  - `TestServeCLIAuth` (3): public-host warning, no warning when key set, auth-enabled
+    status line printed.
+
+---
+
 ## [0.11.0] — 2026-06-28
 
 ### Fixed

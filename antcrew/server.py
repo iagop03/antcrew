@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 try:
-    from fastapi import BackgroundTasks, FastAPI, HTTPException
+    from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel as _PB
 except ImportError as exc:
@@ -49,6 +49,22 @@ from antcrew.utils.persistence import _encode
 _DATA_DIR: Optional[Path] = (
     Path(os.environ["ANTCREW_DATA_DIR"]) if os.environ.get("ANTCREW_DATA_DIR") else None
 )
+
+# Optional API key auth.  Set ANTCREW_API_KEY to enable; leave unset for open access.
+_API_KEY: str = os.environ.get("ANTCREW_API_KEY", "")
+
+
+async def _require_auth(request: Request) -> None:
+    """FastAPI dependency: enforces Bearer token when ANTCREW_API_KEY is set."""
+    if not _API_KEY:
+        return
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or auth[7:] != _API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized — supply a valid 'Authorization: Bearer <key>' header.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 # In-memory run registry
 _runs: dict[str, dict[str, Any]] = {}
@@ -123,6 +139,7 @@ app = FastAPI(
     version="0.4.0",
     description="Run AntCrew multi-agent pipelines via REST.",
     lifespan=_lifespan,
+    dependencies=[Depends(_require_auth)],
 )
 
 
