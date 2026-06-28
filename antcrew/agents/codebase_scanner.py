@@ -69,6 +69,8 @@ def _build_tree(root: Path, ignore: set[str], max_depth: int = 4) -> str:
         except PermissionError:
             return
         for entry in entries:
+            if len(lines) >= _MAX_TREE_LINES:
+                break
             if entry.name in ignore or entry.name.startswith("."):
                 continue
             lines.append(f"{prefix}{entry.name}{'/' if entry.is_dir() else ''}")

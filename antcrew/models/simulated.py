@@ -294,7 +294,7 @@ def _pick_fixture(system: str) -> str:
     # ----------------------------------------------------------------
     # Normal run() prompts â€” most specific first to avoid false matches.
     # ----------------------------------------------------------------
-    if "software architect analyzing an existing codebase" in s:
+    if "senior software architect" in s and ("existing" in s or "codebase" in s):
         return json.dumps(_CODEBASE_ANALYSIS_FIXTURE)
     if "prd" in s and ("functional_requirements" in s or "business analyst" in s):
         return json.dumps(_PRD_FIXTURE)
