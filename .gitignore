@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# antcrew generated artifacts
+antcrew-watch-latest.json
+antcrew-watch-*.json

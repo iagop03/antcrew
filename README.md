@@ -778,6 +778,28 @@ the source tree during generation (requires `pip install antcrew[memory]`):
 antcrew run "Refactor auth" --team fullstack --repo-index ./src
 ```
 
+### Sprint planning
+
+Divide a product backlog into fixed-size sprints without an LLM call:
+
+```bash
+# backlog.json — plain array or {"tickets": [...]} from a run
+antcrew sprint backlog.json              # 4 tickets per sprint (default)
+antcrew sprint backlog.json --size 6     # custom sprint size
+antcrew sprint backlog.json --json       # machine-readable output
+antcrew sprint backlog.json --output sprints.json
+
+# Pipe directly from an antcrew run result
+antcrew run "Build e-commerce platform" --team fullstack --json | antcrew sprint --json
+```
+
+`backlog.json` can be:
+- A plain array: `["Add auth", "Billing", "CI pipeline"]`
+- An array of objects: `[{"title": "Add auth", "priority": "high"}, ...]`
+- A run-state dict: `{"tickets": ["Add auth", ...]}` (output of `antcrew run --json`)
+
+---
+
 ### LLM cost tracking
 
 Record spending across runs with `--trace` and inspect it later:

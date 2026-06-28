@@ -32,6 +32,8 @@ AGENT_REGISTRY: dict[str, tuple[str, str]] = {
     "copywriter":        ("antcrew.agents.copywriter",        "CopywriterAgent"),
     "editor":            ("antcrew.agents.editor",            "EditorAgent"),
     "codebase_scanner":  ("antcrew.agents.codebase_scanner",  "CodebaseScannerAgent"),
+    "sprint_planner":    ("antcrew.agents.sprint_planner",    "SprintPlannerAgent"),
+    "doc_writer":        ("antcrew.agents.doc_writer",        "DocWriterAgent"),
 }
 
 

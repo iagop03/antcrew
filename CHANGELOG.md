@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.9] — 2026-06-28
+
+### Fixed
+- **`antcrew-watch-latest.json` tracked by git** — added to `.gitignore` and removed
+  from the repository; file is generated at run-time and must not be committed.
+
+### Added
+- **`sprint_planner` and `doc_writer` in `AGENT_REGISTRY`** — both agents are now
+  discoverable via `antcrew describe agents`, can be used in `custom` team YAML,
+  and are returned by `get_agent_class()` / `instantiate_agent()`.
+- **`antcrew watch --repo-index PATH`** — parity with `antcrew run`; builds a
+  `RepoIndex` from the given directory and attaches it to `FullStackTeam` agents on
+  every re-run. Validates path before watchdog starts; warns on non-fullstack team.
+- **README: `antcrew sprint` section** — documents the new command with examples
+  for plain arrays, object arrays, custom sprint size, `--json`, and `--output`.
+- **+41 coverage tests** (`test_coverage_base.py` + `test_coverage_teams.py`):
+  - `_fmt_time` (5 cases), `_sync_run` (3), `_ProgressPanel` (13) — `teams/base.py`
+    goes from **21 % → 55 %**; the remaining uncovered lines are `run_with_approval()`
+    which requires a live terminal + checkpointer.
+  - `_apply_edit` (5 cases): valid dict artifact, valid list artifact, invalid JSON, unknown agent.
+  - DevTeam + FullStackTeam: trace_log (run + error path), memory (spy on store_run),
+    sandbox runner (called + exception swallowed), max_cost_usd, project_dirs, sprint_size.
+  - `fullstack_team.py` goes from **80 % → 97 %**.
+  - Overall coverage: **82 % → 83 %** (1749 tests).
+
+---
+
 ## [0.10.8] — 2026-06-28
 
 ### Fixed

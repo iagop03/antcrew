@@ -233,6 +233,10 @@ def watch_cmd(
         None, "--context",
         help="Pre-computed scan JSON (antcrew scan --output) injected for fullstack team.",
     ),
+    repo_index: Optional[Path] = typer.Option(
+        None, "--repo-index",
+        help="Build a RepoIndex from this directory and attach it to the fullstack team agents.",
+    ),
     write_back: Optional[Path] = typer.Option(
         None, "--write-back", "-W",
         help="After each run, write artifacts to this directory (respects file_path).",
@@ -282,6 +286,19 @@ def watch_cmd(
                 console.print(f"[red]Failed to parse --context file:[/] {exc}")
                 raise typer.Exit(1)
 
+    _watch_repo_path: "str | None" = None
+    if repo_index is not None:
+        if not repo_index.is_dir():
+            console.print(f"[red]--repo-index is not a directory:[/] {repo_index}")
+            raise typer.Exit(1)
+        if team not in ("fullstack", "full"):
+            console.print(
+                f"[yellow]Warning:[/] --repo-index is only used by the "
+                f"[bold]fullstack[/] team. Current team [bold]{team}[/] will ignore it."
+            )
+        else:
+            _watch_repo_path = str(repo_index.resolve())
+
     try:
         from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler
@@ -307,7 +324,10 @@ def watch_cmd(
             return DevTeam(model=llm)
         if t in ("fullstack", "full"):
             from antcrew.teams.fullstack_team import FullStackTeam
-            return FullStackTeam(model=llm, project_dir=project_dir, scan_context=_watch_ctx)
+            return FullStackTeam(
+                model=llm, project_dir=project_dir,
+                scan_context=_watch_ctx, repo_path=_watch_repo_path,
+            )
         if t == "research":
             from antcrew.teams.research_team import ResearchTeam
             return ResearchTeam(model=llm)
