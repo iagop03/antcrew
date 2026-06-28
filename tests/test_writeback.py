@@ -148,6 +148,38 @@ class TestWriteBack:
 
 # ── CLI: antcrew write-back ───────────────────────────────────────────────────
 
+class TestResolveRoot:
+    """Tests for _resolve_root() in writeback_cmd."""
+
+    def test_explicit_root_wins(self, tmp_path):
+        from antcrew.cli.writeback_cmd import _resolve_root
+        other = tmp_path / "other"
+        other.mkdir()
+        state = {"project_dir": str(tmp_path)}
+        assert _resolve_root(state, other) == other.resolve()
+
+    def test_falls_back_to_project_dirs(self, tmp_path):
+        from antcrew.cli.writeback_cmd import _resolve_root
+        state = {"project_dirs": {"backend": str(tmp_path)}}
+        assert _resolve_root(state, None) == tmp_path.resolve()
+
+    def test_falls_back_to_project_dir(self, tmp_path):
+        from antcrew.cli.writeback_cmd import _resolve_root
+        state = {"project_dir": str(tmp_path)}
+        assert _resolve_root(state, None) == tmp_path.resolve()
+
+    def test_falls_back_to_cwd_when_no_state_info(self, tmp_path):
+        from antcrew.cli.writeback_cmd import _resolve_root
+        result = _resolve_root({}, None)
+        assert result == Path.cwd()
+
+    def test_ignores_nonexistent_project_dir(self, tmp_path):
+        from antcrew.cli.writeback_cmd import _resolve_root
+        state = {"project_dir": str(tmp_path / "doesnt_exist")}
+        result = _resolve_root(state, None)
+        assert result == Path.cwd()
+
+
 class TestWriteBackCmd:
     def _write_state(self, tmp_path: Path, state: dict) -> Path:
         p = tmp_path / "state.json"

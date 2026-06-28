@@ -81,6 +81,10 @@ def run(
         False, "--write-back-yes",
         help="With --write-back: overwrite existing files without confirmation.",
     ),
+    project_dir: Optional[str] = typer.Option(
+        None, "--project-dir",
+        help="Existing project directory for CodebaseScannerAgent context (fullstack team).",
+    ),
     repl: bool = typer.Option(
         False, "--repl",
         help="Interactive REPL mode — run the pipeline repeatedly in a loop.",
@@ -131,7 +135,10 @@ def run(
         else:
             from antcrew.config import build_llm
             _llm_ref = build_llm(model)
-            active_team = _build_team(team, model, integrations=[], llm=_llm_ref)
+            active_team = _build_team(
+                team, model, integrations=[], llm=_llm_ref,
+                project_dir=project_dir,
+            )
 
         # Resolve the request from file, argument, or interactive prompt.
         # Done here (after team is built) so --dry-run can still work without

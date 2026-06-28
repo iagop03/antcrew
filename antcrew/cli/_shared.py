@@ -13,7 +13,15 @@ from antcrew.cli._app import console, _TEAM_CHOICES
 
 
 
-def _build_team(team: str, model_str: str, integrations: list, llm=None):
+def _build_team(
+    team: str,
+    model_str: str,
+    integrations: list,
+    llm=None,
+    *,
+    project_dir: "str | None" = None,
+    project_dirs: "dict | None" = None,
+):
     from antcrew.config import build_llm
 
     llm = llm or build_llm(model_str)
@@ -23,7 +31,10 @@ def _build_team(team: str, model_str: str, integrations: list, llm=None):
         return DevTeam(model=llm, integrations=integrations)
     if team == "fullstack":
         from antcrew.teams.fullstack_team import FullStackTeam
-        return FullStackTeam(model=llm, integrations=integrations)
+        return FullStackTeam(
+            model=llm, integrations=integrations,
+            project_dir=project_dir, project_dirs=project_dirs,
+        )
     if team == "research":
         from antcrew.teams.research_team import ResearchTeam
         return ResearchTeam(model=llm)
