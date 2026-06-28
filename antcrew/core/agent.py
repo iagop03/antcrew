@@ -161,6 +161,8 @@ class BaseAgent(ABC):
         preset=None,
         memory_n: int = 3,
         memory_score_threshold: float = 0.0,
+        output_schema: Optional[Any] = None,
+        max_cost_usd: Optional[float] = None,
     ) -> None:
         from antcrew.presets import resolve_preset
         self.llm = llm
@@ -174,6 +176,11 @@ class BaseAgent(ABC):
         self.preset = resolve_preset(preset)
         self.memory_n = memory_n
         self.memory_score_threshold = memory_score_threshold
+        # Structured output: when set, system_structured() validates against this schema
+        if output_schema is not None:
+            self.output_schema = output_schema
+        # Per-agent cost cap: raises CostLimitExceeded when exceeded
+        self.max_cost_usd: Optional[float] = max_cost_usd
 
     @abstractmethod
     def run(self, state: TeamState) -> dict:
@@ -199,7 +206,9 @@ class BaseAgent(ABC):
         if self.max_tokens and "max_tokens" not in kwargs:
             kwargs["max_tokens"] = self.max_tokens
         self.llm.current_agent = self.name
-        return self.llm.system(system_prompt, user, **kwargs)
+        result = self.llm.system(system_prompt, user, **kwargs)
+        self._check_agent_cost()
+        return result
 
     def _inject_memory(self, user: str) -> str:
         """Prepend relevant memory context to the user message, if memory is attached."""
@@ -339,6 +348,51 @@ class BaseAgent(ABC):
             raw_preview=raw[:200],
         )
         raise last_exc
+
+    def system_structured(
+        self,
+        system_prompt: str,
+        user: str,
+        schema: Any = None,
+        *,
+        max_retries: int = 1,
+        **kwargs,
+    ) -> Any:
+        """Call LLM and return a validated Pydantic model.
+
+        Uses *schema* if provided, otherwise falls back to ``self.output_schema``.
+        Raises ``ValueError`` if neither is set.  Retries up to *max_retries* times
+        on parse / validation failure (delegates to ``system_parsed``).
+
+        Example::
+
+            class MyOutput(BaseModel):
+                summary: str
+                action_items: list[str]
+
+            agent = MyAgent(llm=llm, output_schema=MyOutput)
+            result: MyOutput = agent.system_structured("You are…", "Summarise…")
+            print(result.summary)
+        """
+        effective_schema = schema if schema is not None else getattr(self, "output_schema", None)
+        if effective_schema is None:
+            raise ValueError(
+                "system_structured() requires a schema. "
+                "Pass one explicitly or set output_schema on the agent."
+            )
+        return self.system_parsed(
+            system_prompt, user, effective_schema, max_retries=max_retries, **kwargs
+        )
+
+    def _check_agent_cost(self) -> None:
+        """Raise CostLimitExceeded if this agent's accumulated cost exceeds max_cost_usd."""
+        if self.max_cost_usd is None:
+            return
+        entries = [e for e in self.llm._usage_log if e.get("agent") == self.name]
+        cost = sum(e.get("cost_usd", 0.0) for e in entries)
+        if cost > self.max_cost_usd:
+            from antcrew.core.exceptions import CostLimitExceeded
+            raise CostLimitExceeded(cost_usd=cost, limit_usd=self.max_cost_usd)
 
     def _search_repo(self, query: str, *, n: int = 5) -> str:
         """Search the repository index for relevant existing code.

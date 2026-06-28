@@ -21,8 +21,23 @@ def trace_cmd(
         None, "--thread", help="Show the latest run for a thread_id"
     ),
     limit: int = typer.Option(20, "--limit", "-n", help="Max runs to list"),
+    prune: Optional[int] = typer.Option(
+        None, "--prune",
+        help="Delete runs older than N days and exit (0 = all past runs).",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation when pruning"),
+    dump: Optional[str] = typer.Option(
+        None, "--dump",
+        help="Dump runs to stdout in this format (json or csv) and exit.",
+    ),
+    dump_output: Optional[Path] = typer.Option(
+        None, "--dump-output", "-o", help="Write --dump output to this file instead of stdout"
+    ),
+    dump_calls: bool = typer.Option(False, "--dump-calls", help="Include per-agent call detail in dump"),
+    dump_since: Optional[int] = typer.Option(None, "--dump-since", help="Dump only runs from last N days"),
+    dump_team: Optional[str] = typer.Option(None, "--dump-team", help="Filter dump by team name"),
 ) -> None:
-    """Inspect a TraceLog SQLite file — list runs or show per-agent call detail.
+    """Inspect a TraceLog SQLite file — list runs, show call detail, prune, or dump.
 
     \b
     List recent runs:
@@ -33,6 +48,15 @@ def trace_cmd(
 
     Show latest run for a thread:
         antcrew trace ~/.antcrew/trace.db --thread sprint-1
+
+    Delete runs older than 30 days:
+        antcrew trace ~/.antcrew/trace.db --prune 30 --yes
+
+    Dump all runs as JSON to stdout:
+        antcrew trace ~/.antcrew/trace.db --dump json
+
+    Dump filtered runs as CSV to file:
+        antcrew trace ~/.antcrew/trace.db --dump csv --dump-output out.csv --dump-team dev
     """
     from antcrew.trace import TraceLog as _TraceLog
     from rich.table import Table
@@ -42,6 +66,44 @@ def trace_cmd(
         raise typer.Exit(1)
 
     tlog = _TraceLog(db)
+
+    # --- prune mode ---
+    if prune is not None:
+        if not yes:
+            typer.confirm(
+                f"Delete all runs older than {prune} day(s) from {db}?", abort=True
+            )
+        deleted = tlog.prune(prune)
+        tlog.close()
+        console.print(f"[green]Deleted[/] {deleted} run{'s' if deleted != 1 else ''} from [cyan]{db}[/].")
+        return
+
+    # --- dump mode (JSON / CSV export) ---
+    if dump is not None:
+        from antcrew.cli.export_cmd import _to_json, _to_csv
+        import sys as _sys
+        from datetime import timezone as _tz, timedelta as _td, datetime as _dt
+        fmt = dump.lower().strip()
+        if fmt not in ("json", "csv"):
+            console.print(f"[red]Unknown dump format:[/] {dump!r}. Use json or csv.")
+            raise typer.Exit(1)
+        since_iso: Optional[str] = None
+        if dump_since is not None:
+            since_iso = (_dt.now(_tz.utc) - _td(days=dump_since)).isoformat()
+        runs = tlog.list_runs_filtered(team=dump_team, since=since_iso, limit=limit)
+        if dump_calls:
+            for run in runs:
+                run["agent_calls"] = tlog.get_calls(run["id"])
+        tlog.close()
+        text = _to_json(runs) if fmt == "json" else _to_csv(runs, include_calls=dump_calls)
+        if dump_output:
+            dump_output.write_text(text, encoding="utf-8")
+            console.print(
+                f"[green]Dumped[/] {len(runs)} run(s) → [cyan]{dump_output}[/] ({fmt.upper()})"
+            )
+        else:
+            _sys.stdout.write(text)
+        return
 
     # --- detail view (single run) ---
     target_run: Optional[dict] = None
@@ -148,43 +210,6 @@ def _print_trace_detail(run: dict, calls: list[dict]) -> None:
         )
 
     console.print(tbl)
-
-
-# ---------------------------------------------------------------------------
-# antcrew trace prune — delete old runs from a TraceLog
-# ---------------------------------------------------------------------------
-
-trace_app = typer.Typer(help="Manage TraceLog SQLite databases.")
-app.add_typer(trace_app, name="trace-db")
-
-
-@trace_app.command("prune")
-def trace_prune_cmd(
-    db: Path = typer.Argument(..., help="TraceLog SQLite file"),
-    days: int = typer.Argument(..., help="Delete runs older than N days"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
-) -> None:
-    """Delete runs (and their agent calls) older than N days from a TraceLog.
-
-    \b
-    Examples:
-        antcrew trace-db prune ~/.antcrew/trace.db 30      # keep last 30 days
-        antcrew trace-db prune ~/.antcrew/trace.db 0 --yes # wipe everything
-    """
-    from antcrew.trace import TraceLog as _TL
-
-    if not db.exists():
-        console.print(f"[red]File not found:[/] {db}")
-        raise typer.Exit(1)
-
-    tl = _TL(db)
-    if not yes:
-        typer.confirm(
-            f"Delete all runs older than {days} day(s) from {db}?", abort=True
-        )
-    deleted = tl.prune(days)
-    tl.close()
-    console.print(f"[green]Deleted[/] {deleted} run{'s' if deleted != 1 else ''} from [cyan]{db}[/].")
 
 
 # ---------------------------------------------------------------------------

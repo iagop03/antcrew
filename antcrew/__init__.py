@@ -150,4 +150,4 @@ __all__ = [
     "load_template_agent",
     "register_transform",
 ]
-__version__ = "0.11.2"
+__version__ = "0.11.3"

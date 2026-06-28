@@ -5,13 +5,25 @@ Used by both ``antcrew.config`` (agent instantiation) and the
 ``antcrew agents`` CLI command (discovery / listing).
 
 Adding a new agent type requires updating only this file.
+
+Third-party plugins can register additional agents via setuptools
+entry points using the group ``antcrew.agents``::
+
+    # in the plugin's pyproject.toml:
+    [project.entry-points."antcrew.agents"]
+    my_agent = "my_package.agents:MyAgent"
+
+Installed plugins are merged into AGENT_REGISTRY at import time.
 """
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from antcrew.models.base import BaseLLM
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -35,6 +47,34 @@ AGENT_REGISTRY: dict[str, tuple[str, str]] = {
     "sprint_planner":    ("antcrew.agents.sprint_planner",    "SprintPlannerAgent"),
     "doc_writer":        ("antcrew.agents.doc_writer",        "DocWriterAgent"),
 }
+
+
+def _load_plugins() -> None:
+    """Merge agents registered via the ``antcrew.agents`` entry-point group.
+
+    Each entry point must have the form ``name = module.path:ClassName``.
+    Built-in names are never overwritten — plugins cannot shadow core agents.
+    Errors in individual plugins are logged and skipped.
+    """
+    try:
+        from importlib.metadata import entry_points
+        eps = entry_points(group="antcrew.agents")
+    except Exception:
+        return
+
+    for ep in eps:
+        if ep.name in AGENT_REGISTRY:
+            log.debug("plugin_agent_skipped name=%s (built-in exists)", ep.name)
+            continue
+        if ":" not in ep.value:
+            log.warning("plugin_agent_bad_value name=%s value=%r", ep.name, ep.value)
+            continue
+        module, cls_name = ep.value.rsplit(":", 1)
+        AGENT_REGISTRY[ep.name] = (module, cls_name)
+        log.debug("plugin_agent_registered name=%s module=%s cls=%s", ep.name, module, cls_name)
+
+
+_load_plugins()
 
 
 def get_agent_class(name: str):

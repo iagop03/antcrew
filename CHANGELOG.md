@@ -5,6 +5,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.3] — 2026-06-28
+
+### Added
+- **`antcrew trace --prune N [--yes]`** — prune flag merged into the main `trace`
+  command (replaces the now-removed `trace-db prune` sub-group). Usage:
+  `antcrew trace ~/.antcrew/trace.db --prune 30 --yes`.
+- **`antcrew trace --dump FORMAT [--dump-output FILE] [--dump-calls] [--dump-since N] [--dump-team T]`**
+  — dump runs from a TraceLog as JSON or CSV directly from the `trace` command.
+  Keeps the existing pipeline-artifact `antcrew export` command untouched.
+- **Plugin system via `entry_points`** — third-party packages can now register
+  agents by declaring an entry point in the ``antcrew.agents`` group:
+  ```toml
+  [project.entry-points."antcrew.agents"]
+  my_agent = "my_package.agents:MyAgent"
+  ```
+  Plugins are merged into `AGENT_REGISTRY` at import time. Built-in names are
+  never overwritten. Bad entry-point values are logged and skipped.
+- **`BaseAgent.output_schema`** — set a Pydantic model class on any agent (via
+  the constructor `output_schema=MySchema` or as a class attribute). Call
+  `agent.system_structured(system, user)` to get a validated model instance back.
+  Accepts an explicit `schema=` override and `max_retries=` (default 1).
+- **`BaseAgent.max_cost_usd`** — per-agent cost cap. When set, `system()` raises
+  `CostLimitExceeded` after the call if the accumulated cost for that agent
+  (filtered by `agent.name` in `llm._usage_log`) exceeds the limit. Only counts
+  this agent's own calls, so other agents in the same pipeline are unaffected.
+- **`BaseAgent._check_agent_cost()`** — public helper to check the cap at any
+  point (e.g. in custom `run()` implementations between multiple `system()` calls).
+
+### Removed
+- `antcrew trace-db prune` sub-group — superseded by `antcrew trace --prune`.
+
+### Tests
+- 28 tests in `test_features_v11.py` covering all of the above.
+- Updated `TestTracePruneCLI` in `test_retry_prune_doctor.py` to use the new
+  `antcrew trace --prune` flag instead of the removed `trace-db prune`.
+
+---
+
 ## [0.11.2] — 2026-06-28
 
 ### Added

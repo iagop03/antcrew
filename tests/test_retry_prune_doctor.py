@@ -326,7 +326,7 @@ class TestTraceLogPrune:
         assert tl.prune(days=30) == 0
 
 
-# ── antcrew trace-db prune CLI ────────────────────────────────────────────────
+# ── antcrew trace DB --prune CLI ─────────────────────────────────────────────
 
 class TestTracePruneCLI:
     def _make_db(self, tmp_path) -> Path:
@@ -343,12 +343,12 @@ class TestTracePruneCLI:
 
     def test_prune_with_yes_flag(self, tmp_path):
         db = self._make_db(tmp_path)
-        result = runner.invoke(app, ["trace-db", "prune", str(db), "365", "--yes"])
+        result = runner.invoke(app, ["trace", str(db), "--prune", "365", "--yes"])
         assert result.exit_code == 0
         assert "Deleted" in result.output
 
     def test_prune_missing_db(self, tmp_path):
-        result = runner.invoke(app, ["trace-db", "prune", str(tmp_path / "nope.db"), "30", "--yes"])
+        result = runner.invoke(app, ["trace", str(tmp_path / "nope.db"), "--prune", "30", "--yes"])
         assert result.exit_code != 0 or "not found" in result.output.lower()
 
 
