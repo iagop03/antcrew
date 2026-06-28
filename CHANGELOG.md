@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.0] — 2026-06-28
+
+### Added
+- **Brownfield write-back** (`antcrew/core/writeback.py`) — apply generated
+  artifacts to their real paths on disk instead of always writing to `./generated/`:
+  - `write_back(state, project_root, *, dry_run, yes, confirm_fn, print_fn)`
+  - Collects `code_artifacts`, `test_artifacts`, `devops_artifacts`, and
+    `documentation_artifacts` from any state shape (RunResult, raw dict, `.state`)
+  - Infers `create` vs `modify` from whether the target file already exists
+  - Unchanged files (empty unified diff) are silently skipped without a prompt
+  - `confirm_fn` hook for per-file interactive confirmation
+- **`antcrew write-back`** CLI command — apply a saved state to the filesystem:
+  - `antcrew write-back run.json --project-root ~/myproject --dry-run`
+  - `antcrew write-back run.json --project-root ~/myproject --yes`
+  - Auto-detects `project_root` from `project_dir` / `project_dirs` in the state
+    (set by `CodebaseScannerAgent`) when `--project-root` is omitted
+- **`antcrew run --write-back PATH`** — write artifacts immediately after a run;
+  `--write-back-yes` skips confirmation
+- **`antcrew describe --trace PATH`** — shows historical average cost and total cost
+  from a TraceLog DB below the coherence check; auto-reads `~/.antcrew/trace.db`
+- **`CONTRIBUTING.md`** — setup guide, code layout map, how to add agents and CLI
+  commands, good-first-issues list
+
+### Fixed
+- `pyproject.toml` version was stuck at `0.8.1`; now synced with `__version__ = "0.9.9"`
+- `asyncio.TaskGroup` (used in `DevTeam`) confirms Python ≥ 3.11 is a real requirement
+
+### Improved
+- **README** — added sections for `CustomTeam`, `TemplateAgent`, `AzureOpenAIModel`,
+  Agent Presets, Agent Tools, Brownfield write-back, and 12 previously undocumented
+  CLI commands; updated test count
+- Test suite grows to **1 551 tests** (18 new for write-back)
+
+---
+
 ## [0.9.9] — 2026-06-28
 
 ### Refactored

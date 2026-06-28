@@ -9,6 +9,23 @@ import typer
 from antcrew.cli._app import app, console
 
 
+def _resolve_root(state: dict, explicit: "Optional[Path]") -> Path:
+    """Return the best project_root: explicit flag > state's project_dir > CWD."""
+    if explicit is not None:
+        return explicit.resolve()
+    # CodebaseScannerAgent stores project_dirs as {"label": "/path"}
+    project_dirs = state.get("project_dirs") or {}
+    if project_dirs:
+        first_path = next(iter(project_dirs.values()), None)
+        if first_path and Path(first_path).is_dir():
+            return Path(first_path).resolve()
+    # Fallback: single project_dir
+    project_dir = state.get("project_dir")
+    if project_dir and Path(project_dir).is_dir():
+        return Path(project_dir).resolve()
+    return Path.cwd()
+
+
 @app.command(name="write-back")
 def writeback_cmd(
     state_file: Path = typer.Argument(..., help="Saved state JSON file (from antcrew run --save)"),
@@ -55,13 +72,13 @@ def writeback_cmd(
         console.print(f"[red]State file not found:[/] {state_file}")
         raise typer.Exit(1)
 
-    root = (project_root or Path.cwd()).resolve()
-
     try:
         state = load_state(state_file)
     except Exception as exc:
         console.print(f"[red]Failed to load state:[/] {exc}")
         raise typer.Exit(1)
+
+    root = _resolve_root(state, project_root)
 
     if dry_run:
         console.print(f"\n[bold]Dry run[/bold] — artifacts that would be written to [cyan]{root}[/cyan]:\n")
