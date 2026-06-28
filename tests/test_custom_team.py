@@ -1181,3 +1181,250 @@ def test_dry_run_shows_parallel_steps(tmp_path):
     assert r.exit_code == 0
     assert "be" in r.output and "fe" in r.output
     assert "par" in r.output
+
+
+# ===========================================================================
+# timeout per step
+# ===========================================================================
+
+def test_timeout_stored_on_step():
+    from antcrew.teams.custom_team import _parse_steps
+    llm = _llm()
+    groups = _parse_steps(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out", "timeout": 30}],
+        llm,
+    )
+    assert groups[0][0].timeout == pytest.approx(30.0)
+
+
+def test_timeout_none_by_default():
+    from antcrew.teams.custom_team import _parse_steps
+    groups = _parse_steps(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out"}],
+        _llm(),
+    )
+    assert groups[0][0].timeout is None
+
+
+def test_timeout_not_forwarded_to_template_agent():
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out", "timeout": 10}],
+        _llm(),
+    )
+    assert not hasattr(team._agents[0], "timeout")
+
+
+def test_timeout_exceeded_raises_timeout_error():
+    """A step that takes longer than its timeout must raise TimeoutError."""
+    import threading
+
+    class _SlowLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            threading.Event().wait(5)   # blocks until test forcibly continues
+            return "done"
+
+    team = CustomTeam(
+        [{"name": "slow", "system_prompt": "Wait.", "output_key": "out", "timeout": 0.1}],
+        _SlowLLM(),
+    )
+    with pytest.raises((TimeoutError, Exception)):
+        team.run("task")
+
+
+def test_timeout_step_completes_within_limit():
+    """A fast step with a generous timeout must complete normally."""
+    from antcrew.testing import SequencedLLM
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out", "timeout": 30}],
+        SequencedLLM(["result"]),
+    )
+    result = team.run("task")
+    assert result["out"] == "result"
+
+
+# ===========================================================================
+# on_error + default per step
+# ===========================================================================
+
+def test_on_error_raise_is_default():
+    from antcrew.teams.custom_team import _parse_steps
+    groups = _parse_steps(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out"}],
+        _llm(),
+    )
+    assert groups[0][0].on_error == "raise"
+
+
+def test_on_error_invalid_raises():
+    with pytest.raises(ValueError, match="on_error"):
+        CustomTeam(
+            [{"name": "a", "system_prompt": "Go.", "output_key": "out", "on_error": "ignore"}],
+            _llm(),
+        )
+
+
+def test_on_error_skip_uses_default_none():
+    class _AlwaysFailLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            raise RuntimeError("always fails")
+
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out", "on_error": "skip"}],
+        _AlwaysFailLLM(),
+    )
+    result = team.run("task")
+    assert "out" in result.state
+    assert result.state["out"] is None
+
+
+def test_on_error_skip_uses_explicit_default():
+    class _AlwaysFailLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            raise RuntimeError("always fails")
+
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+          "on_error": "skip", "default": "fallback text"}],
+        _AlwaysFailLLM(),
+    )
+    result = team.run("task")
+    assert result.state["out"] == "fallback text"
+
+
+def test_on_error_skip_pipeline_continues():
+    """After a skipped (failed) step, subsequent steps still run."""
+    from antcrew.testing import SequencedLLM
+
+    class _FirstFailLLM(SimulatedLLM):
+        def __init__(self):
+            super().__init__()
+            self._calls = 0
+
+        def complete(self, messages, **kw):
+            self._calls += 1
+            if self._calls == 1:
+                raise RuntimeError("first step fails")
+            return "second result"
+
+    team = CustomTeam(
+        [
+            {"name": "a", "system_prompt": "Step A.", "output_key": "out_a",
+             "on_error": "skip", "default": "fallback"},
+            {"name": "b", "system_prompt": "Step B.", "output_key": "out_b"},
+        ],
+        _FirstFailLLM(),
+    )
+    result = team.run("task")
+    assert result.state["out_a"] == "fallback"
+    assert "out_b" in result.state
+
+
+def test_on_error_raise_propagates_exception():
+    class _AlwaysFailLLM(SimulatedLLM):
+        def complete(self, messages, **kw):
+            raise RuntimeError("always fails")
+
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out", "on_error": "raise"}],
+        _AlwaysFailLLM(),
+    )
+    with pytest.raises(RuntimeError, match="always fails"):
+        team.run("task")
+
+
+def test_on_error_from_yaml(tmp_path):
+    import yaml
+    from antcrew.config import load
+
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "a", "system_prompt": "Go.", "output_key": "out",
+             "on_error": "skip", "default": "N/A"},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    team = load(p)
+    step = team._step_groups[0][0]
+    assert step.on_error == "skip"
+    assert step.default == "N/A"
+
+
+# ===========================================================================
+# nested teams (team_file: step)
+# ===========================================================================
+
+def test_nested_team_runs_and_merges(tmp_path):
+    import yaml
+
+    inner_cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "inner_a", "system_prompt": "Inner A.", "output_key": "inner_out"},
+        ],
+    }
+    inner_path = tmp_path / "inner.yaml"
+    inner_path.write_text(yaml.dump(inner_cfg), encoding="utf-8")
+
+    from antcrew.testing import SequencedLLM
+    llm = SequencedLLM(["inner result"])
+    import os
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        team = CustomTeam(
+            [{"team_file": "inner.yaml", "name": "nested"}],
+            llm,
+        )
+        result = team.run("task")
+    finally:
+        os.chdir(old_cwd)
+
+    assert "inner_out" in result.state
+    assert result.state["inner_out"] == "inner result"
+
+
+def test_nested_team_missing_file_raises(tmp_path):
+    import os
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        with pytest.raises(FileNotFoundError):
+            CustomTeam([{"team_file": "nonexistent.yaml"}], _llm())
+    finally:
+        os.chdir(old_cwd)
+
+
+def test_nested_team_inherits_vars(tmp_path):
+    """Nested team can declare its own vars which are used in its steps."""
+    import yaml
+    from antcrew.testing import SequencedLLM
+
+    inner_cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "vars": {"lang": "Rust"},
+        "steps": [
+            {"name": "coder", "system_prompt": "Code in {lang}.", "output_key": "code"},
+        ],
+    }
+    inner_path = tmp_path / "inner.yaml"
+    inner_path.write_text(yaml.dump(inner_cfg), encoding="utf-8")
+
+    llm = SequencedLLM(["rust code"])
+    import os
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        team = CustomTeam(
+            [{"team_file": "inner.yaml"}],
+            llm,
+        )
+        result = team.run("task")
+    finally:
+        os.chdir(old_cwd)
+
+    assert result.state.get("code") == "rust code"

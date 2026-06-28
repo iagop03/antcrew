@@ -81,18 +81,30 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Keys consumed by CustomTeam itself — not forwarded to TemplateAgent config.
-_TEAM_KEYS = frozenset({"max_retries", "retry_delay", "parallel", "condition"})
+_TEAM_KEYS = frozenset({
+    "max_retries", "retry_delay", "parallel", "condition",
+    "timeout", "on_error", "default", "team_file",
+})
+
+_VALID_ON_ERROR = frozenset({"raise", "skip"})
 
 
 @dataclass
 class _Step:
     """One executable step: agent + retry policy + run condition."""
-    agent: TemplateAgent
+    agent: Any  # TemplateAgent or _NestedTeamAgent
     max_retries: int = 0
     retry_delay: float = 0.0
     # condition: one state key (str) or a list of keys (all must be truthy).
     # None → always run.
     condition: "Optional[list[str]]" = None
+    # timeout: seconds before the step is cancelled (None = no limit).
+    # Uses a worker thread; the LLM call is not hard-killed, just ignored.
+    timeout: "Optional[float]" = None
+    # on_error: "raise" (default) | "skip" — what to do when all retries fail.
+    on_error: str = "raise"
+    # default: fallback value written to output_key when on_error="skip".
+    default: Any = None
 
 
 # A step group is a list of Steps.  len==1 → sequential; len>1 → parallel.
@@ -119,21 +131,82 @@ def _parse_condition(raw: "Any") -> "Optional[list[str]]":
     )
 
 
+def _extract_step_meta(raw: dict) -> tuple:
+    """Pull team-level step keys; return (max_retries, retry_delay, condition, timeout, on_error, default)."""
+    max_retries = int(raw.get("max_retries", 0))
+    retry_delay = float(raw.get("retry_delay", 0.0))
+    condition = _parse_condition(raw.get("condition"))
+    timeout_raw = raw.get("timeout")
+    timeout = float(timeout_raw) if timeout_raw is not None else None
+    on_error = raw.get("on_error", "raise")
+    if on_error not in _VALID_ON_ERROR:
+        raise ValueError(
+            f"'on_error' must be one of {sorted(_VALID_ON_ERROR)}; got {on_error!r}"
+        )
+    default = raw.get("default", None)
+    return max_retries, retry_delay, condition, timeout, on_error, default
+
+
 def _make_step(raw: Any, llm: "BaseLLM") -> _Step:
     """Build one _Step from a raw config (dict / Path / YAML str)."""
     max_retries = 0
     retry_delay = 0.0
     condition = None
+    timeout = None
+    on_error = "raise"
+    default = None
+
     if isinstance(raw, dict):
-        max_retries = int(raw.get("max_retries", 0))
-        retry_delay = float(raw.get("retry_delay", 0.0))
-        condition = _parse_condition(raw.get("condition"))
+        if "team_file" in raw:
+            return _make_nested_step(raw, llm)
+        max_retries, retry_delay, condition, timeout, on_error, default = _extract_step_meta(raw)
         raw = _agent_cfg(raw)
+
     return _Step(
         agent=TemplateAgent(raw, llm),
         max_retries=max_retries,
         retry_delay=retry_delay,
         condition=condition,
+        timeout=timeout,
+        on_error=on_error,
+        default=default,
+    )
+
+
+def _make_nested_step(raw: dict, llm: "BaseLLM") -> _Step:
+    """Build a _Step that runs a nested CustomTeam as its agent."""
+    from pathlib import Path as _Path
+    try:
+        import yaml as _yaml
+    except ImportError as e:
+        raise ImportError("PyYAML is required for 'team_file:' steps.") from e
+
+    team_path = _Path(raw["team_file"])
+    if not team_path.is_absolute():
+        team_path = _Path.cwd() / team_path
+    if not team_path.exists():
+        raise FileNotFoundError(f"team_file not found: {team_path}")
+
+    nested_cfg = _yaml.safe_load(team_path.read_text(encoding="utf-8"))
+    nested_steps = nested_cfg.get("steps") or []
+    if not nested_steps:
+        raise ValueError(f"Nested team_file '{team_path}' has no steps.")
+    nested_vars = nested_cfg.get("vars") or {}
+
+    nested_team = CustomTeam(nested_steps, llm, vars=nested_vars)
+    input_key = raw.get("input_key", "request")
+    name = raw.get("name") or team_path.stem
+
+    agent = _NestedTeamAgent(nested_team, input_key, name)
+    max_retries, retry_delay, condition, timeout, on_error, default = _extract_step_meta(raw)
+    return _Step(
+        agent=agent,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+        condition=condition,
+        timeout=timeout,
+        on_error=on_error,
+        default=default,
     )
 
 
@@ -162,12 +235,27 @@ def _condition_met(step: _Step, state: dict) -> bool:
     return all(bool(state.get(key)) for key in step.condition)
 
 
+def _run_agent_with_timeout(agent: Any, state: dict, timeout: float) -> dict:
+    """Run agent.run(state) in a worker thread; raise TimeoutError if it exceeds timeout."""
+    import concurrent.futures as _cf
+    with _cf.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(agent.run, state)
+        try:
+            return future.result(timeout=timeout)
+        except _cf.TimeoutError:
+            raise TimeoutError(
+                f"Step '{agent.name}' timed out after {timeout:.1f}s"
+            )
+
+
 def _run_step(step: _Step, state: dict) -> dict:
-    """Run *step* with its retry policy; raise on final failure."""
+    """Run *step* with its retry policy and on_error handling; raise on final failure."""
     attempts = step.max_retries + 1
     last_exc: Exception = RuntimeError("unreachable")
     for attempt in range(attempts):
         try:
+            if step.timeout is not None:
+                return _run_agent_with_timeout(step.agent, state, step.timeout)
             return step.agent.run(state)
         except Exception as exc:
             last_exc = exc
@@ -177,7 +265,36 @@ def _run_step(step: _Step, state: dict) -> dict:
             )
             if attempt < attempts - 1 and step.retry_delay > 0:
                 time.sleep(step.retry_delay)
+
+    if step.on_error == "skip":
+        log.warning(
+            "custom_team step=%s skipping after %d failure(s): %s",
+            step.agent.name, attempts, last_exc,
+        )
+        output_key = getattr(step.agent, "_output_key", None)
+        if output_key:
+            return {output_key: step.default}
+        return {}
     raise last_exc
+
+
+class _NestedTeamAgent:
+    """Wraps a CustomTeam so it can be used as a step agent inside another CustomTeam.
+
+    All output keys produced by the nested team are merged directly into the
+    parent state (the "request" key is excluded to avoid clobbering the parent).
+    """
+
+    def __init__(self, team: "CustomTeam", input_key: str, name: str) -> None:
+        self._team = team
+        self._input_key = input_key
+        self.name = name
+        self._output_key = f"_nested_{name}"  # used only for on_error/default fallback
+
+    def run(self, state: dict) -> dict:
+        request = str(state.get(self._input_key, ""))
+        result = self._team.run(request)
+        return {k: v for k, v in result.state.items() if k != "request"}
 
 
 class CustomTeam:

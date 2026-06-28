@@ -5,6 +5,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.5] — 2026-06-28
+
+### Added
+- **`timeout: N` per step** — kills a step (via thread timeout) if it takes
+  longer than `N` seconds. Raises `TimeoutError` on expiry; works with retries
+  and `on_error`.
+
+  ```yaml
+  steps:
+    - name: slow_step
+      system_prompt: "Process this."
+      output_key: result
+      timeout: 30        # seconds
+  ```
+
+- **`on_error: skip | raise` per step** — controls what happens when all
+  retries are exhausted. Default `raise` preserves existing behaviour.
+  `skip` writes `default:` into the output key and lets the pipeline continue.
+
+  ```yaml
+  steps:
+    - name: optional_enricher
+      system_prompt: "Enrich the data if you can."
+      output_key: enriched
+      on_error: skip
+      default: "N/A"
+  ```
+
+- **`default:` per step** — fallback value written to the step's `output_key`
+  when `on_error: skip` is triggered. Accepts any YAML scalar (string, int,
+  bool, null). Ignored when `on_error: raise`.
+
+- **`team_file:` step type** — embed a full CustomTeam YAML as a step inside
+  another pipeline. The nested team's output keys are merged directly into the
+  parent state.
+
+  ```yaml
+  # outer_team.yaml
+  team: custom
+  steps:
+    - name: research
+      team_file: research_team.yaml   # loads & runs as sub-pipeline
+      input_key: topic               # passes state["topic"] as the nested request
+    - name: writer
+      system_prompt: "Write based on: {summary}"
+      output_key: article
+  ```
+
+  - Nested team shares the parent's LLM instance.
+  - Nested team can declare its own `vars:`.
+  - Paths are resolved relative to the current working directory.
+
+- 15 new tests for the above features (112 total in `test_custom_team.py`).
+
+---
+
 ## [0.9.4] — 2026-06-28
 
 ### Added
