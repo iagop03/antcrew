@@ -166,6 +166,12 @@ def run(
             from antcrew.config import build_llm
             _llm_ref = build_llm(model)
             _pd, _pds = _parse_project_dirs(project_dir)
+            if project_dir and team != "fullstack":
+                console.print(
+                    f"[yellow]Warning:[/] --project-dir is only used by the "
+                    f"[bold]fullstack[/] team (CodebaseScannerAgent). "
+                    f"Current team [bold]{team}[/] will ignore it."
+                )
             active_team = _build_team(
                 team, model, integrations=[], llm=_llm_ref,
                 project_dir=_pd, project_dirs=_pds,

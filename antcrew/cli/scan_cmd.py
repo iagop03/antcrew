@@ -21,6 +21,7 @@ def scan_cmd(
         help=f"Run LLM analysis after scanning. {_MODEL_HELP}. Omit to show file tree only.",
     ),
     no_tree: bool = typer.Option(False, "--no-tree", help="Skip the file tree display."),
+    output_json: bool = typer.Option(False, "--json", help="Output analysis as JSON (suppresses Rich output)."),
 ) -> None:
     """Preview what CodebaseScannerAgent sees in one or more project directories.
 
@@ -41,6 +42,8 @@ def scan_cmd(
         # Local model, no API key
         antcrew scan ./src --model ollama:llama3
     """
+    import json as _json
+
     from rich.panel import Panel
     from rich.table import Table
 
@@ -64,59 +67,79 @@ def scan_cmd(
         console.print(f"[red]Not a directory:[/] {', '.join(bad)}")
         raise typer.Exit(1)
 
+    json_results: list[dict] = []
+
     for label, root in dirs.items():
-        console.print(f"\n[bold cyan]{label}[/bold cyan]  [dim]{root}[/dim]\n")
+        if not output_json:
+            console.print(f"\n[bold cyan]{label}[/bold cyan]  [dim]{root}[/dim]\n")
 
         # ── File tree ──────────────────────────────────────────────────────────
-        if not no_tree:
-            tree = _build_tree(root, _IGNORE_DIRS)
-            lines = tree.splitlines()
+        tree = _build_tree(root, _IGNORE_DIRS)
+        lines = tree.splitlines()
+        found_keys = [name for name in _KEY_FILES if (root / name).exists()]
+
+        if not output_json and not no_tree:
             truncated = len(lines) >= _MAX_TREE_LINES
-            display = "\n".join(lines[:50])  # show first 50 lines
+            display = "\n".join(lines[:50])
             if truncated or len(lines) > 50:
                 display += f"\n[dim]… ({len(lines)} total lines)[/dim]"
             console.print(Panel(display, title="File tree", border_style="dim", expand=False))
 
         # ── Key files found ────────────────────────────────────────────────────
-        found_keys = [name for name in _KEY_FILES if (root / name).exists()]
-        if found_keys:
-            console.print(f"[dim]Key files:[/dim] {', '.join(found_keys)}")
-        else:
-            console.print("[dim]No key files detected (README, package.json, pyproject.toml, …)[/dim]")
+        if not output_json:
+            if found_keys:
+                console.print(f"[dim]Key files:[/dim] {', '.join(found_keys)}")
+            else:
+                console.print("[dim]No key files detected (README, package.json, pyproject.toml, …)[/dim]")
+
+        component: dict = {
+            "label": label,
+            "path": str(root),
+            "file_count": len(lines),
+            "key_files": found_keys,
+        }
 
         # ── LLM analysis (optional) ────────────────────────────────────────────
         if model:
             from antcrew.config import build_llm
             from antcrew.agents.codebase_scanner import _scan_one, CodebaseScannerAgent
 
-            console.print(f"\n[dim]Running LLM analysis with {model}…[/dim]")
+            if not output_json:
+                console.print(f"\n[dim]Running LLM analysis with {model}…[/dim]")
             llm = build_llm(model)
             agent = CodebaseScannerAgent(llm=llm)
             analysis = _scan_one(agent, label, str(root))
 
             if analysis is None:
-                console.print("[red]Analysis failed.[/red]")
-                continue
+                if not output_json:
+                    console.print("[red]Analysis failed.[/red]")
+                component["error"] = "analysis_failed"
+            else:
+                if not output_json:
+                    tbl = Table(show_header=False, box=None, padding=(0, 2))
+                    tbl.add_column("Field", style="dim", no_wrap=True)
+                    tbl.add_column("Value")
+                    if analysis.tech_stack:
+                        tbl.add_row("Tech stack", ", ".join(analysis.tech_stack))
+                    if analysis.existing_modules:
+                        tbl.add_row("Modules", ", ".join(analysis.existing_modules[:8]))
+                    if analysis.entry_points:
+                        tbl.add_row("Entry points", ", ".join(analysis.entry_points[:5]))
+                    if analysis.test_coverage_summary:
+                        tbl.add_row("Tests", analysis.test_coverage_summary)
+                    if analysis.what_exists:
+                        tbl.add_row("What exists", analysis.what_exists)
+                    if analysis.what_is_missing:
+                        tbl.add_row("What's missing", analysis.what_is_missing)
+                    if analysis.continuation_context:
+                        tbl.add_row("Context", analysis.continuation_context)
+                    console.print(tbl)
+                component.update(analysis.model_dump(exclude_none=True))
 
-            tbl = Table(show_header=False, box=None, padding=(0, 2))
-            tbl.add_column("Field", style="dim", no_wrap=True)
-            tbl.add_column("Value")
+        json_results.append(component)
 
-            if analysis.tech_stack:
-                tbl.add_row("Tech stack", ", ".join(analysis.tech_stack))
-            if analysis.existing_modules:
-                tbl.add_row("Modules", ", ".join(analysis.existing_modules[:8]))
-            if analysis.entry_points:
-                tbl.add_row("Entry points", ", ".join(analysis.entry_points[:5]))
-            if analysis.test_coverage_summary:
-                tbl.add_row("Tests", analysis.test_coverage_summary)
-            if analysis.what_exists:
-                tbl.add_row("What exists", analysis.what_exists)
-            if analysis.what_is_missing:
-                tbl.add_row("What's missing", analysis.what_is_missing)
-            if analysis.continuation_context:
-                tbl.add_row("Context", analysis.continuation_context)
-
-            console.print(tbl)
-
-    console.print()
+    if output_json:
+        out = json_results[0] if len(json_results) == 1 else {"components": json_results}
+        typer.echo(_json.dumps(out, indent=2))
+    else:
+        console.print()

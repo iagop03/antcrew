@@ -210,6 +210,14 @@ def watch_cmd(
         Path("antcrew-watch-latest.json"), "--output", "-o",
         help="Where to write each run's state (overwritten on each change).",
     ),
+    project_dir: Optional[str] = typer.Option(
+        None, "--project-dir",
+        help="Existing project directory for CodebaseScannerAgent context (fullstack team).",
+    ),
+    write_back: Optional[Path] = typer.Option(
+        None, "--write-back", "-W",
+        help="After each run, write artifacts to this directory (respects file_path).",
+    ),
     diff: bool = typer.Option(True, "--diff/--no-diff", help="Show artifact diff after each re-run."),
     debounce: float = typer.Option(2.0, "--debounce", help="Seconds to wait after a change before re-running."),
 ) -> None:
@@ -256,7 +264,7 @@ def watch_cmd(
             return DevTeam(model=llm)
         if t in ("fullstack", "full"):
             from antcrew.teams.fullstack_team import FullStackTeam
-            return FullStackTeam(model=llm)
+            return FullStackTeam(model=llm, project_dir=project_dir)
         if t == "research":
             from antcrew.teams.research_team import ResearchTeam
             return ResearchTeam(model=llm)
@@ -289,6 +297,10 @@ def watch_cmd(
             state = dict(result.state)
             _save(state, output)
             console.print(f"[green]Done.[/]  cost={result.cost_usd:.4f}  → [cyan]{output}[/]\n")
+            if write_back is not None:
+                from antcrew.core.writeback import write_back as _wb
+                _wb(result, write_back.resolve(), dry_run=False, yes=True,
+                    print_fn=console.print)
             return state
         except Exception as exc:
             console.print(f"[red]Run failed:[/] {exc}\n")

@@ -103,3 +103,68 @@ class TestScanCmd:
         result = runner.invoke(app, ["scan", str(tmp_path)])
         assert result.exit_code == 0
         assert "No key files" in result.output
+
+    def test_scan_json_no_model(self, tmp_path):
+        import json
+        (tmp_path / "README.md").write_text("# Hi")
+        (tmp_path / "main.py").write_text("x=1")
+        result = runner.invoke(app, ["scan", str(tmp_path), "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "label" in data
+        assert "key_files" in data
+        assert "README.md" in data["key_files"]
+
+    def test_scan_json_multiple_dirs(self, tmp_path):
+        import json
+        be = tmp_path / "be"; be.mkdir(); (be / "app.py").write_text("x=1")
+        fe = tmp_path / "fe"; fe.mkdir(); (fe / "index.ts").write_text("export {}")
+        result = runner.invoke(app, ["scan", f"be:{be}", f"fe:{fe}", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "components" in data
+        assert len(data["components"]) == 2
+
+    def test_scan_json_with_model(self, tmp_path):
+        import json
+        (tmp_path / "README.md").write_text("# My App")
+        result = runner.invoke(app, ["scan", str(tmp_path), "--model", "simulated", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "tech_stack" in data
+        assert len(data["tech_stack"]) > 0
+
+    def test_scan_model_shows_analysis_in_rich(self, tmp_path):
+        (tmp_path / "README.md").write_text("# My App")
+        result = runner.invoke(app, ["scan", str(tmp_path), "--model", "simulated"])
+        assert result.exit_code == 0
+        assert "Tech stack" in result.output or "tech_stack" in result.output.lower()
+
+
+# ── antcrew run --project-dir warnings ───────────────────────────────────────
+
+class TestProjectDirWarning:
+    """--project-dir with a non-fullstack team should warn the user."""
+
+    def test_project_dir_with_dev_team_warns(self, tmp_path):
+        result = runner.invoke(app, [
+            "run", "Build auth",
+            "--team", "dev",
+            "--model", "simulated",
+            "--no-stream",
+            "--project-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert "Warning" in result.output
+        assert "fullstack" in result.output.lower()
+
+    def test_project_dir_with_fullstack_team_no_warning(self, tmp_path):
+        result = runner.invoke(app, [
+            "run", "Build auth",
+            "--team", "fullstack",
+            "--model", "simulated",
+            "--no-stream",
+            "--project-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 0
+        assert "Warning" not in result.output
