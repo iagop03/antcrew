@@ -266,24 +266,33 @@ def describe(
 
 
 @app.command(name="agents")
-def agents_cmd() -> None:
+def agents_cmd(
+    output_json: bool = typer.Option(False, "--json", help="Output as JSON array."),
+) -> None:
     """List all built-in agent types with their role descriptions."""
-    from rich.table import Table
     from antcrew.agents.registry import AGENT_REGISTRY, get_agent_class
 
-    tbl = Table(show_header=True, header_style="bold", box=None, show_edge=False)
-    tbl.add_column("Name", style="cyan", min_width=20)
-    tbl.add_column("Class", style="dim", min_width=22)
-    tbl.add_column("Role description", style="white")
-
+    entries = []
     for name, (_, cls_name) in AGENT_REGISTRY.items():
         role = ""
         try:
             cls = get_agent_class(name)
             role = getattr(cls, "role_description", "") or ""
         except Exception:
-            role = "[dim]unavailable[/dim]"
-        tbl.add_row(name, cls_name, role)
+            role = ""
+        entries.append({"name": name, "class": cls_name, "role": role})
+
+    if output_json:
+        typer.echo(json.dumps(entries, indent=2))
+        return
+
+    from rich.table import Table
+    tbl = Table(show_header=True, header_style="bold", box=None, show_edge=False)
+    tbl.add_column("Name", style="cyan", min_width=20)
+    tbl.add_column("Class", style="dim", min_width=22)
+    tbl.add_column("Role description", style="white")
+    for e in entries:
+        tbl.add_row(e["name"], e["class"], e["role"])
 
     console.print("\n[bold]Built-in agent types[/bold]\n")
     console.print(tbl)

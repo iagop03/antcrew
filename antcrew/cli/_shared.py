@@ -239,6 +239,33 @@ def _print_state_raw(raw: dict, team: str) -> None:
             return None
 
     if team in ("dev", "fullstack"):
+        # ── Codebase context (brownfield runs) ────────────────────────────────
+        from antcrew.core.artifacts import CodebaseAnalysis
+        ca_raw = raw.get("codebase_analysis")
+        ca_list_raw = raw.get("codebase_analyses") or []
+        analyses: list = []
+        if ca_raw:
+            a = _maybe(CodebaseAnalysis, ca_raw)
+            if a:
+                analyses.append(a)
+        for item in ca_list_raw:
+            a = _maybe(CodebaseAnalysis, item)
+            if a:
+                analyses.append(a)
+        for ca in analyses:
+            lines = []
+            if ca.tech_stack:
+                lines.append(f"[dim]Tech stack:[/]   {', '.join(ca.tech_stack)}")
+            if ca.what_exists:
+                lines.append(f"[dim]Exists:[/]       {ca.what_exists}")
+            if ca.what_is_missing:
+                lines.append(f"[dim]Missing:[/]      {ca.what_is_missing}")
+            if ca.continuation_context:
+                lines.append(f"[dim]Context:[/]      {ca.continuation_context}")
+            if lines:
+                title = f"Codebase scan — {ca.label}" if ca.label else "Codebase scan"
+                console.print(Panel("\n".join(lines), title=title, border_style="magenta"))
+
         prd = _maybe(PRD, raw.get("prd"))
         if prd:
             console.print(Panel(

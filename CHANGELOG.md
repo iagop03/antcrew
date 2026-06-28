@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.2] — 2026-06-28
+
+### Added
+- **`antcrew scan --json`** — machine-readable JSON output; single dir → flat object,
+  multiple dirs → `{components:[…]}`; with `--model` includes full `CodebaseAnalysis`
+  fields. Useful for scripting: `antcrew scan ./src --model claude --json | jq '.tech_stack'`
+- **`antcrew watch --project-dir`** — passes the directory to `FullStackTeam` so
+  `CodebaseScannerAgent` gets brownfield context on every triggered re-run
+- **`antcrew watch --write-back PATH`** — after each re-run automatically calls
+  `write_back()` to apply generated artifacts to the target directory
+- **`antcrew agents --json`** — outputs the agent registry as a JSON array for
+  programmatic use: `antcrew agents --json | jq '.[].name'`
+- **`antcrew show` displays `codebase_analysis`** — when a fullstack run was saved
+  after a brownfield scan, `antcrew show` now renders the codebase context panel
+  (tech stack, what exists, what's missing, continuation context) before the PRD
+
+### Fixed
+- `antcrew scan` Windows drive-letter bug: paths like `C:\Users\…` were incorrectly
+  parsed as `label=C`, `path=\Users\…`. Fixed to check `colon > 1` (same as
+  `_parse_project_dirs`)
+- `antcrew run --project-dir` with non-fullstack teams now prints a yellow warning
+  instead of silently ignoring the flag
+- `antcrew watch --project-dir` with non-fullstack teams now also prints a warning
+
+---
+
 ## [0.10.1] — 2026-06-28
 
 ### Added

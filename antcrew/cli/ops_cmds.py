@@ -239,6 +239,13 @@ def watch_cmd(
         console.print(f"[red]Path not found:[/] {watch_path}")
         raise typer.Exit(1)
 
+    if project_dir and team not in ("fullstack", "full"):
+        console.print(
+            f"[yellow]Warning:[/] --project-dir is only used by the "
+            f"[bold]fullstack[/] team (CodebaseScannerAgent). "
+            f"Current team [bold]{team}[/] will ignore it."
+        )
+
     try:
         from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler

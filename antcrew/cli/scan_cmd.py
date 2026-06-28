@@ -52,12 +52,15 @@ def scan_cmd(
         _build_tree,
     )
 
-    # Parse "label:path" or bare "path" entries
+    # Parse "label:path" or bare "path" entries.
+    # colon > 1 skips Windows drive letters (C:\...).
     dirs: dict[str, Path] = {}
     for entry in paths:
-        if ":" in entry:
-            label, _, path_str = entry.partition(":")
-            dirs[label.strip()] = Path(path_str.strip()).expanduser().resolve()
+        colon = entry.find(":")
+        if colon > 1:
+            label = entry[:colon].strip()
+            path_str = entry[colon + 1:].strip()
+            dirs[label] = Path(path_str).expanduser().resolve()
         else:
             p = Path(entry).expanduser().resolve()
             dirs[p.name] = p
