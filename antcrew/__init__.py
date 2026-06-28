@@ -84,6 +84,7 @@ __all__ = [
     # Agents (commonly used standalone)
     "DevOpsAgent",
     "DocWriterAgent",
+    "CodebaseScannerAgent",
     "SprintPlannerAgent",
     # Models
     "SimulatedLLM",

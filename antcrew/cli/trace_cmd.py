@@ -9,7 +9,7 @@ from rich.panel import Panel
 
 from antcrew.cli._app import app, console, _MODEL_HELP, _TEAM_CHOICES
 from antcrew.cli._shared import _build_team, _print_state
-from antcrew.cli._run_helpers import _run_with_stream, _save_outputs_to_dir
+from antcrew.cli._run_helpers import _run_with_stream
 
 @app.command(name="trace")
 def trace_cmd(

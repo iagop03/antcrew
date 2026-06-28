@@ -7,8 +7,8 @@ from typing import Optional
 
 import typer
 
-from antcrew.cli._app import app, console, _MODEL_HELP, _TEAM_CHOICES
-from antcrew.cli._shared import _print_state, _print_state_raw, _print_usage
+from antcrew.cli._app import app, console, _TEAM_CHOICES
+from antcrew.cli._shared import _print_state_raw
 
 @app.command()
 def show(

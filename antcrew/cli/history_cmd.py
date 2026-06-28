@@ -8,7 +8,6 @@ import typer
 from rich.panel import Panel
 
 from antcrew.cli._app import app, console
-from antcrew.cli._shared import _print_state, _print_state_raw
 
 def _parse_since(since: str) -> str:
     """Return an ISO timestamp string from a human date or relative spec.

@@ -8,7 +8,6 @@ import typer
 
 from antcrew.cli._app import _project_app, console, _MODEL_HELP, _TEAM_CHOICES
 from antcrew.cli._shared import _print_state, _print_state_raw
-from antcrew.cli._run_helpers import _run_with_stream
 
 def _resolve_project_team(config: Optional[Path], team_opt: Optional[str], model: str):
     """Return (team_instance, team_spec_dict) or (None, None)."""

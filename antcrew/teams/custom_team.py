@@ -68,13 +68,14 @@ from __future__ import annotations
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.agents.template_agent import TemplateAgent
 from antcrew.core.run_result import RunResult
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from antcrew.models.base import BaseLLM
     from antcrew.trace import TraceLog
 

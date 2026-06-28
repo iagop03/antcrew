@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import ValidationError
 
-log = logging.getLogger(__name__)
-
 from antcrew.core.state import TeamState
 from antcrew.core.validation import _validate_schema
 from antcrew.models.base import BaseLLM
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from antcrew.core.channel import BaseChannel

@@ -144,7 +144,7 @@ def publish_cmd(
         ]
         if missing:
             console.print(
-                f"[red]Error:[/] Missing required options for --confluence: "
+                "[red]Error:[/] Missing required options for --confluence: "
                 + ", ".join(missing)
             )
             raise typer.Exit(1)

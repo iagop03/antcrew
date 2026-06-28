@@ -7,12 +7,10 @@ from typing import Optional
 
 import typer
 from rich.panel import Panel
+from rich.table import Table
 
 from antcrew.cli._app import app, console
-from antcrew.cli._shared import (
-    _build_team, _print_state, _print_state_raw, _print_test_results, _print_usage,
-)
-from antcrew.cli._run_helpers import _run_with_stream
+from antcrew.cli._shared import _print_test_results
 
 @app.command(name="benchmark")
 def benchmark_cmd(
@@ -148,7 +146,6 @@ def benchmark_cmd(
                     results[idx] = fut.result()
 
     # ── Results table ─────────────────────────────────────────────────────────
-    from rich.table import Table
 
     tbl = Table(show_header=True, header_style="bold cyan", box=None, padding=(0, 1))
     tbl.add_column("#",         style="dim",   width=3)
@@ -247,12 +244,12 @@ def watch_cmd(
     import threading
     import time as _time
     import difflib
-    from antcrew.utils.persistence import save_state as _save, load_state as _load
+    from antcrew.utils.persistence import save_state as _save
     from antcrew.config import build_llm
 
     llm = build_llm(model_name)
 
-    def _build_team():
+    def _make_team():
         t = team.lower()
         if t == "dev":
             from antcrew.teams.dev_team import DevTeam
@@ -481,7 +478,6 @@ def diff_cmd(
     import difflib
     from antcrew.utils.persistence import load_state as _load_state
     from rich.rule import Rule
-    from rich.table import Table
 
     for p in (run_a, run_b):
         if not p.exists():

@@ -36,7 +36,6 @@ def render_mermaid(flow: list[tuple]) -> str:
     edges = _normalise(flow)
     all_srcs = {e[0] for e in edges}
     all_dsts = {e[1] for e in edges}
-    all_nodes = all_srcs | all_dsts
 
     entry_nodes = all_srcs - all_dsts
     exit_nodes = all_dsts - all_srcs

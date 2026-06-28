@@ -163,7 +163,7 @@ def lint_config(path: str | Path) -> list[LintError]:
     for agent_name, agent_cfg in (cfg.get("agents") or {}).items():
         base = f"agents.{agent_name}"
         if not isinstance(agent_cfg, dict):
-            errors.append(LintError("error", f"Agent config must be a dict", base))
+            errors.append(LintError("error", "Agent config must be a dict", base))
             continue
         if agent_name not in _KNOWN_AGENT_NAMES:
             errors.append(LintError(
@@ -187,7 +187,7 @@ def lint_config(path: str | Path) -> list[LintError]:
             if not isinstance(agent_cfg["approval_required"], bool):
                 errors.append(LintError(
                     "warning",
-                    f"approval_required should be a boolean (true/false)",
+                    "approval_required should be a boolean (true/false)",
                     f"{base}.approval_required",
                 ))
 

@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import typer
-from rich.panel import Panel
 
 from antcrew.cli._app import app, console, _MODEL_HELP, _TEAM_CHOICES
-from antcrew.cli._shared import _build_team, _print_state, _print_test_results, _print_usage
+from antcrew.cli._shared import _build_team, _print_state
 
 def _extract_state_to_dir(state: dict, output_dir: "Path") -> None:
     """Write code/test/devops artifacts from a state dict to real files on disk."""

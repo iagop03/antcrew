@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
-
 import typer
 
 from antcrew.cli._app import app, console
-from antcrew.cli._shared import _print_state
 
 @app.command(name="graph")
 def graph_cmd(

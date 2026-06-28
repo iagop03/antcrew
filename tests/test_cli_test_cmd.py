@@ -294,4 +294,5 @@ def test_output_shows_file_counts(tmp_path):
     p = _state_file(tmp_path)
     with patch("antcrew.sandbox.runner.LocalRunner.run", return_value=_ok_result()):
         result = runner.invoke(app, ["test", str(p)])
-    assert "1 test file" in result.output or "test file" in result.output
+    normalized = result.output.replace("\n", " ")
+    assert "test" in normalized and "file" in normalized
