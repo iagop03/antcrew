@@ -255,23 +255,21 @@ def _print_usage(llm) -> None:
 def _print_dry_run(team) -> None:
     """Print the step structure of a CustomTeam without running it."""
     from rich.table import Table
+    from antcrew.teams.custom_team import _NestedTeamAgent
 
     groups = team._step_groups
     n_agents = sum(len(g) for g in groups)
-    vars_info = (
-        f"  vars: {list(team._vars.keys())}\n" if team._vars else ""
-    )
     console.print(
         f"\n[bold]Dry run[/bold] — [cyan]{len(groups)}[/cyan] step group(s), "
         f"[cyan]{n_agents}[/cyan] agent(s)"
     )
-    if vars_info:
+    if team._vars:
         console.print(f"  [dim]vars:[/dim] {list(team._vars.keys())}")
 
     tbl = Table(show_header=True, header_style="bold", box=None, show_edge=False)
     tbl.add_column("Step", style="dim", width=8)
     tbl.add_column("Agent", style="cyan")
-    tbl.add_column("Type", style="dim", width=5)
+    tbl.add_column("Type", style="dim", width=7)
     tbl.add_column("output_key", style="green")
     tbl.add_column("Flags", style="yellow")
 
@@ -279,15 +277,25 @@ def _print_dry_run(team) -> None:
         for j, step in enumerate(group):
             idx = f"[{i}/{len(groups)}]" if j == 0 else ""
             gtype = "par" if len(group) > 1 else "seq"
+            is_nested = isinstance(step.agent, _NestedTeamAgent)
+            out_key = (
+                f"{step.agent.name}/* (merged)"
+                if is_nested
+                else step.agent._output_key
+            )
             flags = []
             if step.condition:
                 flags.append(f"if:{','.join(step.condition)}")
             if step.max_retries:
                 flags.append(f"retry×{step.max_retries}")
-            if step.agent._post_process:
+            if step.timeout is not None:
+                flags.append(f"timeout:{step.timeout:.0f}s")
+            if step.on_error == "skip":
+                dv = f"={step.default!r}" if step.default is not None else ""
+                flags.append(f"skip{dv}")
+            if not is_nested and hasattr(step.agent, "_post_process") and step.agent._post_process:
                 flags.append(f"pp:({','.join(step.agent._post_process)})")
-            tbl.add_row(idx, step.agent.name, gtype,
-                        step.agent._output_key, " ".join(flags))
+            tbl.add_row(idx, step.agent.name, gtype, out_key, " ".join(flags))
 
     console.print(tbl)
     console.print("\n[dim]No LLM calls will be made.[/dim]\n")
@@ -437,13 +445,20 @@ def _save_outputs_to_dir(state: Any, output_dir: Path) -> None:
         console.print(f"[dim]Outputs saved to [cyan]{output_dir}[/] ({count} file(s))[/dim]")
 
 
-def _run_repl(team: Any, *, stream: bool, llm: Any, output_dir: Optional[Path],
-              team_name: str) -> None:
+_REPL_CARRY_SKIP = frozenset({"request", "messages", "errors", "metadata"})
+
+
+def _run_repl(
+    team: Any, *, stream: bool, llm: Any, output_dir: Optional[Path],
+    team_name: str, stateful: bool = False,
+) -> None:
     """Interactive REPL loop — runs the pipeline until the user quits."""
+    mode = " [dim](stateful)[/dim]" if stateful else ""
     console.print(
-        f"\n[bold green]AntCrew REPL[/] — team=[cyan]{team_name}[/]  "
+        f"\n[bold green]AntCrew REPL[/] — team=[cyan]{team_name}[/]{mode}  "
         "(type [bold]quit[/] or press Ctrl-C to exit)\n"
     )
+    carry: dict = {}
     while True:
         try:
             raw = input("> ").strip()
@@ -456,13 +471,25 @@ def _run_repl(team: Any, *, stream: bool, llm: Any, output_dir: Optional[Path],
             console.print("[dim]Bye.[/dim]")
             break
         try:
-            state = _run_with_stream(team, raw, "repl", stream, llm=llm)
+            if stateful and carry and hasattr(team, "_vars"):
+                saved_vars = dict(team._vars)
+                team._vars = {**team._vars, **carry}
+                try:
+                    state = _run_with_stream(team, raw, "repl", stream, llm=llm)
+                finally:
+                    team._vars = saved_vars
+            else:
+                state = _run_with_stream(team, raw, "repl", stream, llm=llm)
         except Exception as exc:
             console.print(f"[red bold]Error:[/] {exc}")
             continue
         _print_state(state, team_name)
         if output_dir:
             _save_outputs_to_dir(state, output_dir)
+        if stateful:
+            raw_state = state.state if hasattr(state, "state") else {}
+            carry = {k: v for k, v in raw_state.items()
+                     if k not in _REPL_CARRY_SKIP and v is not None}
         console.print()
 
 
@@ -532,6 +559,10 @@ def run(
     repl: bool = typer.Option(
         False, "--repl",
         help="Interactive REPL mode — run the pipeline repeatedly in a loop.",
+    ),
+    repl_stateful: bool = typer.Option(
+        False, "--repl-stateful",
+        help="Carry output state from each REPL iteration into the next (implies --repl).",
     ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
@@ -651,10 +682,11 @@ def run(
                 _project_ref = Project(active_team, name=project.stem, path=project)
             _project_ref._team_spec = team_spec
 
-        # --repl: interactive loop
-        if repl:
+        # --repl / --repl-stateful: interactive loop
+        if repl or repl_stateful:
             _run_repl(active_team, stream=stream, llm=_llm_ref,
-                      output_dir=output_dir, team_name=team)
+                      output_dir=output_dir, team_name=team,
+                      stateful=repl_stateful)
             raise typer.Exit(0)
 
         # Run
@@ -3947,6 +3979,9 @@ def validate_cmd(
         console.print(f"  [dim]vars:[/dim] {list(team_vars.keys())}")
     produced_keys: set[str] = {"request"} | set(team_vars.keys())
 
+    import re as _re
+    _INTERP_RE = _re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
     def _validate_one(raw: dict, label: str, idx_str: str) -> None:
         name = raw.get("name", "")
         if not name:
@@ -3963,11 +3998,9 @@ def validate_cmd(
                 f"Step {idx_str} '{name}': missing 'system_prompt' or 'system_prompt_file'."
             )
         elif has_prompt_file:
-            # Static check: file must exist (resolved from CWD)
-            import os as _os
             spf = Path(raw["system_prompt_file"])
             if not spf.is_absolute():
-                spf = Path(_os.getcwd()) / spf
+                spf = config.parent / spf
             if not spf.exists():
                 warnings.append(
                     f"Step {idx_str} '{name}': system_prompt_file not found: {spf}"
@@ -3992,6 +4025,33 @@ def validate_cmd(
                     )
             flags.append(f"if:{','.join(cond_keys)}")
 
+        # Validate on_error
+        on_error = raw.get("on_error", "raise")
+        if on_error not in ("raise", "skip"):
+            errors.append(
+                f"Step {idx_str} '{name}': 'on_error' must be 'raise' or 'skip'; "
+                f"got {on_error!r}."
+            )
+        elif on_error == "skip":
+            dv = f"={raw['default']!r}" if raw.get("default") is not None else ""
+            flags.append(f"skip{dv}")
+
+        # Validate timeout
+        timeout_raw = raw.get("timeout")
+        if timeout_raw is not None:
+            try:
+                t_val = float(timeout_raw)
+                if t_val <= 0:
+                    errors.append(
+                        f"Step {idx_str} '{name}': 'timeout' must be a positive number."
+                    )
+                else:
+                    flags.append(f"timeout:{t_val:.0f}s")
+            except (TypeError, ValueError):
+                errors.append(
+                    f"Step {idx_str} '{name}': 'timeout' must be a number, got {timeout_raw!r}."
+                )
+
         # Mutual exclusivity: user_template and input_key
         if raw.get("user_template") and raw.get("input_key"):
             errors.append(
@@ -4015,8 +4075,6 @@ def validate_cmd(
                 flags.append(f"pp:({','.join(pp_list)})")
 
         # Check {placeholder} references in system_prompt and user_template
-        import re as _re
-        _INTERP_RE = _re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
         for field_label, text in [
             ("system_prompt", raw.get("system_prompt", "")),
             ("user_template", raw.get("user_template", "")),
@@ -4034,6 +4092,57 @@ def validate_cmd(
         if out_key:
             produced_keys.add(out_key)
 
+    def _validate_team_file_step(raw: dict, idx_str: str) -> None:
+        """Validate a team_file: step (nested CustomTeam)."""
+        tf = raw.get("team_file", "")
+        tf_path = Path(tf)
+        if not tf_path.is_absolute():
+            tf_path = config.parent / tf_path
+
+        name = raw.get("name") or Path(tf).stem
+        flags = []
+
+        if not tf_path.exists():
+            warnings.append(f"Step {idx_str}: team_file not found: {tf_path}")
+        else:
+            # Best-effort: extract output keys from nested team to populate dataflow
+            try:
+                import yaml as _y
+                nested_cfg = _y.safe_load(tf_path.read_text(encoding="utf-8")) or {}
+                for ns in nested_cfg.get("steps") or []:
+                    if isinstance(ns, dict):
+                        nk = ns.get("output_key")
+                        if nk:
+                            produced_keys.add(nk)
+            except Exception:
+                pass
+            flags.append(f"→ {tf_path.name}")
+
+        on_error = raw.get("on_error", "raise")
+        if on_error not in ("raise", "skip"):
+            errors.append(
+                f"Step {idx_str} '{name}': 'on_error' must be 'raise' or 'skip'; "
+                f"got {on_error!r}."
+            )
+        elif on_error == "skip":
+            flags.append("skip")
+
+        timeout_raw = raw.get("timeout")
+        if timeout_raw is not None:
+            try:
+                flags.append(f"timeout:{float(timeout_raw):.0f}s")
+            except (TypeError, ValueError):
+                errors.append(
+                    f"Step {idx_str}: 'timeout' must be a number, got {timeout_raw!r}."
+                )
+
+        if raw.get("condition"):
+            cond = raw["condition"]
+            cond_keys = [cond] if isinstance(cond, str) else cond
+            flags.append(f"if:{','.join(cond_keys)}")
+
+        tbl.add_row(idx_str, name, "nested", f"{name}/* (merged)", " ".join(flags))
+
     for item in raw_steps:
         step_idx += 1
         if isinstance(item, dict) and "parallel" in item:
@@ -4041,12 +4150,13 @@ def validate_cmd(
             if not parallel_cfgs:
                 errors.append(f"Step {step_idx}: empty 'parallel:' group.")
                 continue
-            # Show first row as group header, then members
             for j, pcfg in enumerate(parallel_cfgs):
-                sub_label = f"parallel" if j == 0 else ""
+                sub_label = "parallel" if j == 0 else ""
                 idx_str = f"{step_idx}.{j + 1}"
                 if isinstance(pcfg, dict):
                     _validate_one(pcfg, sub_label, idx_str)
+        elif isinstance(item, dict) and "team_file" in item:
+            _validate_team_file_step(item, str(step_idx))
         else:
             if isinstance(item, dict):
                 _validate_one(item, "seq", str(step_idx))
@@ -4063,7 +4173,7 @@ def validate_cmd(
     if not errors:
         try:
             from antcrew.teams.custom_team import CustomTeam
-            CustomTeam(list(raw_steps), _Sim())
+            CustomTeam(list(raw_steps), _Sim(), base_dir=config.parent)
             console.print("[green]✓[/] All agents instantiated successfully (SimulatedLLM)")
         except FileNotFoundError as exc:
             # Missing system_prompt_file: already a warning above; skip instantiation.

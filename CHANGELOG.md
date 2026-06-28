@@ -5,6 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.8] — 2026-06-28
+
+### Fixed
+- **`team_file:` path now resolves relative to the config file** instead of
+  CWD. A `team_file: teams/inner.yaml` in `/project/outer.yaml` now loads
+  `/project/teams/inner.yaml` regardless of where `antcrew run` is invoked.
+  Nested teams recursively resolve their own `team_file:` paths relative to
+  their own directory.
+
+### Added
+- **`antcrew validate` covers v0.9.5 features**:
+  - Validates `on_error:` value is `raise` or `skip`; exits 1 on invalid values.
+  - Validates `timeout:` is a positive number; exits 1 on non-numeric or zero.
+  - Shows `skip[=default]` and `timeout:Ns` in the flags column.
+  - Handles `team_file:` steps: checks file exists (warning if missing),
+    extracts nested team output keys into the dataflow graph so subsequent
+    steps that use those keys don't trigger false-positive warnings.
+  - `validate` instantiation check now passes `base_dir` so `team_file:` and
+    `system_prompt_file:` paths resolve correctly.
+
+- **`--dry-run` shows `timeout`, `on_error`, and `default` flags** for each
+  step. `_NestedTeamAgent` steps display `name/* (merged)` in the
+  `output_key` column instead of the internal placeholder.
+
+- **`--repl-stateful`** — REPL mode that carries the output state from each
+  iteration into the next. The previous run's `output_key` values are
+  available as `{placeholder}` interpolations in the next request's prompts.
+  Type `quit` or Ctrl-C to stop.
+
+- 15 new tests (1533 total, across `test_cli_validate.py` and
+  `test_cli_run_ergonomics.py`).
+
+---
+
 ## [0.9.7] — 2026-06-28
 
 ### Added

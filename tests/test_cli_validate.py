@@ -280,3 +280,264 @@ def test_non_custom_team_shows_type(tmp_path):
     p = _write(tmp_path, "team.yaml", cfg)
     r = _invoke(["validate", str(p)])
     assert "research" in r.output
+
+
+# ===========================================================================
+# validate: on_error field
+# ===========================================================================
+
+def test_validate_on_error_skip_passes(tmp_path):
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+                   "on_error": "skip"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 0
+    assert "skip" in r.output
+
+
+def test_validate_on_error_invalid_exits_nonzero(tmp_path):
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+                   "on_error": "ignore"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 1
+    assert "on_error" in r.output
+
+
+def test_validate_on_error_default_shows_value(tmp_path):
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+                   "on_error": "skip", "default": "N/A"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 0
+    assert "N/A" in r.output
+
+
+# ===========================================================================
+# validate: timeout field
+# ===========================================================================
+
+def test_validate_timeout_numeric_passes(tmp_path):
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+                   "timeout": 30}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 0
+    assert "timeout" in r.output
+
+
+def test_validate_timeout_non_numeric_exits_nonzero(tmp_path):
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+                   "timeout": "fast"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 1
+    assert "timeout" in r.output
+
+
+def test_validate_timeout_zero_exits_nonzero(tmp_path):
+    cfg = {
+        "team": "custom",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+                   "timeout": 0}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 1
+
+
+# ===========================================================================
+# validate: team_file: steps
+# ===========================================================================
+
+def test_validate_team_file_existing_passes(tmp_path):
+    inner = {
+        "team": "custom",
+        "steps": [{"name": "x", "system_prompt": "Go.", "output_key": "x_out"}],
+    }
+    inner_path = tmp_path / "inner.yaml"
+    inner_path.write_text(yaml.dump(inner), encoding="utf-8")
+
+    outer = {
+        "team": "custom",
+        "steps": [{"team_file": "inner.yaml"}],
+    }
+    p = _write(tmp_path, "team.yaml", outer)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 0
+    assert "nested" in r.output
+
+
+def test_validate_team_file_missing_warns(tmp_path):
+    cfg = {
+        "team": "custom",
+        "steps": [{"team_file": "nonexistent.yaml"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = _invoke(["validate", str(p)])
+    # Missing file → warning, not hard error (exit 0 without --strict)
+    assert "not found" in r.output.lower() or "warning" in r.output.lower() or r.exit_code == 0
+
+
+def test_validate_team_file_nested_output_keys_in_dataflow(tmp_path):
+    """Output keys from nested team are available to subsequent steps."""
+    inner = {
+        "team": "custom",
+        "steps": [{"name": "inner", "system_prompt": "Go.", "output_key": "inner_out"}],
+    }
+    inner_path = tmp_path / "inner.yaml"
+    inner_path.write_text(yaml.dump(inner), encoding="utf-8")
+
+    outer = {
+        "team": "custom",
+        "steps": [
+            {"team_file": "inner.yaml"},
+            {"name": "next", "system_prompt": "Use {inner_out}.", "output_key": "final"},
+        ],
+    }
+    p = _write(tmp_path, "team.yaml", outer)
+    r = _invoke(["validate", str(p)])
+    assert r.exit_code == 0
+    assert "warning" not in r.output.lower()
+
+
+# ===========================================================================
+# --dry-run new flags
+# ===========================================================================
+
+def test_dry_run_shows_timeout_flag(tmp_path):
+    from antcrew.cli import app as _app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out", "timeout": 30}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = CliRunner().invoke(_app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+    assert "timeout" in r.output
+
+
+def test_dry_run_shows_on_error_skip(tmp_path):
+    from antcrew.cli import app as _app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+                   "on_error": "skip"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = CliRunner().invoke(_app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+    assert "skip" in r.output
+
+
+def test_dry_run_nested_team_shows_merged(tmp_path):
+    inner = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "x", "system_prompt": "Go.", "output_key": "x_out"}],
+    }
+    inner_path = tmp_path / "inner.yaml"
+    inner_path.write_text(yaml.dump(inner), encoding="utf-8")
+
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"team_file": str(inner_path)}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    from antcrew.cli import app as _app
+    r = CliRunner().invoke(_app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+    assert "merged" in r.output
+
+
+# ===========================================================================
+# REPL stateful mode
+# ===========================================================================
+
+def test_repl_stateful_exits_zero(tmp_path):
+    from antcrew.cli import app as _app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = CliRunner().invoke(
+        _app,
+        ["run", "--config", str(p), "--no-stream", "--repl-stateful"],
+        input="task\nquit\n",
+    )
+    assert r.exit_code == 0
+
+
+def test_repl_stateful_shows_stateful_mode(tmp_path):
+    from antcrew.cli import app as _app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out"}],
+    }
+    p = _write(tmp_path, "team.yaml", cfg)
+    r = CliRunner().invoke(
+        _app,
+        ["run", "--config", str(p), "--no-stream", "--repl-stateful"],
+        input="q\n",
+    )
+    assert r.exit_code == 0
+    assert "stateful" in r.output
+
+
+# ===========================================================================
+# team_file: path resolved relative to config dir
+# ===========================================================================
+
+def test_team_file_resolved_relative_to_config_dir(tmp_path):
+    """team_file: path must resolve relative to the config file, not CWD."""
+    import os
+    inner_dir = tmp_path / "teams"
+    inner_dir.mkdir()
+    inner_cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "inner", "system_prompt": "Go.", "output_key": "inner_out"}],
+    }
+    inner_path = inner_dir / "inner.yaml"
+    inner_path.write_text(yaml.dump(inner_cfg), encoding="utf-8")
+
+    outer_cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"team_file": "teams/inner.yaml"}],
+    }
+    outer_path = tmp_path / "outer.yaml"
+    outer_path.write_text(yaml.dump(outer_cfg), encoding="utf-8")
+
+    # Run from a different CWD — relative path must still resolve correctly
+    from antcrew.config import load
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path.parent)   # parent of config dir → relative path would fail
+        team = load(outer_path)
+        result = team.run("task")
+    finally:
+        os.chdir(old_cwd)
+
+    assert "inner_out" in result.state

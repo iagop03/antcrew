@@ -147,7 +147,7 @@ def _extract_step_meta(raw: dict) -> tuple:
     return max_retries, retry_delay, condition, timeout, on_error, default
 
 
-def _make_step(raw: Any, llm: "BaseLLM") -> _Step:
+def _make_step(raw: Any, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _Step:
     """Build one _Step from a raw config (dict / Path / YAML str)."""
     max_retries = 0
     retry_delay = 0.0
@@ -158,7 +158,7 @@ def _make_step(raw: Any, llm: "BaseLLM") -> _Step:
 
     if isinstance(raw, dict):
         if "team_file" in raw:
-            return _make_nested_step(raw, llm)
+            return _make_nested_step(raw, llm, base_dir=base_dir)
         max_retries, retry_delay, condition, timeout, on_error, default = _extract_step_meta(raw)
         raw = _agent_cfg(raw)
 
@@ -173,7 +173,7 @@ def _make_step(raw: Any, llm: "BaseLLM") -> _Step:
     )
 
 
-def _make_nested_step(raw: dict, llm: "BaseLLM") -> _Step:
+def _make_nested_step(raw: dict, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _Step:
     """Build a _Step that runs a nested CustomTeam as its agent."""
     from pathlib import Path as _Path
     try:
@@ -183,7 +183,10 @@ def _make_nested_step(raw: dict, llm: "BaseLLM") -> _Step:
 
     team_path = _Path(raw["team_file"])
     if not team_path.is_absolute():
-        team_path = _Path.cwd() / team_path
+        if base_dir is not None:
+            team_path = _Path(base_dir) / team_path
+        else:
+            team_path = _Path.cwd() / team_path
     if not team_path.exists():
         raise FileNotFoundError(f"team_file not found: {team_path}")
 
@@ -193,7 +196,8 @@ def _make_nested_step(raw: dict, llm: "BaseLLM") -> _Step:
         raise ValueError(f"Nested team_file '{team_path}' has no steps.")
     nested_vars = nested_cfg.get("vars") or {}
 
-    nested_team = CustomTeam(nested_steps, llm, vars=nested_vars)
+    # Nested team resolves its own team_file: paths relative to its own directory.
+    nested_team = CustomTeam(nested_steps, llm, vars=nested_vars, base_dir=team_path.parent)
     input_key = raw.get("input_key", "request")
     name = raw.get("name") or team_path.stem
 
@@ -210,11 +214,16 @@ def _make_nested_step(raw: dict, llm: "BaseLLM") -> _Step:
     )
 
 
-def _parse_steps(raw_steps: list[Any], llm: "BaseLLM") -> list[_StepGroup]:
+def _parse_steps(
+    raw_steps: list[Any],
+    llm: "BaseLLM",
+    base_dir: "Optional[Path]" = None,
+) -> list[_StepGroup]:
     """Convert raw step configs into ordered groups of _Step instances.
 
     A plain dict / str / Path  →  single-step group (sequential).
     ``{"parallel": [cfg, …]}``  →  multi-step group (concurrent).
+    ``{"team_file": "path.yaml"}``  →  nested CustomTeam step.
     """
     groups: list[_StepGroup] = []
     for item in raw_steps:
@@ -222,9 +231,9 @@ def _parse_steps(raw_steps: list[Any], llm: "BaseLLM") -> list[_StepGroup]:
             parallel_cfgs = item["parallel"]
             if not parallel_cfgs:
                 raise ValueError("A 'parallel:' group must contain at least one step.")
-            groups.append([_make_step(cfg, llm) for cfg in parallel_cfgs])
+            groups.append([_make_step(cfg, llm, base_dir=base_dir) for cfg in parallel_cfgs])
         else:
-            groups.append([_make_step(item, llm)])
+            groups.append([_make_step(item, llm, base_dir=base_dir)])
     return groups
 
 
@@ -332,6 +341,7 @@ class CustomTeam:
         llm: "BaseLLM",
         *,
         vars: Optional[dict] = None,
+        base_dir: "Optional[Path]" = None,
         max_cost_usd: Optional[float] = None,
         max_workers: int = 4,
         trace_log: "Optional[TraceLog]" = None,
@@ -348,7 +358,7 @@ class CustomTeam:
         if max_cost_usd is not None:
             self.llm.max_cost_usd = max_cost_usd
 
-        self._step_groups: list[_StepGroup] = _parse_steps(steps, llm)
+        self._step_groups: list[_StepGroup] = _parse_steps(steps, llm, base_dir=base_dir)
 
         # Flat list for backward compatibility and easy introspection.
         self._agents: list[TemplateAgent] = [

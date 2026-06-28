@@ -240,7 +240,12 @@ def load(path: str | Path):
             )
         team_vars = cfg.get("vars") or {}
         from antcrew.teams.custom_team import CustomTeam
-        return CustomTeam(list(steps), default_llm, vars=team_vars, max_cost_usd=max_cost_usd)
+        return CustomTeam(
+            list(steps), default_llm,
+            vars=team_vars,
+            base_dir=path.parent,
+            max_cost_usd=max_cost_usd,
+        )
 
     raise ValueError(
         f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content, custom."
