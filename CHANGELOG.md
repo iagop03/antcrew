@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.9] — 2026-06-28
+
+### Refactored
+- **`antcrew/cli/` package** — `antcrew/cli.py` (4 188 lines) converted to a
+  proper Python package:
+  - `antcrew/cli/_app.py` — Typer `app` / `_flow_app` / `_project_app`,
+    `console`, `_TEAM_CHOICES`, `_MODEL_HELP` (single source of truth for
+    app-level singletons).
+  - `antcrew/cli/_templates.py` — `_YAML_*` / `_MAIN_*` init scaffold
+    strings (382 lines, previously embedded in the main file).
+  - `antcrew/cli/validate_cmd.py` — `validate` command extracted to its own
+    module; imports `app` / `console` from `_app.py`.
+  - `antcrew/cli/__init__.py` — residual entry point (~3 480 lines); imports
+    from the above submodules so public API is unchanged.
+- **`antcrew/agents/registry.py`** — central agent registry replacing the
+  duplicate dicts in `config.py` and `cli.py`.  `AGENT_REGISTRY`,
+  `get_agent_class()`, and `instantiate_agent()` are the single source of
+  truth for built-in agent types.
+- **`antcrew/config._resolve_agent`** updated to delegate to
+  `antcrew.agents.registry.instantiate_agent()`.
+- **`antcrew agents` CLI command** updated to discover agents via
+  `AGENT_REGISTRY` instead of a hard-coded local dict.
+
+---
+
 ## [0.9.8] — 2026-06-28
 
 ### Fixed

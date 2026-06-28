@@ -349,81 +349,45 @@ def load_context(path: str | Path) -> TeamContext:
 
 def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel, agent_cfg: dict):
     """Instantiate the right agent class by name."""
-    from antcrew.agents.business import BusinessAnalystAgent
-    from antcrew.agents.pm import PMAgent
-    from antcrew.agents.backend_dev import BackendDevAgent
-    from antcrew.agents.frontend_dev import FrontendDevAgent
-    from antcrew.agents.qa import QAAgent
-    from antcrew.agents.reviewer import ReviewerAgent
-    from antcrew.agents.devops import DevOpsAgent
-    from antcrew.agents.researcher import ResearcherAgent
-    from antcrew.agents.idea import IdeaAgent
-    from antcrew.agents.copywriter import CopywriterAgent
-    from antcrew.agents.editor import EditorAgent
-    from antcrew.agents.codebase_scanner import CodebaseScannerAgent
+    from antcrew.agents.registry import instantiate_agent, AGENT_REGISTRY
 
-    registry = {
-        "business_analyst":  BusinessAnalystAgent,
-        "pm":                PMAgent,
-        "backend_dev":       BackendDevAgent,
-        "frontend_dev":      FrontendDevAgent,
-        "qa":                QAAgent,
-        "reviewer":          ReviewerAgent,
-        "devops":            DevOpsAgent,
-        "researcher":        ResearcherAgent,
-        "idea":              IdeaAgent,
-        "copywriter":        CopywriterAgent,
-        "editor":            EditorAgent,
-        "codebase_scanner":  CodebaseScannerAgent,
-    }
-    cls = registry.get(name)
-    if cls is None:
-        # Allow inline template agents: any unknown name with a system_prompt
-        # or a "template:" file reference is treated as a TemplateAgent.
-        if "system_prompt" in agent_cfg or "template" in agent_cfg:
-            from antcrew.agents.template_agent import TemplateAgent
-            cfg: dict = dict(agent_cfg)
+    agent = instantiate_agent(
+        name, llm,
+        approval_required=approval,
+        response_options=options,
+        channel=channel,
+        agent_cfg=agent_cfg,
+    )
+    if agent is not None:
+        return agent
+
+    # Unknown name: allow inline template agents (system_prompt / template file).
+    if "system_prompt" in agent_cfg or "template" in agent_cfg:
+        from antcrew.agents.template_agent import TemplateAgent
+        cfg: dict = dict(agent_cfg)
+        cfg.setdefault("name", name)
+        if "template" in cfg:
+            from pathlib import Path as _P
+            import yaml as _yaml  # type: ignore[import]
+            tpl_path = _P(cfg["template"])
+            file_cfg = _yaml.safe_load(tpl_path.read_text(encoding="utf-8"))
+            file_cfg.update({k: v for k, v in cfg.items() if k != "template"})
+            cfg = file_cfg
             cfg.setdefault("name", name)
-            if "template" in cfg:
-                from pathlib import Path as _P
-                import yaml as _yaml  # type: ignore[import]
-                tpl_path = _P(cfg["template"])
-                file_cfg = _yaml.safe_load(tpl_path.read_text(encoding="utf-8"))
-                file_cfg.update({k: v for k, v in cfg.items() if k != "template"})
-                cfg = file_cfg
-                cfg.setdefault("name", name)
-            kwargs: dict = dict(llm=llm, approval_required=approval)
-            if options:
-                kwargs["response_options"] = options
-            if channel:
-                kwargs["channel"] = channel
-            if "max_tokens" in cfg:
-                kwargs["max_tokens"] = int(cfg["max_tokens"])
-            if "system_prompt_suffix" in cfg:
-                kwargs["system_prompt_suffix"] = str(cfg["system_prompt_suffix"])
-            if "preset" in cfg:
-                kwargs["preset"] = str(cfg["preset"])
-            return TemplateAgent(cfg, **kwargs)
-        raise ValueError(
-            f"Unknown agent '{name}'. Known agents: {list(registry)}\n"
-            "To define a custom agent inline, add 'system_prompt:' to its config block."
-        )
-    kwargs: dict = dict(llm=llm, approval_required=approval)
-    if options:
-        kwargs["response_options"] = options
-    if channel:
-        kwargs["channel"] = channel
+        kwargs: dict = dict(llm=llm, approval_required=approval)
+        if options:
+            kwargs["response_options"] = options
+        if channel:
+            kwargs["channel"] = channel
+        if "max_tokens" in cfg:
+            kwargs["max_tokens"] = int(cfg["max_tokens"])
+        if "system_prompt_suffix" in cfg:
+            kwargs["system_prompt_suffix"] = str(cfg["system_prompt_suffix"])
+        if "preset" in cfg:
+            kwargs["preset"] = str(cfg["preset"])
+        return TemplateAgent(cfg, **kwargs)
 
-    # Per-agent YAML knobs forwarded to BaseAgent.__init__
-    if "max_tokens" in agent_cfg:
-        kwargs["max_tokens"] = int(agent_cfg["max_tokens"])
-    if "system_prompt_suffix" in agent_cfg:
-        kwargs["system_prompt_suffix"] = str(agent_cfg["system_prompt_suffix"])
-    if "preset" in agent_cfg:
-        kwargs["preset"] = str(agent_cfg["preset"])
-
-    # codebase_scanner-specific extra: ignore_dirs
-    if name == "codebase_scanner" and "ignore_dirs" in agent_cfg:
-        kwargs["extra_ignore_dirs"] = list(agent_cfg["ignore_dirs"])
-
-    return cls(**kwargs)
+    raise ValueError(
+        f"Unknown agent '{name}'. Known agents: {sorted(AGENT_REGISTRY)}\n"
+        "To define a custom agent inline, add 'system_prompt:' to its config block."
+    )
