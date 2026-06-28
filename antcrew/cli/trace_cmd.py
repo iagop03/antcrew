@@ -1,6 +1,9 @@
 """Trace and replay commands."""
 from __future__ import annotations
 
+import csv
+import io
+import json as _json
 from pathlib import Path
 from typing import Optional
 
@@ -10,6 +13,46 @@ from rich.panel import Panel
 from antcrew.cli._app import app, console, _MODEL_HELP, _TEAM_CHOICES
 from antcrew.cli._shared import _build_team, _print_state
 from antcrew.cli._run_helpers import _run_with_stream
+
+
+# ── Serializers (used by --dump flag) ────────────────────────────────────────
+
+def _to_json(runs: list[dict]) -> str:
+    return _json.dumps(runs, indent=2, default=str) + "\n"
+
+
+def _to_csv(runs: list[dict], *, include_calls: bool = False) -> str:
+    buf = io.StringIO()
+    run_fields = ["id", "thread_id", "team", "status", "cost_usd", "started_at", "ended_at", "request"]
+
+    if not runs:
+        csv.DictWriter(buf, fieldnames=run_fields).writeheader()
+        return buf.getvalue()
+
+    if not include_calls:
+        w = csv.DictWriter(buf, fieldnames=run_fields, extrasaction="ignore")
+        w.writeheader()
+        for run in runs:
+            w.writerow(run)
+    else:
+        call_fields = ["agent_name", "duration_ms", "input_tokens", "output_tokens", "call_cost_usd"]
+        w = csv.DictWriter(buf, fieldnames=run_fields + call_fields, extrasaction="ignore")
+        w.writeheader()
+        for run in runs:
+            calls = run.get("agent_calls") or []
+            if not calls:
+                w.writerow({**{f: run.get(f, "") for f in run_fields}, **{f: "" for f in call_fields}})
+            else:
+                for call in calls:
+                    w.writerow({
+                        **{f: run.get(f, "") for f in run_fields},
+                        "agent_name":   call.get("agent_name", ""),
+                        "duration_ms":  call.get("duration_ms", ""),
+                        "input_tokens": call.get("input_tokens", ""),
+                        "output_tokens": call.get("output_tokens", ""),
+                        "call_cost_usd": call.get("cost_usd", ""),
+                    })
+    return buf.getvalue()
 
 @app.command(name="trace")
 def trace_cmd(
@@ -80,7 +123,6 @@ def trace_cmd(
 
     # --- dump mode (JSON / CSV export) ---
     if dump is not None:
-        from antcrew.cli.export_cmd import _to_json, _to_csv
         import sys as _sys
         from datetime import timezone as _tz, timedelta as _td, datetime as _dt
         fmt = dump.lower().strip()

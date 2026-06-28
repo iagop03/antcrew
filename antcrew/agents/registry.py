@@ -117,6 +117,8 @@ def instantiate_agent(
         kwargs["system_prompt_suffix"] = str(cfg["system_prompt_suffix"])
     if "preset" in cfg:
         kwargs["preset"] = str(cfg["preset"])
+    if "max_cost_usd" in cfg:
+        kwargs["max_cost_usd"] = float(cfg["max_cost_usd"])
     if name == "codebase_scanner" and "ignore_dirs" in cfg:
         kwargs["extra_ignore_dirs"] = list(cfg["ignore_dirs"])
 

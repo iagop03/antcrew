@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.4] — 2026-06-29
+
+### Fixed
+- **`instantiate_agent()` now passes `max_cost_usd` from per-agent YAML config.**
+  Add `max_cost_usd: 0.50` under any agent block in `agentteam.yaml` to cap that
+  agent's spend independently of the team-level cap.
+- **`export_cmd.py` removed** — the file became a stub after the serializers were
+  merged into `trace_cmd.py`. The dead import in `cli/__init__.py` is gone too.
+  The serializers (`_to_json`, `_to_csv`) now live in `trace_cmd.py` where they
+  are used.
+
+### Tests
+- **16 streaming-retry tests** in `test_streaming_retry.py`:
+  - Anthropic (4): connection error → retry, timeout → retry 2×, raises after
+    max retries, tokens received correctly on success.
+  - OpenAI (3): timeout + 429 → retry, raises after max retries. *(skipped when
+    `openai` package not installed)*
+  - Groq (3): 429 → retry, timeout → retry, raises after max retries.
+  - Gemini (3): connection error → retry, timeout → retry, raises after max retries.
+  - `instantiate_agent` (3): `max_cost_usd` from cfg, absent → `None`, zero allowed.
+
+---
+
 ## [0.11.3] — 2026-06-28
 
 ### Added
