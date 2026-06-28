@@ -37,24 +37,30 @@ class GroqModel(BaseLLM):
         chat_msgs = [{"role": m.role, "content": m.content} for m in messages]
 
         if self.on_token:
-            stream = self._client.chat.completions.create(
-                model=self.model, messages=chat_msgs,
-                max_tokens=max_tokens, stream=True,
-            )
-            chunks: list[str] = []
-            for chunk in stream:
-                text = chunk.choices[0].delta.content or ""
-                if text:
-                    self.on_token(text)
-                    chunks.append(text)
-            # Groq streaming doesn't return usage; approximate from text
-            full = "".join(chunks)
-            self._record_usage(len(full) // 4, len(full) // 4)
-            return full
+            return self._with_retry(self._stream_complete, chat_msgs, max_tokens)
+        return self._with_retry(self._blocking_complete, chat_msgs, max_tokens, json_mode)
 
-        response = self._client.chat.completions.create(
-            model=self.model, messages=chat_msgs, max_tokens=max_tokens,
-        )
+    def _blocking_complete(self, chat_msgs: list[dict], max_tokens: int, json_mode: bool = False) -> str:
+        kwargs: dict = {"model": self.model, "messages": chat_msgs, "max_tokens": max_tokens}
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        response = self._with_retry(self._client.chat.completions.create, **kwargs)
         if response.usage:
             self._record_usage(response.usage.prompt_tokens, response.usage.completion_tokens)
         return response.choices[0].message.content
+
+    def _stream_complete(self, chat_msgs: list[dict], max_tokens: int) -> str:
+        stream = self._client.chat.completions.create(
+            model=self.model, messages=chat_msgs,
+            max_tokens=max_tokens, stream=True,
+        )
+        chunks: list[str] = []
+        for chunk in stream:
+            text = chunk.choices[0].delta.content or ""
+            if text:
+                self.on_token(text)  # type: ignore[misc]
+                chunks.append(text)
+        full = "".join(chunks)
+        # Groq streaming doesn't return usage; approximate from character count
+        self._record_usage(len(full) // 4, len(full) // 4)
+        return full

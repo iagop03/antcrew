@@ -279,6 +279,25 @@ class TraceLog:
             "by_team": [dict(r) for r in by_team_rows],
         }
 
+    def prune(self, days: int) -> int:
+        """Delete runs (and their agent_calls) older than *days* days.
+
+        Returns the number of run rows deleted.
+        """
+        from datetime import timedelta
+
+        if days < 0:
+            raise ValueError(f"days must be >= 0, got {days}")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        self._conn.execute(
+            "DELETE FROM agent_calls WHERE run_id IN "
+            "(SELECT id FROM runs WHERE started_at < ?)",
+            (cutoff,),
+        )
+        cur = self._conn.execute("DELETE FROM runs WHERE started_at < ?", (cutoff,))
+        self._conn.commit()
+        return cur.rowcount
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._conn.close()

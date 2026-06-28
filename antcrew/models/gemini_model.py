@@ -52,56 +52,21 @@ class GeminiModel(BaseLLM):
         return body
 
     def complete(self, messages: list[Message], *, max_tokens: int = 16384, json_mode: bool = False) -> str:
-        import json as _json
-
         body = self._build_body(messages, max_tokens)
         if json_mode:
             body["generationConfig"]["responseMimeType"] = "application/json"
 
-        _to = self.timeout
-
         if self.on_token:
-            chunks: list[str] = []
-            in_tok = out_tok = 0
-            with httpx.stream(
-                "POST",
-                f"{_BASE_URL}/{self._model}:streamGenerateContent",
-                params={"key": self._api_key, "alt": "sse"},
-                json=body,
-                timeout=_to,
-            ) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[6:].strip()
-                    if raw in ("", "[DONE]"):
-                        continue
-                    try:
-                        data = _json.loads(raw)
-                        text = (
-                            data.get("candidates", [{}])[0]
-                            .get("content", {})
-                            .get("parts", [{}])[0]
-                            .get("text", "")
-                        )
-                        if text:
-                            self.on_token(text)
-                            chunks.append(text)
-                        meta = data.get("usageMetadata", {})
-                        if meta:
-                            in_tok = meta.get("promptTokenCount", in_tok)
-                            out_tok = meta.get("candidatesTokenCount", out_tok)
-                    except (_json.JSONDecodeError, IndexError, KeyError):
-                        continue
-            self._record_usage(in_tok, out_tok)
-            return "".join(chunks)
+            return self._with_retry(self._stream_complete, body)
+        return self._with_retry(self._blocking_complete, body)
 
-        resp = httpx.post(
+    def _blocking_complete(self, body: dict) -> str:
+        resp = self._with_retry(
+            httpx.post,
             f"{_BASE_URL}/{self._model}:generateContent",
             params={"key": self._api_key},
             json=body,
-            timeout=_to,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -111,3 +76,41 @@ class GeminiModel(BaseLLM):
             meta.get("candidatesTokenCount", 0),
         )
         return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    def _stream_complete(self, body: dict) -> str:
+        import json as _json
+        chunks: list[str] = []
+        in_tok = out_tok = 0
+        with httpx.stream(
+            "POST",
+            f"{_BASE_URL}/{self._model}:streamGenerateContent",
+            params={"key": self._api_key, "alt": "sse"},
+            json=body,
+            timeout=self.timeout,
+        ) as r:
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                raw = line[6:].strip()
+                if raw in ("", "[DONE]"):
+                    continue
+                try:
+                    data = _json.loads(raw)
+                    text = (
+                        data.get("candidates", [{}])[0]
+                        .get("content", {})
+                        .get("parts", [{}])[0]
+                        .get("text", "")
+                    )
+                    if text:
+                        self.on_token(text)  # type: ignore[misc]
+                        chunks.append(text)
+                    meta = data.get("usageMetadata", {})
+                    if meta:
+                        in_tok = meta.get("promptTokenCount", in_tok)
+                        out_tok = meta.get("candidatesTokenCount", out_tok)
+                except (_json.JSONDecodeError, IndexError, KeyError):
+                    continue
+        self._record_usage(in_tok, out_tok)
+        return "".join(chunks)

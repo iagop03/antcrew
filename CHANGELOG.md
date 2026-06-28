@@ -5,6 +5,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.2] — 2026-06-28
+
+### Added
+- **LLM retry wired into all adapters** — `BaseLLM._with_retry()` (exponential
+  backoff + jitter, `Retry-After` header, up to 3 attempts by default) now wraps
+  the actual network call in every adapter:
+  - `AnthropicModel`: `_blocking_complete` and `_stream_complete` both retried.
+  - `OpenAIModel`: blocking (`_with_retry` on `create`), streaming (whole stream
+    wrapped in a helper), and reasoning paths all retried.
+  - `GroqModel`: `_blocking_complete` wraps `create` with `_with_retry`.
+  - `GeminiModel`: `_blocking_complete` wraps `httpx.post` with `_with_retry`.
+  - 6 tests across all 4 adapters covering 429 / timeout / connection-error recovery.
+- **`TraceLog.prune(days)`** — deletes runs (and their `agent_calls`) older than
+  *N* days; raises `ValueError` for negative values. Returns deleted row count.
+- **`antcrew trace-db prune DB DAYS [--yes]`** — CLI wrapper for `TraceLog.prune()`;
+  prompts for confirmation unless `--yes` is supplied.
+- **`antcrew doctor [--ping]`** — environment health check command:
+  - Python version (≥3.11 required)
+  - antcrew version
+  - API key presence (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`,
+    `GOOGLE_API_KEY`, `ANTCREW_API_KEY`) with masked key suffix
+  - Optional dependency availability (fastapi, uvicorn, openai, chromadb, watchdog,
+    aiosqlite, aiofiles)
+  - `--ping`: makes a live API call per configured key to verify connectivity
+  - Renders a Rich table with OK / WARN / FAIL status per check; summary line shows
+    how many checks failed
+
+### Tests
+- 30 tests in `test_retry_prune_doctor.py` covering all of the above.
+
+---
+
 ## [0.11.1] — 2026-06-28
 
 ### Security

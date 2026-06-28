@@ -73,29 +73,34 @@ class AnthropicModel(BaseLLM):
             kwargs["system"] = self._build_system(system_parts)
 
         if self.on_token:
-            chunks: list[str] = []
-            with self._client.messages.stream(**kwargs) as stream:
-                for text in stream.text_stream:
-                    self.on_token(text)
-                    chunks.append(text)
-                final = stream.get_final_message()
-                self._record_usage(self._total_input(final.usage), final.usage.output_tokens)
-                if final.stop_reason == "max_tokens":
-                    u = final.usage
-                    raise RuntimeError(
-                        f"Response truncated: hit max_tokens={max_tokens} "
-                        f"(input={u.input_tokens}, output={u.output_tokens}). "
-                        "Increase max_tokens or shorten the input."
-                    )
-            return "".join(chunks)
+            return self._with_retry(self._stream_complete, kwargs)
+        return self._with_retry(self._blocking_complete, kwargs)
 
+    def _blocking_complete(self, kwargs: dict) -> str:
         response = self._client.messages.create(**kwargs)
         self._record_usage(self._total_input(response.usage), response.usage.output_tokens)
         if response.stop_reason == "max_tokens":
             u = response.usage
             raise RuntimeError(
-                f"Response truncated: hit max_tokens={max_tokens} "
+                f"Response truncated: hit max_tokens={kwargs.get('max_tokens')} "
                 f"(input={u.input_tokens}, output={u.output_tokens}). "
                 "Increase max_tokens or shorten the input."
             )
         return response.content[0].text
+
+    def _stream_complete(self, kwargs: dict) -> str:
+        chunks: list[str] = []
+        with self._client.messages.stream(**kwargs) as stream:
+            for text in stream.text_stream:
+                self.on_token(text)  # type: ignore[misc]
+                chunks.append(text)
+            final = stream.get_final_message()
+            self._record_usage(self._total_input(final.usage), final.usage.output_tokens)
+            if final.stop_reason == "max_tokens":
+                u = final.usage
+                raise RuntimeError(
+                    f"Response truncated: hit max_tokens={kwargs.get('max_tokens')} "
+                    f"(input={u.input_tokens}, output={u.output_tokens}). "
+                    "Increase max_tokens or shorten the input."
+                )
+        return "".join(chunks)

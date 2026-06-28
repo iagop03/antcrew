@@ -151,6 +151,43 @@ def _print_trace_detail(run: dict, calls: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# antcrew trace prune — delete old runs from a TraceLog
+# ---------------------------------------------------------------------------
+
+trace_app = typer.Typer(help="Manage TraceLog SQLite databases.")
+app.add_typer(trace_app, name="trace-db")
+
+
+@trace_app.command("prune")
+def trace_prune_cmd(
+    db: Path = typer.Argument(..., help="TraceLog SQLite file"),
+    days: int = typer.Argument(..., help="Delete runs older than N days"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+) -> None:
+    """Delete runs (and their agent calls) older than N days from a TraceLog.
+
+    \b
+    Examples:
+        antcrew trace-db prune ~/.antcrew/trace.db 30      # keep last 30 days
+        antcrew trace-db prune ~/.antcrew/trace.db 0 --yes # wipe everything
+    """
+    from antcrew.trace import TraceLog as _TL
+
+    if not db.exists():
+        console.print(f"[red]File not found:[/] {db}")
+        raise typer.Exit(1)
+
+    tl = _TL(db)
+    if not yes:
+        typer.confirm(
+            f"Delete all runs older than {days} day(s) from {db}?", abort=True
+        )
+    deleted = tl.prune(days)
+    tl.close()
+    console.print(f"[green]Deleted[/] {deleted} run{'s' if deleted != 1 else ''} from [cyan]{db}[/].")
+
+
+# ---------------------------------------------------------------------------
 # antcrew replay — resume a pipeline from its last SqliteSaver checkpoint
 # ---------------------------------------------------------------------------
 

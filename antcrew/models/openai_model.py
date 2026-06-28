@@ -89,7 +89,7 @@ class OpenAIModel(BaseLLM):
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        response = self._client.chat.completions.create(**kwargs)
+        response = self._with_retry(self._client.chat.completions.create, **kwargs)
         if response.usage:
             self._record_usage(
                 response.usage.prompt_tokens,
@@ -98,33 +98,37 @@ class OpenAIModel(BaseLLM):
         return response.choices[0].message.content or ""
 
     def _complete_streaming(self, chat_msgs: list[dict], max_tokens: int) -> str:
-        stream = self._client.chat.completions.create(
-            model=self._model,
-            messages=chat_msgs,
-            max_tokens=max_tokens,
-            stream=True,
-            stream_options={"include_usage": True},
-            timeout=self.timeout,
-        )
-        chunks: list[str] = []
-        usage_data = None
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                text = chunk.choices[0].delta.content
-                if self.on_token:
-                    self.on_token(text)
-                chunks.append(text)
-            if getattr(chunk, "usage", None):
-                usage_data = chunk.usage
-        if usage_data:
-            self._record_usage(
-                usage_data.prompt_tokens,
-                usage_data.completion_tokens,
+        def _do_stream():
+            stream = self._client.chat.completions.create(
+                model=self._model,
+                messages=chat_msgs,
+                max_tokens=max_tokens,
+                stream=True,
+                stream_options={"include_usage": True},
+                timeout=self.timeout,
             )
-        return "".join(chunks)
+            chunks: list[str] = []
+            usage_data = None
+            for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    text = chunk.choices[0].delta.content
+                    if self.on_token:
+                        self.on_token(text)
+                    chunks.append(text)
+                if getattr(chunk, "usage", None):
+                    usage_data = chunk.usage
+            if usage_data:
+                self._record_usage(
+                    usage_data.prompt_tokens,
+                    usage_data.completion_tokens,
+                )
+            return "".join(chunks)
+
+        return self._with_retry(_do_stream)
 
     def _complete_reasoning(self, chat_msgs: list[dict], max_tokens: int) -> str:
-        response = self._client.chat.completions.create(
+        response = self._with_retry(
+            self._client.chat.completions.create,
             model=self._model,
             messages=chat_msgs,
             max_completion_tokens=max_tokens,
