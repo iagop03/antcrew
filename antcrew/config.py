@@ -238,8 +238,9 @@ def load(path: str | Path):
                 "'team: custom' requires a non-empty 'steps:' list of agent configs.\n"
                 "Each step must have at least 'name' and 'system_prompt'."
             )
+        team_vars = cfg.get("vars") or {}
         from antcrew.teams.custom_team import CustomTeam
-        return CustomTeam(list(steps), default_llm, max_cost_usd=max_cost_usd)
+        return CustomTeam(list(steps), default_llm, vars=team_vars, max_cost_usd=max_cost_usd)
 
     raise ValueError(
         f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content, custom."

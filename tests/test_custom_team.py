@@ -988,3 +988,196 @@ def test_cli_run_shows_skip_for_unfulfilled_condition(tmp_path):
     r = CliRunner().invoke(app, ["run", "task", "--config", str(p), "--no-stream"])
     assert r.exit_code == 0
     assert "skipped" in r.output
+
+
+# ===========================================================================
+# vars — team-level state defaults
+# ===========================================================================
+
+def test_vars_default_empty():
+    team = CustomTeam(_steps(), _llm())
+    assert team._vars == {}
+
+
+def test_vars_stored():
+    team = CustomTeam(_steps(), _llm(), vars={"lang": "Python", "style": "concise"})
+    assert team._vars == {"lang": "Python", "style": "concise"}
+
+
+def test_vars_injected_into_initial_state():
+    team = CustomTeam(_steps(), _llm(), vars={"lang": "Python"})
+    state = team._initial_state("task")
+    assert state["lang"] == "Python"
+    assert state["request"] == "task"
+
+
+def test_vars_request_always_wins():
+    """If vars accidentally contains 'request', the run() argument wins."""
+    team = CustomTeam(_steps(), _llm(), vars={"request": "should be overridden"})
+    state = team._initial_state("actual request")
+    assert state["request"] == "actual request"
+
+
+def test_vars_available_to_interpolation():
+    from antcrew.testing import SequencedLLM
+
+    llm = SequencedLLM(["done"])
+    capture: list[str] = []
+
+    # Patch _CaptureLLM inline
+    class _Cap(SimulatedLLM):
+        def complete(self, messages, *, max_tokens=16384, json_mode=False):
+            capture.append(next(m.content for m in messages if m.role == "system"))
+            return "done"
+
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "Lang: {lang}", "output_key": "out"}],
+        _Cap(),
+        vars={"lang": "Python"},
+    )
+    team.run("task")
+    assert "Python" in capture[0]
+
+
+def test_vars_available_to_condition():
+    """A condition key provided via vars lets the step run."""
+    from antcrew.testing import SequencedLLM
+    events: list[str] = []
+
+    team = CustomTeam(
+        [{"name": "a", "system_prompt": "Go.", "output_key": "out",
+          "condition": "lang"}],
+        SequencedLLM(["done"]),
+        vars={"lang": "Python"},
+    )
+    team._on_step = lambda name, ev: events.append(ev)
+    team.run("task")
+    # condition key "lang" is truthy from vars → step runs, not skipped
+    assert "start" in events
+    assert "skip" not in events
+
+
+def test_vars_from_yaml_config(tmp_path):
+    import yaml
+    from antcrew.config import load_context
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "vars": {"language": "Python", "style": "concise"},
+        "steps": [{"name": "a", "system_prompt": "Lang: {language}", "output_key": "out"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    ctx = load_context(p)
+    assert ctx.team._vars == {"language": "Python", "style": "concise"}
+
+
+def test_vars_not_counted_as_unknown_in_validate(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "vars": {"lang": "Python"},
+        "steps": [
+            {"name": "a", "system_prompt": "Use {lang}.", "output_key": "out"},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["validate", str(p)])
+    assert r.exit_code == 0
+    assert "warning" not in r.output.lower()
+
+
+# ===========================================================================
+# --dry-run CLI flag
+# ===========================================================================
+
+def test_dry_run_exits_zero(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "planner", "system_prompt": "Plan.", "output_key": "plan"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+
+
+def test_dry_run_shows_step_names(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [
+            {"name": "planner",  "system_prompt": "Plan.", "output_key": "plan"},
+            {"name": "executor", "system_prompt": "Do.",   "output_key": "result"},
+        ],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+    assert "planner"  in r.output
+    assert "executor" in r.output
+
+
+def test_dry_run_no_llm_calls(tmp_path):
+    """--dry-run must not hit the LLM; SimulatedLLM call_count stays 0."""
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+    assert "No LLM calls" in r.output
+
+
+def test_dry_run_shows_vars(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "vars": {"lang": "Python"},
+        "steps": [{"name": "a", "system_prompt": "Go.", "output_key": "out"}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+    assert "lang" in r.output
+
+
+def test_dry_run_shows_parallel_steps(tmp_path):
+    import yaml
+    from typer.testing import CliRunner
+    from antcrew.cli import app
+    cfg = {
+        "team": "custom",
+        "model": "simulated",
+        "steps": [{"parallel": [
+            {"name": "be", "system_prompt": "Backend.", "output_key": "be"},
+            {"name": "fe", "system_prompt": "Frontend.", "output_key": "fe"},
+        ]}],
+    }
+    p = tmp_path / "team.yaml"
+    p.write_text(yaml.dump(cfg), encoding="utf-8")
+    r = CliRunner().invoke(app, ["run", "task", "--config", str(p), "--dry-run"])
+    assert r.exit_code == 0
+    assert "be" in r.output and "fe" in r.output
+    assert "par" in r.output

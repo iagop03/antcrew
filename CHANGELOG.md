@@ -5,6 +5,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.9.4] — 2026-06-28
+
+### Added
+- **`vars:` in CustomTeam YAML** — team-level state defaults injected before
+  step 1 runs, enabling reusable configuration without hardcoding values in
+  prompts:
+
+  ```yaml
+  team: custom
+  vars:
+    language: Python
+    tone: concise
+  steps:
+    - name: planner
+      system_prompt: "Create a {language} plan in {tone} style."
+      output_key: plan
+  ```
+
+  - `vars` keys are available to `{key}` interpolation, `condition:`, and
+    `user_template` in every step.
+  - `request` always takes precedence over any `vars` key with the same name.
+  - `antcrew validate` pre-populates the dataflow graph with `vars` keys so
+    steps that reference them are not flagged as unknown-key warnings.
+  - `CustomTeam(steps, llm, vars={...})` — also available programmatically.
+
+- **`antcrew run --dry-run`** — inspect a CustomTeam pipeline without calling
+  the LLM:
+
+  ```
+  Dry run — 3 step group(s), 4 agents
+    [1/3]  planner        seq    plan
+    [2/3]  backend        par    backend_code
+           frontend       par    frontend_code    if:plan
+    [3/3]  reviewer       seq    review           retry×2
+  No LLM calls will be made.
+  ```
+
+  - Shows step type (seq/par), output_key, condition, and retry flags.
+  - Exits 0 without touching the LLM or TraceLog.
+  - 13 new tests added to `tests/test_custom_team.py` (82 total).
+
+---
+
 ## [0.9.3] — 2026-06-28
 
 ### Added

@@ -252,6 +252,47 @@ def _print_usage(llm) -> None:
 # Streaming helper
 # ---------------------------------------------------------------------------
 
+def _print_dry_run(team) -> None:
+    """Print the step structure of a CustomTeam without running it."""
+    from rich.table import Table
+
+    groups = team._step_groups
+    n_agents = sum(len(g) for g in groups)
+    vars_info = (
+        f"  vars: {list(team._vars.keys())}\n" if team._vars else ""
+    )
+    console.print(
+        f"\n[bold]Dry run[/bold] — [cyan]{len(groups)}[/cyan] step group(s), "
+        f"[cyan]{n_agents}[/cyan] agent(s)"
+    )
+    if vars_info:
+        console.print(f"  [dim]vars:[/dim] {list(team._vars.keys())}")
+
+    tbl = Table(show_header=True, header_style="bold", box=None, show_edge=False)
+    tbl.add_column("Step", style="dim", width=8)
+    tbl.add_column("Agent", style="cyan")
+    tbl.add_column("Type", style="dim", width=5)
+    tbl.add_column("output_key", style="green")
+    tbl.add_column("Flags", style="yellow")
+
+    for i, group in enumerate(groups, 1):
+        for j, step in enumerate(group):
+            idx = f"[{i}/{len(groups)}]" if j == 0 else ""
+            gtype = "par" if len(group) > 1 else "seq"
+            flags = []
+            if step.condition:
+                flags.append(f"if:{','.join(step.condition)}")
+            if step.max_retries:
+                flags.append(f"retry×{step.max_retries}")
+            if step.agent._post_process:
+                flags.append(f"pp:({','.join(step.agent._post_process)})")
+            tbl.add_row(idx, step.agent.name, gtype,
+                        step.agent._output_key, " ".join(flags))
+
+    console.print(tbl)
+    console.print("\n[dim]No LLM calls will be made.[/dim]\n")
+
+
 def _run_custom_with_progress(team, request: str, thread: str, *, stream: bool, llm=None):
     """Run a CustomTeam with per-step Rich progress output."""
     import time as _time
@@ -418,6 +459,10 @@ def run(
         help="SQLite file for per-agent call tracing (timing, tokens, cost). "
              "View with: antcrew trace <file.db>",
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Show pipeline steps without running them (CustomTeam only).",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -453,6 +498,22 @@ def run(
             from antcrew.config import build_llm
             _llm_ref = build_llm(model)
             active_team = _build_team(team, model, integrations=[], llm=_llm_ref)
+
+        # --dry-run: show pipeline structure and exit without LLM calls
+        if dry_run:
+            try:
+                from antcrew.teams.custom_team import CustomTeam as _CT
+                if isinstance(active_team, _CT):
+                    _print_dry_run(active_team)
+                else:
+                    console.print(
+                        "[yellow]--dry-run is only supported for CustomTeam "
+                        "(team: custom) configs.[/yellow]"
+                    )
+            except Exception as exc:
+                console.print(f"[red]--dry-run error:[/] {exc}")
+                raise typer.Exit(1)
+            raise typer.Exit(0)
 
         # --cache flag overrides / supplements config
         if cache and _llm_ref is not None:
@@ -519,6 +580,8 @@ def run(
             )
             state = _run_with_stream(active_team, request, thread, stream, llm=_llm_ref)
 
+    except typer.Exit:
+        raise
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted.[/]")
         raise typer.Exit(1)
@@ -3725,7 +3788,10 @@ def validate_cmd(
     tbl.add_column("Flags", style="yellow")
 
     step_idx = 0
-    produced_keys: set[str] = {"request"}  # keys available before any step runs
+    team_vars: dict = cfg.get("vars") or {}
+    if team_vars:
+        console.print(f"  [dim]vars:[/dim] {list(team_vars.keys())}")
+    produced_keys: set[str] = {"request"} | set(team_vars.keys())
 
     def _validate_one(raw: dict, label: str, idx_str: str) -> None:
         name = raw.get("name", "")

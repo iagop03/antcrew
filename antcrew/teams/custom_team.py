@@ -214,6 +214,7 @@ class CustomTeam:
         steps: list[Any],
         llm: "BaseLLM",
         *,
+        vars: Optional[dict] = None,
         max_cost_usd: Optional[float] = None,
         max_workers: int = 4,
         trace_log: "Optional[TraceLog]" = None,
@@ -225,6 +226,7 @@ class CustomTeam:
         self._trace_log = trace_log
         self._checkpointer = None  # Pipeline carry-over compat
         self._max_workers = max_workers
+        self._vars: dict = dict(vars) if vars else {}
 
         if max_cost_usd is not None:
             self.llm.max_cost_usd = max_cost_usd
@@ -245,7 +247,8 @@ class CustomTeam:
     # ------------------------------------------------------------------
 
     def _initial_state(self, request: str) -> dict:
-        return {"request": request}
+        # vars are injected first; "request" always takes precedence.
+        return {**self._vars, "request": request}
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Run all step groups in order and return the merged state.
