@@ -107,6 +107,7 @@ def extract(
 def describe(
     config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to agentteam.yaml"),
     team: str = typer.Option("dev", "--team", "-t", help=f"Team preset: {_TEAM_CHOICES}"),
+    trace: Optional[Path] = typer.Option(None, "--trace", help="TraceLog DB to show historical average cost"),
 ) -> None:
     """Show pipeline agents, data flow (consumes/produces), and coherence check.
 
@@ -243,6 +244,25 @@ def describe(
         )
     else:
         console.print("[bold green]Coherencia:[/] OK\n")
+
+    # ── Historical cost from TraceLog (optional) ──────────────────────────────
+    trace_path = trace or Path.home() / ".antcrew" / "trace.db"
+    if trace_path.exists():
+        try:
+            from antcrew.trace import TraceLog
+            tl = TraceLog(str(trace_path))
+            stats = tl.stats()
+            total = stats.get("total_runs", 0)
+            if total:
+                avg = stats.get("avg_cost_usd", 0.0)
+                total_c = stats.get("total_cost_usd", 0.0)
+                console.print(
+                    f"[dim]Historical cost ({total} run{'s' if total != 1 else ''}): "
+                    f"avg [cyan]${avg:.4f}[/]  total [cyan]${total_c:.4f}[/]  "
+                    f"(from {trace_path})[/dim]\n"
+                )
+        except Exception:
+            pass
 
 
 @app.command(name="agents")

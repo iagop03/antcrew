@@ -72,9 +72,61 @@ print(result.cost_usd)               # e.g. 0.43
 | `FullStackTeam` | BA → PM → Backend → Frontend → QA → Reviewer → DevOps → DocWriter | Full-stack MVPs |
 | `ResearchTeam` | Researcher → Writer | Technical research, blog posts |
 | `ContentTeam` | Idea → Copywriter → Editor | Marketing content, docs |
+| `CustomTeam` | User-defined steps | Fully custom pipelines |
 
 ```python
-from antcrew import DevTeam, FullStackTeam, ResearchTeam, ContentTeam
+from antcrew import DevTeam, FullStackTeam, ResearchTeam, ContentTeam, CustomTeam
+```
+
+### Custom teams
+
+Define any pipeline in code or YAML without subclassing:
+
+```python
+from antcrew import CustomTeam
+from antcrew.agents import PMAgent, BackendDevAgent, QAAgent
+
+team = CustomTeam(steps=[PMAgent, BackendDevAgent, QAAgent])
+result = team.run("Build a rate-limiting middleware")
+```
+
+Or via YAML config with a `steps:` list and inline system prompts:
+
+```yaml
+team: custom
+steps:
+  - name: planner
+    system_prompt: "You are a tech lead. Plan the implementation in bullet points."
+  - name: coder
+    system_prompt: "You are a senior Python developer. Implement the plan above."
+```
+
+### Template agents
+
+Re-usable agent blueprints loaded from YAML — no Python required:
+
+```python
+from antcrew import load_template_agent, register_transform
+
+# Load an agent from a YAML file
+agent = load_template_agent("agents/security_reviewer.yaml")
+
+# Register a custom post-process transform
+@register_transform("extract_json")
+def my_transform(text: str) -> str:
+    import json, re
+    m = re.search(r"```json\s*(.*?)```", text, re.DOTALL)
+    return m.group(1) if m else text
+```
+
+`agents/security_reviewer.yaml` example:
+
+```yaml
+name: security_reviewer
+system_prompt: |
+  You are a security expert. Review the code for OWASP Top 10 vulnerabilities.
+  Return a JSON object with keys: severity (critical|high|medium|low), findings (list), verdict (pass|fail).
+post_process: extract_json
 ```
 
 ---
@@ -85,10 +137,24 @@ from antcrew import DevTeam, FullStackTeam, ResearchTeam, ContentTeam
 |---|---|---|
 | `claude` / `claude-sonnet-4-6` | `AnthropicModel` | Default |
 | `gpt-4o` / `gpt-4o-mini` | `OpenAIModel` | Any OpenAI model |
+| `azure:gpt-4o` | `AzureOpenAIModel` | Azure OpenAI with deployment name |
 | `gemini` / `gemini-1.5-pro` | `GeminiModel` | Google Gemini via REST |
 | `groq:llama3-70b-8192` | `GroqModel` | Groq ultra-fast inference |
 | `ollama:llama3` | `OllamaModel` | Local via Ollama |
 | `simulated` | `SimulatedLLM` | Fixtures, CI, demos — no API |
+
+### Azure OpenAI
+
+```python
+from antcrew.models import AzureOpenAIModel
+
+team = DevTeam(model=AzureOpenAIModel(
+    deployment="gpt-4o",
+    api_key=os.environ["AZURE_OPENAI_API_KEY"],
+    endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+    api_version="2024-02-01",
+))
+```
 
 ### OpenAI-compatible APIs (DeepSeek, Mistral, LM Studio, llama.cpp)
 
@@ -136,15 +202,26 @@ team = DevTeam(model=llm)
 antcrew setup        Interactive wizard — generate agentteam.yaml from scratch
 antcrew run          Run a pipeline autonomously
 antcrew interactive  Run with human-in-the-loop review after every agent
-antcrew describe     Show pipeline agents, data contracts, and coherence check (no API key)
+antcrew describe     Show pipeline agents, data contracts, historical cost (no API key)
+antcrew agents       List all built-in agent types and their role descriptions
 antcrew replay       Resume a pipeline from its last SqliteSaver checkpoint
 antcrew trace        Inspect a TraceLog SQLite file — list runs or show per-agent detail
+antcrew history      Aggregated cost and usage history across all runs
 antcrew project      Manage persistent project sessions
 antcrew eval         Run evaluation cases and score results
+antcrew benchmark    Run a batch of requests and compare results across teams/models
+antcrew watch        Watch a directory and auto-run the pipeline on changes
+antcrew diff         Compare two saved state files side by side
+antcrew test         Run generated tests from a saved state
+antcrew export       Export artifacts from a saved state to a directory
+antcrew graph        Render a pipeline flow as an ASCII graph or Mermaid diagram
+antcrew validate     Validate a saved state or config file
 antcrew serve        Start the REST API + web dashboard
 antcrew show         Display a previously saved state file
+antcrew extract      Extract specific artifacts from a saved state to disk
 antcrew init         Generate a starter agentteam.yaml + main.py
 antcrew flow         Validate and inspect flow config files
+antcrew publish      Push artifacts to GitHub (PR), Confluence, or export to a directory
 ```
 
 ### `antcrew setup`
@@ -718,6 +795,66 @@ print(summary["by_agent"])            # list of per-agent dicts
 
 ---
 
+## Agent Presets
+
+Tune agent behaviour without touching prompts:
+
+```python
+from antcrew import DevTeam, CONCISE, STRICT, VERBOSE, CAREFUL
+from antcrew.presets import AgentPreset, get_preset
+
+team = DevTeam(model=llm, preset=CONCISE)    # shorter outputs, less explanation
+team = DevTeam(model=llm, preset=STRICT)     # stricter validation, more rejections
+team = DevTeam(model=llm, preset=VERBOSE)    # detailed reasoning, longer outputs
+team = DevTeam(model=llm, preset=CAREFUL)    # cautious, asks for confirmation
+
+# Or build your own
+my_preset = AgentPreset(
+    temperature=0.2,
+    max_tokens=2048,
+    extra_instructions="Always respond in Spanish.",
+)
+team = DevTeam(model=llm, preset=my_preset)
+```
+
+---
+
+## Agent Tools
+
+Give agents access to real-world capabilities:
+
+```python
+from antcrew import DevTeam
+from antcrew.core.tools import WebSearchTool, CodeExecutorTool, ReadFileTool, BaseTool, ToolResult
+
+team = DevTeam(
+    model=llm,
+    tools=[
+        WebSearchTool(),          # DuckDuckGo search (no API key)
+        CodeExecutorTool(),       # Execute Python snippets in a sandbox
+        ReadFileTool(allowed_dirs=["./src"]),  # Read files from allowed paths
+    ],
+)
+```
+
+Define custom tools:
+
+```python
+from antcrew.core.tools import BaseTool, ToolResult
+
+class DatabaseQueryTool(BaseTool):
+    name = "query_db"
+    description = "Run a read-only SQL query and return results as JSON."
+
+    def run(self, query: str) -> ToolResult:
+        rows = my_db.execute(query).fetchall()
+        return ToolResult(output=str(rows))
+
+team = DevTeam(model=llm, tools=[DatabaseQueryTool()])
+```
+
+---
+
 ## Retry + Resilience
 
 `BaseLLM` wraps every non-streaming call in exponential-backoff retry. Retries on timeouts, rate limits (HTTP 429), and transient server errors (5xx):
@@ -892,7 +1029,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The full suite uses `SimulatedLLM` — no API keys required. 803 tests, no live network calls.
+The full suite uses `SimulatedLLM` — no API keys required. ~1500 tests, no live network calls.
 
 ---
 
