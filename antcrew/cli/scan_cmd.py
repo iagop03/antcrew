@@ -26,6 +26,10 @@ def scan_cmd(
         None, "--output", "-o",
         help="Write JSON results to FILE instead of stdout (implies --json).",
     ),
+    since: Optional[int] = typer.Option(
+        None, "--since", "-s",
+        help="Only show files modified in the last N days (filters the tree display).",
+    ),
 ) -> None:
     """Preview what CodebaseScannerAgent sees in one or more project directories.
 
@@ -83,6 +87,21 @@ def scan_cmd(
         # ── File tree ──────────────────────────────────────────────────────────
         tree = _build_tree(root, _IGNORE_DIRS)
         lines = tree.splitlines()
+
+        # Filter by modification time when --since is given
+        if since is not None:
+            import time as _time
+            cutoff = _time.time() - since * 86400
+            filtered = []
+            for line in lines:
+                rel = line.strip().rstrip("/")
+                candidate = root / rel
+                try:
+                    if candidate.stat().st_mtime >= cutoff:
+                        filtered.append(line)
+                except OSError:
+                    filtered.append(line)
+            lines = filtered
         found_keys = [name for name in _KEY_FILES if (root / name).exists()]
 
         if not output_json and not no_tree:

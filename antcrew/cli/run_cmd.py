@@ -120,6 +120,12 @@ def run(
         help="Pre-computed scan JSON from 'antcrew scan --output'. Injects codebase_analysis "
              "into the initial state so CodebaseScannerAgent is skipped (saves cost).",
     ),
+    repo_index: Optional[Path] = typer.Option(
+        None, "--repo-index",
+        help="Build a RepoIndex from this directory and attach it to all agents "
+             "(fullstack team only). Enables semantic code search. "
+             "Requires: pip install antcrew[memory]",
+    ),
     repl: bool = typer.Option(
         False, "--repl",
         help="Interactive REPL mode — run the pipeline repeatedly in a loop.",
@@ -195,9 +201,22 @@ def run(
                             "[yellow]Note:[/] --context takes precedence; "
                             "--project-dir will not trigger a new scan."
                         )
+            _repo_path: "str | None" = None
+            if repo_index is not None:
+                if not repo_index.is_dir():
+                    console.print(f"[red]--repo-index is not a directory:[/] {repo_index}")
+                    raise typer.Exit(1)
+                if team not in ("fullstack", "full"):
+                    console.print(
+                        f"[yellow]Warning:[/] --repo-index is only used by the "
+                        f"[bold]fullstack[/] team. Current team [bold]{team}[/] will ignore it."
+                    )
+                else:
+                    _repo_path = str(repo_index.resolve())
             active_team = _build_team(
                 team, model, integrations=[], llm=_llm_ref,
                 project_dir=_pd, project_dirs=_pds, scan_context=_ctx,
+                repo_path=_repo_path,
             )
 
         # Resolve the request from file, argument, or interactive prompt.

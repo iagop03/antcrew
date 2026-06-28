@@ -741,6 +741,58 @@ antcrew write-back run.json --dry-run  # review
 antcrew write-back run.json --yes       # apply
 ```
 
+### Two-step workflow: scan once, run many times
+
+Scanning with an LLM is the most expensive part of a brownfield run. Save the result to a
+file and reuse it across multiple `run` calls:
+
+```bash
+# Step 1 — scan once and persist the analysis (one LLM call)
+antcrew scan ./src --model claude --output ctx.json
+
+# Step 2 — run as many times as you like (no re-scan, no scanner LLM call)
+antcrew run "Add billing module"  --team fullstack --context ctx.json
+antcrew run "Add email alerts"    --team fullstack --context ctx.json
+antcrew run "Migrate to Postgres" --team fullstack --context ctx.json
+```
+
+Preview the context that will be injected at run time:
+
+```bash
+antcrew describe --team fullstack --context ctx.json
+```
+
+Filter the file tree to recently modified files (useful for large repos):
+
+```bash
+antcrew scan ./src --since 7          # files touched in the last 7 days
+antcrew scan ./src --since 7 --model claude --output ctx.json
+```
+
+### Semantic code search with RepoIndex
+
+Attach a vector index of the codebase so agents can perform semantic search over
+the source tree during generation (requires `pip install antcrew[memory]`):
+
+```bash
+antcrew run "Refactor auth" --team fullstack --repo-index ./src
+```
+
+### LLM cost tracking
+
+Record spending across runs with `--trace` and inspect it later:
+
+```bash
+antcrew run "Add billing" --team fullstack --trace ~/.antcrew/trace.db
+
+# Summary: total spend, avg per run, per-team breakdown
+antcrew cost
+
+# Filter by team or date range
+antcrew cost --team fullstack --since 7
+antcrew cost --json | jq '.total_cost_usd'
+```
+
 ---
 
 ## Web Dashboard

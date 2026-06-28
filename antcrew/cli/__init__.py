@@ -32,6 +32,7 @@ from antcrew.cli import history_cmd    # noqa: F401
 from antcrew.cli import validate_cmd   # noqa: F401
 from antcrew.cli import writeback_cmd  # noqa: F401
 from antcrew.cli import scan_cmd       # noqa: F401
+from antcrew.cli import cost_cmd       # noqa: F401
 
 if __name__ == "__main__":
     app()

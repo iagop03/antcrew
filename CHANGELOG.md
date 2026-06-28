@@ -5,6 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.7] — 2026-06-28
+
+### Added
+- **`antcrew cost`** — new command; shows aggregate LLM spend from a TraceLog DB:
+  total runs, done/error counts, total cost, avg cost per run, token counts, and
+  a per-team breakdown table. Flags: `--team`, `--since DAYS`, `--json`.
+  Defaults to `~/.antcrew/trace.db` when no path is given.
+- **`antcrew scan --since DAYS`** — filter the file tree to only files modified in
+  the last N days. Useful for large repos: `antcrew scan ./src --since 7`
+- **`antcrew describe --context FILE`** — shows a "Pre-loaded context" panel with
+  the scan result that would be injected at run time (tech stack, what exists,
+  what's missing). Works for single and multi-component contexts.
+- **`antcrew run --repo-index PATH`** — build a `RepoIndex` from a directory and
+  attach it to all agents in the fullstack team for semantic code search.
+  Warns if used with a non-fullstack team; errors if the path doesn't exist.
+- **Python 3.14** added to PyPI classifiers.
+- **`.gitattributes`** — enforces LF line endings for all text files; eliminates
+  per-commit CRLF conversion warnings on Windows.
+- **README: brownfield subsections** — documented "scan once, run many times" with
+  `--context`, `antcrew scan --since`, `--repo-index`, and `antcrew cost`.
+- **+29 tests** across `test_cost_cmd.py` (11) and `test_new_flags.py` (18):
+  `antcrew cost` (JSON, filtering, no-DB, by-team), `scan --since` (hides old files,
+  shows new ones, key_files unaffected), `describe --context` (single + multi,
+  missing file, shows tech stack / missing panel), `run --write-back` CLI,
+  `run --repo-index` (bad path, wrong team, valid), `AsyncFullStackTeam.scan_context`
+  (3 tests inc. async `run()`).
+
+---
+
 ## [0.10.6] — 2026-06-28
 
 ### Added

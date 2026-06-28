@@ -108,6 +108,11 @@ def describe(
     config: Optional[Path] = typer.Option(None, "--config", "-c", help="Path to agentteam.yaml"),
     team: str = typer.Option("dev", "--team", "-t", help=f"Team preset: {_TEAM_CHOICES}"),
     trace: Optional[Path] = typer.Option(None, "--trace", help="TraceLog DB to show historical average cost"),
+    context: Optional[Path] = typer.Option(
+        None, "--context",
+        help="Pre-computed scan JSON (from 'antcrew scan --output'). "
+             "Shows what codebase context would be injected at run time.",
+    ),
 ) -> None:
     """Show pipeline agents, data flow (consumes/produces), and coherence check.
 
@@ -115,6 +120,7 @@ def describe(
     Examples:
         antcrew describe --team dev
         antcrew describe --config agentteam.yaml
+        antcrew describe --team fullstack --context ctx.json
     """
     import json as _json
 
@@ -244,6 +250,31 @@ def describe(
         )
     else:
         console.print("[bold green]Coherencia:[/] OK\n")
+
+    # ── Pre-loaded scan context preview (optional) ────────────────────────────
+    if context is not None:
+        if not context.exists():
+            console.print(f"[red]Context file not found:[/] {context}")
+        else:
+            import json as _ctx_json
+            from rich.table import Table as _RTable
+            ctx_data = _ctx_json.loads(context.read_text(encoding="utf-8"))
+            components = ctx_data.get("components") or [ctx_data]
+            ctx_tbl = _RTable(show_header=False, box=None, padding=(0, 2))
+            ctx_tbl.add_column("Field", style="dim", no_wrap=True)
+            ctx_tbl.add_column("Value", style="white")
+            for comp in components:
+                label = comp.get("label", "—")
+                tech = ", ".join(comp.get("tech_stack") or []) or "—"
+                exists = comp.get("what_exists") or "—"
+                missing = comp.get("what_is_missing") or "—"
+                ctx_tbl.add_row(f"[{label}] tech_stack",    tech)
+                ctx_tbl.add_row(f"[{label}] what_exists",   exists)
+                ctx_tbl.add_row(f"[{label}] what_is_missing", missing)
+            from rich.panel import Panel as _Panel
+            console.print(_Panel(ctx_tbl, title=f"Pre-loaded context ({context.name})",
+                                 border_style="magenta"))
+            console.print()
 
     # ── Historical cost from TraceLog (optional) ──────────────────────────────
     trace_path = trace or Path.home() / ".antcrew" / "trace.db"
