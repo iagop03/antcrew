@@ -222,6 +222,8 @@ antcrew extract      Extract specific artifacts from a saved state to disk
 antcrew init         Generate a starter agentteam.yaml + main.py
 antcrew flow         Validate and inspect flow config files
 antcrew publish      Push artifacts to GitHub (PR), Confluence, or export to a directory
+antcrew write-back   Apply generated artifacts back to project files (brownfield)
+antcrew scan         Preview what CodebaseScannerAgent sees in a directory (no LLM needed)
 ```
 
 ### `antcrew setup`
@@ -696,6 +698,33 @@ antcrew run "Add rate limiting" --team fullstack \
 
 Point the scanner at your repo so agents understand what already exists:
 
+```bash
+# Preview what the scanner sees (no LLM, no API key)
+antcrew scan ./src
+antcrew scan backend:./src frontend:./client infra:./terraform
+
+# Run with full LLM analysis
+antcrew scan ./src --model claude
+```
+
+Pass directories to the pipeline directly from CLI (no YAML needed):
+
+```bash
+# Single directory
+antcrew run "Add rate limiting" --team fullstack --project-dir ./src
+
+# Multiple components
+antcrew run "Migrate auth to OAuth2" --team fullstack \
+  --project-dir backend:./src \
+  --project-dir frontend:./client \
+  --save run.json
+
+antcrew write-back run.json --dry-run   # auto-detects root from project_dirs
+antcrew write-back run.json --yes        # apply
+```
+
+Or via YAML for repeatable workflows:
+
 ```yaml
 # agentteam.yaml
 team: fullstack
@@ -708,8 +737,8 @@ project_dirs:
 
 ```bash
 antcrew run "Migrate auth from JWT to OAuth2" --config agentteam.yaml --save run.json
-antcrew write-back run.json --project-root . --dry-run  # review
-antcrew write-back run.json --project-root . --yes       # apply
+antcrew write-back run.json --dry-run  # review
+antcrew write-back run.json --yes       # apply
 ```
 
 ---

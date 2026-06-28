@@ -1,0 +1,122 @@
+"""antcrew scan — preview what CodebaseScannerAgent would see in a project directory."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+import typer
+
+from antcrew.cli._app import app, console, _MODEL_HELP
+
+
+@app.command(name="scan")
+def scan_cmd(
+    paths: list[str] = typer.Argument(
+        ...,
+        help="Directories to scan. Use 'label:path' for named components "
+             "(e.g. backend:./src frontend:./client).",
+    ),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m",
+        help=f"Run LLM analysis after scanning. {_MODEL_HELP}. Omit to show file tree only.",
+    ),
+    no_tree: bool = typer.Option(False, "--no-tree", help="Skip the file tree display."),
+) -> None:
+    """Preview what CodebaseScannerAgent sees in one or more project directories.
+
+    Without --model, shows the file tree and key files that would be sent to the LLM.
+    With --model, also runs the LLM analysis and shows the full CodebaseAnalysis.
+
+    \b
+    Examples:
+        # File tree only — no LLM, no API key needed
+        antcrew scan ./src
+
+        # Named components
+        antcrew scan backend:./src frontend:./client
+
+        # Full analysis with LLM
+        antcrew scan ./src --model claude
+
+        # Local model, no API key
+        antcrew scan ./src --model ollama:llama3
+    """
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from antcrew.agents.codebase_scanner import (
+        _IGNORE_DIRS, _KEY_FILES, _MAX_TREE_LINES,
+        _build_tree,
+    )
+
+    # Parse "label:path" or bare "path" entries
+    dirs: dict[str, Path] = {}
+    for entry in paths:
+        if ":" in entry:
+            label, _, path_str = entry.partition(":")
+            dirs[label.strip()] = Path(path_str.strip()).expanduser().resolve()
+        else:
+            p = Path(entry).expanduser().resolve()
+            dirs[p.name] = p
+
+    bad = [f"{label}:{path}" for label, path in dirs.items() if not path.is_dir()]
+    if bad:
+        console.print(f"[red]Not a directory:[/] {', '.join(bad)}")
+        raise typer.Exit(1)
+
+    for label, root in dirs.items():
+        console.print(f"\n[bold cyan]{label}[/bold cyan]  [dim]{root}[/dim]\n")
+
+        # ── File tree ──────────────────────────────────────────────────────────
+        if not no_tree:
+            tree = _build_tree(root, _IGNORE_DIRS)
+            lines = tree.splitlines()
+            truncated = len(lines) >= _MAX_TREE_LINES
+            display = "\n".join(lines[:50])  # show first 50 lines
+            if truncated or len(lines) > 50:
+                display += f"\n[dim]… ({len(lines)} total lines)[/dim]"
+            console.print(Panel(display, title="File tree", border_style="dim", expand=False))
+
+        # ── Key files found ────────────────────────────────────────────────────
+        found_keys = [name for name in _KEY_FILES if (root / name).exists()]
+        if found_keys:
+            console.print(f"[dim]Key files:[/dim] {', '.join(found_keys)}")
+        else:
+            console.print("[dim]No key files detected (README, package.json, pyproject.toml, …)[/dim]")
+
+        # ── LLM analysis (optional) ────────────────────────────────────────────
+        if model:
+            from antcrew.config import build_llm
+            from antcrew.agents.codebase_scanner import _scan_one, CodebaseScannerAgent
+
+            console.print(f"\n[dim]Running LLM analysis with {model}…[/dim]")
+            llm = build_llm(model)
+            agent = CodebaseScannerAgent(llm=llm)
+            analysis = _scan_one(agent, label, str(root))
+
+            if analysis is None:
+                console.print("[red]Analysis failed.[/red]")
+                continue
+
+            tbl = Table(show_header=False, box=None, padding=(0, 2))
+            tbl.add_column("Field", style="dim", no_wrap=True)
+            tbl.add_column("Value")
+
+            if analysis.tech_stack:
+                tbl.add_row("Tech stack", ", ".join(analysis.tech_stack))
+            if analysis.existing_modules:
+                tbl.add_row("Modules", ", ".join(analysis.existing_modules[:8]))
+            if analysis.entry_points:
+                tbl.add_row("Entry points", ", ".join(analysis.entry_points[:5]))
+            if analysis.test_coverage_summary:
+                tbl.add_row("Tests", analysis.test_coverage_summary)
+            if analysis.what_exists:
+                tbl.add_row("What exists", analysis.what_exists)
+            if analysis.what_is_missing:
+                tbl.add_row("What's missing", analysis.what_is_missing)
+            if analysis.continuation_context:
+                tbl.add_row("Context", analysis.continuation_context)
+
+            console.print(tbl)
+
+    console.print()

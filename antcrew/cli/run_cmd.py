@@ -13,6 +13,34 @@ from antcrew.cli._run_helpers import (
     _print_dry_run, _run_with_stream, _save_outputs_to_dir, _run_repl,
 )
 
+
+def _parse_project_dirs(
+    flags: list[str] | None,
+) -> tuple[str | None, dict[str, str] | None]:
+    """Parse --project-dir flags into (project_dir, project_dirs).
+
+    Each flag is either a bare path ("./src") or "label:path" ("backend:./src").
+    Single entry → project_dir (str) for backward compat.
+    Multiple entries → project_dirs (dict).
+    """
+    if not flags:
+        return None, None
+    pairs: dict[str, str] = {}
+    for entry in flags:
+        colon = entry.find(":")
+        # "label:path" only when colon exists and label is ≥2 chars (avoids C:\ on Windows)
+        if colon > 1:
+            label = entry[:colon].strip()
+            path = entry[colon + 1:].strip()
+            pairs[label] = path
+        else:
+            pairs[Path(entry).name] = entry
+    if len(pairs) == 1:
+        only_path = next(iter(pairs.values()))
+        return only_path, None
+    return None, pairs
+
+
 @app.command()
 def run(
     request: Optional[str] = typer.Argument(
@@ -81,9 +109,11 @@ def run(
         False, "--write-back-yes",
         help="With --write-back: overwrite existing files without confirmation.",
     ),
-    project_dir: Optional[str] = typer.Option(
+    project_dir: Optional[list[str]] = typer.Option(
         None, "--project-dir",
-        help="Existing project directory for CodebaseScannerAgent context (fullstack team).",
+        help="Existing project directory for CodebaseScannerAgent (fullstack team). "
+             "Repeat for multiple components: --project-dir backend:./src --project-dir frontend:./client. "
+             "Without a label prefix the directory name is used as the label.",
     ),
     repl: bool = typer.Option(
         False, "--repl",
@@ -135,9 +165,10 @@ def run(
         else:
             from antcrew.config import build_llm
             _llm_ref = build_llm(model)
+            _pd, _pds = _parse_project_dirs(project_dir)
             active_team = _build_team(
                 team, model, integrations=[], llm=_llm_ref,
-                project_dir=project_dir,
+                project_dir=_pd, project_dirs=_pds,
             )
 
         # Resolve the request from file, argument, or interactive prompt.

@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.10.1] — 2026-06-28
+
+### Added
+- **`antcrew scan PATH [PATH…]`** — preview what `CodebaseScannerAgent` would see
+  before running the full pipeline; shows file tree and detected key files without
+  any LLM call; `--model` runs the full LLM analysis; `--no-tree` skips the tree.
+  Supports `label:path` syntax for named components:
+  `antcrew scan backend:./src frontend:./client`
+- **Multi-directory `--project-dir`** on `antcrew run` — repeat the flag for each
+  component: `antcrew run "..." --team fullstack --project-dir backend:./src --project-dir frontend:./client`
+  Single entry → `project_dir`; multiple → `project_dirs` (used by `CodebaseScannerAgent`)
+
+### Fixed
+- `_parse_project_dirs` now correctly handles Windows absolute paths (`C:\…`)
+  by treating single-character prefixes before `:` as drive letters, not labels
+
+---
+
 ## [0.10.0] — 2026-06-28
 
 ### Added
