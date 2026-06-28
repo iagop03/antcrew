@@ -96,7 +96,7 @@ def trace_cmd(
         )
 
     console.print(tbl)
-    console.print(f"\n[dim]Use --run <id> or --thread <id> to inspect agent calls.[/dim]")
+    console.print("\n[dim]Use --run <id> or --thread <id> to inspect agent calls.[/dim]")
 
 
 def _print_trace_detail(run: dict, calls: list[dict]) -> None:

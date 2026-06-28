@@ -283,7 +283,7 @@ def watch_cmd(
             f"[dim]{watch_path.name}[/dim]\n"
         )
         try:
-            team_inst = _build_team()
+            team_inst = _make_team()
             with console.status(f"Running {team}…"):
                 result = team_inst.run(req, thread_id=f"watch-{run_n}")
             state = dict(result.state)
