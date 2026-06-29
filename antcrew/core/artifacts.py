@@ -253,6 +253,38 @@ ARTIFACT_REGISTRY: dict[str, type[BaseModel]] = {
 }
 
 
+def coerce_model(raw, cls: type[T]) -> T:
+    """Return *raw* as an instance of *cls*, coercing from dict if necessary.
+
+    Handles three forms:
+    - Already an instance of *cls* → returned as-is.
+    - A ``dict`` → ``cls(**raw)``.
+    - Anything else → ``ValueError``.
+    """
+    if isinstance(raw, cls):
+        return raw
+    if isinstance(raw, dict):
+        return cls(**raw)
+    raise ValueError(f"Cannot coerce {type(raw).__name__} to {cls.__name__}")
+
+
+def coerce_list(state: dict, key: str, cls: type[T]) -> list[T]:
+    """Return ``state[key]`` as a list of *cls* instances.
+
+    Each element is coerced via :func:`coerce_model`; elements that are
+    already *cls* instances pass through unchanged. Missing or ``None`` key
+    returns an empty list.
+    """
+    raw_list = state.get(key) or []
+    out: list[T] = []
+    for item in raw_list:
+        try:
+            out.append(coerce_model(item, cls))
+        except (ValueError, TypeError):
+            out.append(item)  # leave broken items in place; don't silently drop
+    return out
+
+
 def resolve_artifact_schema(name: str) -> type[BaseModel]:
     """Resolve a schema name to a Pydantic model class.
 

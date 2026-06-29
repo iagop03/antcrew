@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
-from antcrew.core.artifacts import CodeArtifact
+from antcrew.core.artifacts import CodeArtifact, Ticket, coerce_list
 from antcrew.core.state import TeamState
 
 _PLAN_SYSTEM = """\
@@ -101,7 +101,7 @@ class FrontendDevAgent(BaseAgent):
     produces: list[str] = ["code_artifacts"]
 
     def run(self, state: TeamState) -> dict:
-        tickets = state.get("tickets") or []
+        tickets = coerce_list(state, "tickets", Ticket)
 
         if not tickets:
             return {
@@ -143,7 +143,7 @@ class FrontendDevAgent(BaseAgent):
                     )
 
         # Accumulate — keep backend artifacts already in state for this and past sprints.
-        existing = state.get("code_artifacts") or []
+        existing = coerce_list(state, "code_artifacts", CodeArtifact)
         return {
             "code_artifacts": existing + new_artifacts,
             "current_agent": self.name,

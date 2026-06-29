@@ -200,3 +200,157 @@ def test_exported_from_antcrew():
     assert hasattr(antcrew, "AsyncFullStackTeam")
     assert hasattr(antcrew, "AsyncResearchTeam")
     assert hasattr(antcrew, "AsyncContentTeam")
+
+
+# ===========================================================================
+# AsyncCustomTeam
+# ===========================================================================
+
+from antcrew.teams.async_teams import AsyncCustomTeam, AsyncFeatureTeam, AsyncRouter
+
+
+def test_async_custom_team_init():
+    team = AsyncCustomTeam(
+        steps=[{"name": "gen", "system_prompt": "Do it.", "output_key": "out"}],
+        llm=SimulatedLLM(),
+    )
+    assert team is not None
+
+
+def test_async_custom_team_run_sync():
+    team = AsyncCustomTeam(
+        steps=[{"name": "gen", "system_prompt": "Do it.", "output_key": "out"}],
+        llm=SimulatedLLM(),
+    )
+    result = team.run_sync("task")
+    assert isinstance(result, RunResult)
+    assert "out" in result.state
+
+
+@pytest.mark.asyncio
+async def test_async_custom_team_run_async():
+    team = AsyncCustomTeam(
+        steps=[{"name": "gen", "system_prompt": "Do it.", "output_key": "out"}],
+        llm=SimulatedLLM(),
+    )
+    result = await team.run("task")
+    assert isinstance(result, RunResult)
+    assert "out" in result.state
+
+
+def test_async_custom_team_request_preserved():
+    team = AsyncCustomTeam(
+        steps=[{"name": "a", "system_prompt": "Say hi.", "output_key": "reply"}],
+        llm=SimulatedLLM(),
+    )
+    result = team.run_sync("my request")
+    assert result.state["request"] == "my request"
+
+
+def test_async_custom_team_exported():
+    import antcrew
+    assert hasattr(antcrew, "AsyncCustomTeam")
+
+
+# ===========================================================================
+# AsyncFeatureTeam
+# ===========================================================================
+
+def test_async_feature_team_init():
+    team = AsyncFeatureTeam(llm=SimulatedLLM())
+    assert team is not None
+
+
+def test_async_feature_team_run_sync():
+    team = AsyncFeatureTeam(llm=SimulatedLLM())
+    result = team.run_sync("Add a function")
+    assert isinstance(result, RunResult)
+    assert "feature_output" in result.state
+
+
+@pytest.mark.asyncio
+async def test_async_feature_team_run_async():
+    team = AsyncFeatureTeam(llm=SimulatedLLM())
+    result = await team.run("Add a function")
+    assert isinstance(result, RunResult)
+
+
+def test_async_feature_team_exported():
+    import antcrew
+    assert hasattr(antcrew, "AsyncFeatureTeam")
+
+
+# ===========================================================================
+# AsyncRouter
+# ===========================================================================
+
+from unittest.mock import MagicMock
+from antcrew.core.router import RuleClassifier
+
+
+def _make_async_router():
+    handler = MagicMock()
+    handler.run.return_value = RunResult(state={"request": "r", "out": "x"})
+    return AsyncRouter(
+        classifier=RuleClassifier([], default="h"),
+        routes={"h": handler},
+        default="h",
+    ), handler
+
+
+def test_async_router_init():
+    team, _ = _make_async_router()
+    assert team is not None
+
+
+def test_async_router_run_sync():
+    team, _ = _make_async_router()
+    result = team.run_sync("task")
+    assert isinstance(result, RunResult)
+    assert result.state["_route"] == "h"
+
+
+@pytest.mark.asyncio
+async def test_async_router_run_async():
+    team, _ = _make_async_router()
+    result = await team.run("task")
+    assert isinstance(result, RunResult)
+    assert "_route" in result.state
+
+
+def test_async_router_exported():
+    import antcrew
+    assert hasattr(antcrew, "AsyncRouter")
+
+
+# ===========================================================================
+# SequencedLLM
+# ===========================================================================
+
+from antcrew.testing import SequencedLLM
+
+
+def test_sequenced_llm_returns_in_order():
+    llm = SequencedLLM(["first", "second", "third"])
+    assert llm.system("s", "u") == "first"
+    assert llm.system("s", "u") == "second"
+    assert llm.system("s", "u") == "third"
+
+
+def test_sequenced_llm_call_count():
+    llm = SequencedLLM(["a", "b"])
+    llm.system("s", "u")
+    llm.system("s", "u")
+    assert llm.call_count == 2
+
+
+def test_sequenced_llm_exhaustion():
+    llm = SequencedLLM(["only"])
+    llm.system("s", "u")
+    with pytest.raises(StopIteration):
+        llm.system("s", "u")
+
+
+def test_sequenced_llm_exported():
+    from antcrew import SequencedLLM as SL
+    assert SL is SequencedLLM

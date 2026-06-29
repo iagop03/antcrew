@@ -85,3 +85,101 @@ class AsyncContentTeam(AsyncTeamMixin, ContentTeam):
 
     Identical constructor and configuration; adds ``async def run()``.
     """
+
+
+# ---------------------------------------------------------------------------
+# Async wrappers for newer team types
+# ---------------------------------------------------------------------------
+
+class AsyncCustomTeam(AsyncTeamMixin):
+    """Async version of :class:`~antcrew.teams.custom_team.CustomTeam`.
+
+    Because CustomTeam does not inherit DevTeam, this class cannot use the
+    standard mixin pattern (which relies on ``super().run()``).  Instead it
+    wraps CustomTeam directly.
+
+    Args:
+        *args, **kwargs: Forwarded to :class:`~antcrew.teams.custom_team.CustomTeam`.
+
+    Usage::
+
+        from antcrew import AsyncCustomTeam
+        from antcrew.models.anthropic_model import AnthropicModel
+
+        team = AsyncCustomTeam(
+            steps=[...],
+            llm=AnthropicModel(),
+        )
+        result = await team.run("build it")
+    """
+
+    def __init__(self, *args, **kwargs):
+        from antcrew.teams.custom_team import CustomTeam
+        self._inner = CustomTeam(*args, **kwargs)
+
+    async def run(self, request: str, *, thread_id: str = "default"):  # type: ignore[override]
+        import asyncio
+        import functools
+        return await asyncio.to_thread(
+            functools.partial(self._inner.run, request, thread_id=thread_id)
+        )
+
+    def run_sync(self, request: str, *, thread_id: str = "default"):
+        return self._inner.run(request, thread_id=thread_id)
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner, name)
+
+
+class AsyncFeatureTeam(AsyncTeamMixin):
+    """Async version of :class:`~antcrew.agents.feature_agent.FeatureTeam`.
+
+    Args:
+        *args, **kwargs: Forwarded to :class:`~antcrew.agents.feature_agent.FeatureTeam`.
+
+    Usage::
+
+        team = AsyncFeatureTeam(llm=AnthropicModel(), project_dir="/app")
+        result = await team.run("add auth endpoint")
+    """
+
+    def __init__(self, *args, **kwargs):
+        from antcrew.agents.feature_agent import FeatureTeam
+        self._inner = FeatureTeam(*args, **kwargs)
+
+    async def run(self, request: str):  # type: ignore[override]
+        import asyncio
+        import functools
+        return await asyncio.to_thread(functools.partial(self._inner.run, request))
+
+    def run_sync(self, request: str):
+        return self._inner.run(request)
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner, name)
+
+
+class AsyncRouter(AsyncTeamMixin):
+    """Async version of :class:`~antcrew.core.router.Router`.
+
+    The classifier and each route handler may block on HTTP; this wrapper
+    offloads the entire dispatch to a thread so the event loop stays free.
+
+    Args:
+        *args, **kwargs: Forwarded to :class:`~antcrew.core.router.Router`.
+    """
+
+    def __init__(self, *args, **kwargs):
+        from antcrew.core.router import Router
+        self._inner = Router(*args, **kwargs)
+
+    async def run(self, request: str):  # type: ignore[override]
+        import asyncio
+        import functools
+        return await asyncio.to_thread(functools.partial(self._inner.run, request))
+
+    def run_sync(self, request: str):
+        return self._inner.run(request)
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner, name)

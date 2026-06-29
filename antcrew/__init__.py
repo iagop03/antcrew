@@ -4,6 +4,7 @@ from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.fullstack_team import FullStackTeam
 from antcrew.teams.async_teams import (
     AsyncDevTeam, AsyncFullStackTeam, AsyncResearchTeam, AsyncContentTeam,
+    AsyncCustomTeam, AsyncFeatureTeam, AsyncRouter,
 )
 from antcrew.core.supervisor import Supervisor, ParallelGroup, parallel
 from antcrew.core.tools import (
@@ -11,7 +12,9 @@ from antcrew.core.tools import (
     WebSearchTool, CodeExecutorTool, ReadFileTool, WriteFileTool, ListDirTool,
 )
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
+from antcrew.agents.direct_agent import DirectAgent
 from antcrew.core.feedback import FeedbackRunner, FeedbackLoop, FeedbackResult
+from antcrew.core.router import Router, RouteClassifier, LLMClassifier, RuleClassifier
 from antcrew.core.pipeline import Pipeline
 from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import (
@@ -19,6 +22,7 @@ from antcrew.core.artifacts import (
     PRD, CodeArtifact, TestArtifact, CodeReview, ResearchDocument,
     ContentPiece, CodebaseAnalysis, Ticket,
     ArtifactContract, ContractError, ARTIFACT_REGISTRY, resolve_artifact_schema,
+    coerce_model, coerce_list,
 )
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
@@ -69,6 +73,11 @@ from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResu
 from antcrew.presets import AgentPreset, get_preset, CONCISE, STRICT, VERBOSE, CAREFUL
 from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
 from antcrew.teams.custom_team import CustomTeam
+from antcrew.core.operators import (
+    BaseOperator, RenameOp, CopyOp, DropOp, SetOp, MapOp, MergeOp, build_operator,
+)
+from antcrew.core.validation import validate_agent_dag
+from antcrew.testing import SequencedLLM
 
 __all__ = [
     # Teams
@@ -82,6 +91,9 @@ __all__ = [
     "AsyncFullStackTeam",
     "AsyncResearchTeam",
     "AsyncContentTeam",
+    "AsyncCustomTeam",
+    "AsyncFeatureTeam",
+    "AsyncRouter",
     # Core
     "Supervisor",
     "ParallelGroup",
@@ -105,6 +117,12 @@ __all__ = [
     "SprintPlannerAgent",
     "FeatureAgent",
     "FeatureTeam",
+    "DirectAgent",
+    # Router
+    "Router",
+    "RouteClassifier",
+    "LLMClassifier",
+    "RuleClassifier",
     # Feedback loop
     "FeedbackRunner",
     "FeedbackLoop",
@@ -122,6 +140,8 @@ __all__ = [
     "ContractError",
     "ARTIFACT_REGISTRY",
     "resolve_artifact_schema",
+    "coerce_model",
+    "coerce_list",
     # Models
     "SimulatedLLM",
     "GeminiModel",
@@ -196,5 +216,18 @@ __all__ = [
     "TemplateAgent",
     "load_template_agent",
     "register_transform",
+    # Operators
+    "BaseOperator",
+    "RenameOp",
+    "CopyOp",
+    "DropOp",
+    "SetOp",
+    "MapOp",
+    "MergeOp",
+    "build_operator",
+    # Validation
+    "validate_agent_dag",
+    # Testing
+    "SequencedLLM",
 ]
-__version__ = "0.11.11"
+__version__ = "0.12.0"

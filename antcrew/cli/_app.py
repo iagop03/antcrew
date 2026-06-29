@@ -27,5 +27,5 @@ _project_app = typer.Typer(
 )
 app.add_typer(_project_app)
 
-_TEAM_CHOICES = ("dev", "fullstack", "research", "content")
+_TEAM_CHOICES = ("dev", "fullstack", "research", "content", "custom", "feature", "auto", "routed", "direct")
 _MODEL_HELP = "Model to use: claude (default), gpt-4o, ollama:<name>, groq:<name>, simulated"

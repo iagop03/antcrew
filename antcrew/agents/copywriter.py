@@ -1,7 +1,11 @@
 ﻿from __future__ import annotations
 
 from antcrew.core.agent import BaseAgent
+from antcrew.core.artifacts import ArtifactContract, ContractError, ContentPiece, ResearchDocument
 from antcrew.core.state import TeamState
+
+_PIECE_CONTRACT: ArtifactContract[ContentPiece] = ArtifactContract("content_piece", ContentPiece)
+_DOC_CONTRACT: ArtifactContract[ResearchDocument] = ArtifactContract("research_document", ResearchDocument)
 
 _SYSTEM = """\
 You are a professional Copywriter. Given a content brief (title, audience, tone, outline),
@@ -44,12 +48,17 @@ class CopywriterAgent(BaseAgent):
     produces: list[str] = ["content_piece"]
 
     def run(self, state: TeamState) -> dict:
-        piece = state.get("content_piece")
+        try:
+            piece = _PIECE_CONTRACT.extract(state)
+        except ContractError:
+            piece = None
         if piece is None:
             # Fallback: build a minimal brief from a research document (ResearchTeam pipeline)
-            doc = state.get("research_document")
+            try:
+                doc = _DOC_CONTRACT.extract(state)
+            except ContractError:
+                doc = None
             if doc:
-                from antcrew.core.artifacts import ContentPiece
                 piece = ContentPiece(
                     title=doc.title,
                     target_audience="researchers and practitioners",

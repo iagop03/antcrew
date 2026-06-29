@@ -131,26 +131,12 @@ def _build_channel(cfg: dict):
 # Public API
 # ---------------------------------------------------------------------------
 
-def load(path: str | Path):
-    """Parse a team config file (.yaml or .json) and return a configured team.
+def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
+    """Build a team from an already-parsed config dict.
 
-    Returns one of: DevTeam | FullStackTeam | ResearchTeam | ContentTeam
-
-    JSON is supported natively (no extra dependencies).
-    YAML requires PyYAML (``pip install pyyaml``).
+    Internal helper — use :func:`load` for file-based configs.
+    Also used recursively by ``team: auto`` and ``team: routed``.
     """
-    path = Path(path)
-    raw = path.read_text(encoding="utf-8")
-    if path.suffix.lower() == ".json":
-        cfg: dict = _expand_env(_json.loads(raw))
-    else:
-        if not _HAS_YAML:
-            raise ImportError(
-                "PyYAML is required to load YAML files. "
-                "Install it: pip install pyyaml"
-            )
-        cfg: dict = _expand_env(_yaml.safe_load(raw))
-
     team_type = cfg.get("team", "dev").lower()
     prompt_caching = bool(cfg.get("prompt_caching", False))
     default_llm = build_llm(cfg.get("model", "claude"), prompt_caching=prompt_caching)
@@ -242,13 +228,73 @@ def load(path: str | Path):
                 "Each step must have at least 'name' and 'system_prompt'."
             )
         team_vars = cfg.get("vars") or {}
+        validate_dag = bool(cfg.get("validate_dag", False))
         from antcrew.teams.custom_team import CustomTeam
         return CustomTeam(
             list(steps), default_llm,
             vars=team_vars,
-            base_dir=path.parent,
+            base_dir=base_dir,
             max_cost_usd=max_cost_usd,
+            validate_dag=validate_dag,
         )
+
+    if team_type == "auto":
+        from antcrew.core.router import Router, LLMClassifier
+        from antcrew.agents.direct_agent import DirectAgent
+        simple_prompt = str(cfg.get("simple_prompt") or "You are a helpful assistant. Answer concisely.")
+        complex_type = str(cfg.get("complex_team", "dev"))
+        route_descriptions: dict = cfg.get("route_descriptions") or {
+            "simple":  "Factual question, short explanation, or quick lookup — no code needed",
+            "complex": "Software development task, code generation, architecture, or multi-step work",
+        }
+        clf_model_raw = cfg.get("classifier_model")
+        classifier_llm = build_llm(str(clf_model_raw), prompt_caching=prompt_caching) if clf_model_raw else default_llm
+        classifier = LLMClassifier(classifier_llm, route_descriptions)
+        complex_team = _build_team_cfg({**cfg, "team": complex_type}, base_dir)
+        return Router(
+            classifier=classifier,
+            routes={
+                "simple":  DirectAgent(default_llm, system_prompt=simple_prompt),
+                "complex": complex_team,
+            },
+            default="complex",
+        )
+
+    if team_type == "routed":
+        from antcrew.core.router import Router, LLMClassifier, RuleClassifier
+        from antcrew.agents.direct_agent import DirectAgent
+        routes_cfg: dict = cfg.get("routes") or {}
+        if not routes_cfg:
+            raise ValueError("'team: routed' requires a non-empty 'routes:' block.")
+        default_route = str(cfg.get("default_route", next(reversed(routes_cfg))))
+        classifier_type = str(cfg.get("classifier", "llm")).lower()
+        clf_model_raw = cfg.get("classifier_model")
+        classifier_base_llm = build_llm(str(clf_model_raw), prompt_caching=prompt_caching) if clf_model_raw else default_llm
+
+        if classifier_type == "rule":
+            rules_raw = cfg.get("rules") or []
+            classifier = RuleClassifier(
+                [(str(r["pattern"]), str(r["label"])) for r in rules_raw],
+                default=default_route,
+            )
+        else:
+            route_descriptions = {
+                name: str(rcfg.get("description", name))
+                for name, rcfg in routes_cfg.items()
+            }
+            classifier = LLMClassifier(classifier_base_llm, route_descriptions, default=default_route)
+
+        built_routes: dict = {}
+        for name, rcfg in routes_cfg.items():
+            rtype = str(rcfg.get("team", "direct")).lower()
+            if rtype == "direct":
+                sys_p = rcfg.get("system_prompt") or "You are a helpful assistant."
+                built_routes[name] = DirectAgent(default_llm, system_prompt=sys_p)
+            else:
+                merged = {**cfg, "team": rtype, **{k: v for k, v in rcfg.items() if k != "team"}}
+                built_routes[name] = _build_team_cfg(merged, base_dir)
+
+        return Router(classifier=classifier, routes=built_routes, default=default_route)
 
     if team_type == "feature":
         from antcrew.agents.feature_agent import FeatureTeam
@@ -273,6 +319,29 @@ def load(path: str | Path):
     raise ValueError(
         f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content, custom, feature."
     )
+
+
+def load(path: str | Path):
+    """Parse a team config file (.yaml or .json) and return a configured team.
+
+    Returns one of: DevTeam | FullStackTeam | ResearchTeam | ContentTeam |
+    CustomTeam | FeatureTeam | Router | …
+
+    JSON is supported natively (no extra dependencies).
+    YAML requires PyYAML (``pip install pyyaml``).
+    """
+    path = Path(path)
+    raw = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        cfg: dict = _expand_env(_json.loads(raw))
+    else:
+        if not _HAS_YAML:
+            raise ImportError(
+                "PyYAML is required to load YAML files. "
+                "Install it: pip install pyyaml"
+            )
+        cfg: dict = _expand_env(_yaml.safe_load(raw))
+    return _build_team_cfg(cfg, base_dir=path.parent)
 
 
 def build_runner(cfg: dict):

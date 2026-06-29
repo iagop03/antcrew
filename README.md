@@ -66,16 +66,24 @@ print(result.cost_usd)               # e.g. 0.43
 
 ## Teams
 
-| Team | Agents | Best for |
+| Team | Agents / mode | Best for |
 |---|---|---|
 | `DevTeam` | BA → PM → BackendDev | Backend features, APIs |
 | `FullStackTeam` | BA → PM → Backend → Frontend → QA → Reviewer → DevOps → DocWriter | Full-stack MVPs |
 | `ResearchTeam` | Researcher → Writer | Technical research, blog posts |
 | `ContentTeam` | Idea → Copywriter → Editor | Marketing content, docs |
-| `CustomTeam` | User-defined steps | Fully custom pipelines |
+| `FeatureTeam` | Single-feature pipeline (spec → code) | Isolated, fast feature delivery |
+| `CustomTeam` | User-defined steps (code or YAML) | Fully custom pipelines |
+| `Router` | Classifier → dispatches to any team/agent | Smart routing: simple vs. complex |
+| `DirectAgent` | Single LLM call | Q&A, summaries, lightweight tasks |
 
 ```python
-from antcrew import DevTeam, FullStackTeam, ResearchTeam, ContentTeam, CustomTeam
+from antcrew import (
+    DevTeam, FullStackTeam, ResearchTeam, ContentTeam,
+    FeatureTeam, CustomTeam,
+    Router, DirectAgent,
+    LLMClassifier, RuleClassifier,
+)
 ```
 
 ### Custom teams
@@ -127,6 +135,315 @@ system_prompt: |
   You are a security expert. Review the code for OWASP Top 10 vulnerabilities.
   Return a JSON object with keys: severity (critical|high|medium|low), findings (list), verdict (pass|fail).
 post_process: extract_json
+```
+
+### FeatureTeam + FeedbackLoop
+
+Lightweight pipeline for a single, isolated feature — specification, implementation, and review in one step. Faster and cheaper than the full `DevTeam` when you don't need the BA/PM planning cycle.
+
+```python
+from antcrew import FeatureTeam
+from antcrew.models import AnthropicModel
+
+team = FeatureTeam(llm=AnthropicModel())
+result = team.run("Add a /health endpoint to the FastAPI app")
+
+print(result["feature_output"])   # implementation + brief explanation
+```
+
+**With FeedbackLoop** — execute-validate-retry until tests pass or the round budget runs out:
+
+```python
+from antcrew import FeatureTeam
+from antcrew.models import AnthropicModel
+
+team = FeatureTeam(
+    llm=AnthropicModel(),
+    project_dir="./src",
+    max_feedback_rounds=3,
+    validate_cmd=["pytest", "-x", "--tb=short"],
+)
+result = team.run("Add JWT authentication")
+print(result.state["feedback_ok"])            # True if validation passed
+print(result.state["feedback_rounds_used"])   # 1, 2, or 3
+```
+
+The loop: runs the agent → executes the validate command → feeds error output back into the agent's context → repeats until the command exits 0 or `max_feedback_rounds` is exhausted.
+
+Use `FeedbackLoop` directly with any callable that accepts and returns a state dict:
+
+```python
+from antcrew.core.feedback import FeedbackRunner, FeedbackLoop
+from antcrew.agents.feature_agent import FeatureAgent
+
+runner = FeedbackRunner(["pytest", "-x", "--tb=short"], work_dir="./src")
+loop   = FeedbackLoop(runner=runner, max_rounds=3)
+agent  = FeatureAgent(AnthropicModel(), project_dir="./src")
+
+final_state = loop.run(agent.run, {"request": "Add JWT auth"})
+```
+
+Via YAML:
+
+```yaml
+team: feature
+model: claude
+project_dir: ./src
+feedback_rounds: 3
+validate_cmd: ["pytest", "-x", "--tb=short"]
+```
+
+---
+
+### DirectAgent
+
+A single LLM call — no pipeline, no state graph. Perfect for Q&A, summarization, and any task that does not need multi-agent collaboration.
+
+```python
+from antcrew import DirectAgent
+from antcrew.models import AnthropicModel
+
+agent = DirectAgent(
+    AnthropicModel(),
+    system_prompt="You are a concise technical assistant.",
+    output_key="answer",
+)
+result = agent.run("What is the difference between JWT and session tokens?")
+print(result.state["answer"])
+```
+
+`DirectAgent.run()` returns a `RunResult` — same interface as all teams, so it composes anywhere a team is expected.
+
+---
+
+### Router — auto-routing
+
+The `Router` classifies a request and dispatches it to the right team or agent. Avoids running a full multi-agent pipeline for simple requests that need only one LLM call.
+
+**LLM-based classifier:**
+
+```python
+from antcrew import Router, DirectAgent, DevTeam, LLMClassifier
+from antcrew.models import AnthropicModel
+
+llm = AnthropicModel()
+router = Router(
+    classifier=LLMClassifier(llm, routes={
+        "simple":  "Factual question or short explanation — no code generation needed",
+        "complex": "Software development task, code generation, system design",
+    }),
+    routes={
+        "simple":  DirectAgent(llm, system_prompt="Answer concisely."),
+        "complex": DevTeam(model=llm),
+    },
+    default="complex",
+)
+
+result = router.run("What is JWT?")          # → simple, 1 LLM call
+result = router.run("Build JWT auth module") # → complex, full pipeline
+print(result.state["_route"])               # "simple" or "complex"
+```
+
+**Rule-based classifier (no LLM call, instant):**
+
+```python
+from antcrew import Router, RuleClassifier
+
+router = Router(
+    classifier=RuleClassifier(rules=[
+        (r"\b(what|who|when|where|why|how|explain|define)\b", "simple"),
+        (r"\b(build|create|implement|develop|generate|add)\b", "complex"),
+    ], default="complex"),
+    routes={"simple": DirectAgent(llm), "complex": DevTeam(model=llm)},
+    default="complex",
+)
+```
+
+**Use a cheaper model just for classification:**
+
+```python
+from antcrew.models import AnthropicModel, GroqModel
+
+clf_llm = GroqModel("llama3-8b-8192")   # fast + cheap
+main_llm = AnthropicModel()             # Claude for the actual work
+
+router = Router(
+    classifier=LLMClassifier(clf_llm, routes={...}),
+    routes={"simple": DirectAgent(main_llm), "complex": DevTeam(model=main_llm)},
+    default="complex",
+)
+```
+
+**Via YAML — `team: auto` (quick setup):**
+
+```yaml
+team: auto
+model: claude
+simple_prompt: "You are a helpful assistant. Answer concisely."
+complex_team: dev          # dev | fullstack | custom | feature
+classifier_model: groq:llama3-8b-8192   # optional — separate model for routing
+route_descriptions:
+  simple: "Factual questions, quick explanations, no code needed"
+  complex: "Code generation, software development, system design"
+```
+
+**Via YAML — `team: routed` (full control):**
+
+```yaml
+team: routed
+model: claude
+classifier: llm            # llm | rule
+classifier_model: groq:llama3-8b-8192
+default_route: complex
+routes:
+  simple:
+    team: direct
+    system_prompt: "Answer the question concisely."
+  complex:
+    team: dev
+```
+
+Rule-based routing (no LLM classification call):
+
+```yaml
+team: routed
+model: claude
+classifier: rule
+rules:
+  - ['\b(what|who|explain|define)\b', simple]
+  - ['\b(build|create|implement)\b', complex]
+default_route: complex
+routes:
+  simple:
+    team: direct
+  complex:
+    team: fullstack
+```
+
+---
+
+### Operators — pipeline state transforms
+
+Operators are lightweight, reusable state transforms that run as steps in a `CustomTeam` pipeline. They rename keys, copy values, drop unused fields, merge strings, and more — with no LLM call.
+
+```python
+from antcrew import RenameOp, CopyOp, DropOp, SetOp, MergeOp, MapOp, CustomTeam
+
+team = CustomTeam(
+    steps=[
+        agent_a,                          # produces "draft"
+        RenameOp("draft", "content"),     # rename "draft" → "content"
+        CopyOp("content", "backup"),      # copy "content" → "backup"
+        SetOp("status", "in_review"),     # inject constant
+        MergeOp(["title", "content"], "full_doc"),  # concatenate
+        agent_b,                          # reads "content"
+        DropOp("backup"),                 # remove temporary key
+    ],
+    llm=llm,
+)
+```
+
+**Operator reference:**
+
+| Class | Effect |
+|---|---|
+| `RenameOp(src, dst)` | Move `src` → `dst`, delete `src` |
+| `CopyOp(src, dst)` | Copy `src` → `dst`, keep `src` |
+| `DropOp(*keys)` | Remove one or more keys |
+| `SetOp(key, value)` | Inject a constant value |
+| `MergeOp(keys, dst)` | Concatenate multiple string keys |
+| `MapOp(key, fn)` | Transform a value with a callable |
+
+**In YAML:**
+
+```yaml
+team: custom
+steps:
+  - name: planner
+    system_prompt: "Plan the implementation."
+    output_key: plan
+
+  - operator: rename
+    from: plan
+    to: spec
+
+  - operator: set
+    key: approved
+    value: true
+
+  - name: coder
+    system_prompt: "Implement the spec."
+    output_key: code
+```
+
+All operators implement `run(state) -> dict` — they compose with `CustomTeam.steps` exactly like agents.
+
+---
+
+### ArtifactContract — type-safe state access
+
+Built-in agents use `ArtifactContract` to read typed artifacts from state. Use it in your own custom agents for safe, coercible reads.
+
+```python
+from antcrew.core.artifacts import ArtifactContract, ContractError, PRD, CodeArtifact
+from antcrew.core.artifacts import coerce_model, coerce_list
+
+# Single-model read — raises ContractError if missing or wrong type
+_PRD_CONTRACT = ArtifactContract("prd", PRD)
+
+class MyAgent:
+    def run(self, state: dict) -> dict:
+        try:
+            prd = _PRD_CONTRACT.extract(state)   # → PRD instance, always
+        except ContractError as exc:
+            return {"errors": [str(exc)]}
+        # use prd.title, prd.summary, etc.
+
+# List coercion — converts list of dicts or mixed instances
+artifacts = coerce_list(state, "code_artifacts", CodeArtifact)  # → list[CodeArtifact]
+
+# Single coercion
+review = coerce_model(state["review"], CodeReview)   # dict or instance → CodeReview
+```
+
+---
+
+### validate_agent_dag — DAG validation
+
+Validate that each agent's `consumes` keys are produced by prior agents before running the pipeline:
+
+```python
+from antcrew import validate_agent_dag
+from antcrew.agents import PMAgent, BackendDevAgent, QAAgent
+from antcrew.models import SimulatedLLM
+
+llm = SimulatedLLM()
+agents = [PMAgent(llm), BackendDevAgent(llm), QAAgent(llm)]
+
+# strict=True (default): raises ValueError on the first violation
+validate_agent_dag(agents, initial_keys={"request", "prd"})
+
+# strict=False: returns list of violation strings without raising
+violations = validate_agent_dag(agents, initial_keys={"request"}, strict=False)
+for v in violations:
+    print(v)
+```
+
+Enable automatic validation when building a `CustomTeam`:
+
+```python
+team = CustomTeam(
+    steps=[agent_a, agent_b, agent_c],
+    llm=llm,
+    validate_dag=True,   # raises at construction time if DAG is invalid
+)
+```
+
+Inspect the DAG from the CLI:
+
+```bash
+antcrew dag agentteam.yaml           # validate + display dependency table
+antcrew dag agentteam.yaml --no-strict   # print violations but exit 0
 ```
 
 ---
@@ -224,6 +541,7 @@ antcrew flow         Validate and inspect flow config files
 antcrew publish      Push artifacts to GitHub (PR), Confluence, or export to a directory
 antcrew write-back   Apply generated artifacts back to project files (brownfield)
 antcrew scan         Preview what CodebaseScannerAgent sees in a directory (no LLM needed)
+antcrew dag          Validate and display the agent dependency graph for a config file
 ```
 
 ### `antcrew setup`
@@ -421,7 +739,7 @@ Run the same config repeatedly — each call picks up where the previous one lef
 
 ```yaml
 # agentteam.yaml
-team: dev                        # dev | fullstack | research | content
+team: dev                        # dev | fullstack | research | content | custom | feature | auto | routed
 model: claude                    # default model for all agents
 
 # Persistent LLM cache — avoids repeated API calls during development
@@ -1123,6 +1441,100 @@ If "Sugerir cambios" is pressed, the bot asks for free-text feedback and passes 
 
 ---
 
+## Async teams
+
+Every built-in team has an async wrapper that delegates `.run()` to `asyncio.to_thread`, keeping the event loop unblocked.  The sync `run_sync()` method is always available as a convenience.
+
+| Sync class | Async wrapper |
+|---|---|
+| `DevTeam` | `AsyncDevTeam` |
+| `FullStackTeam` | `AsyncFullStackTeam` |
+| `ResearchTeam` | `AsyncResearchTeam` |
+| `ContentTeam` | `AsyncContentTeam` |
+| `CustomTeam` | `AsyncCustomTeam` |
+| `FeatureTeam` | `AsyncFeatureTeam` |
+| `Router` | `AsyncRouter` |
+
+```python
+import asyncio
+from antcrew import AsyncDevTeam, AsyncCustomTeam, AsyncRouter
+from antcrew.models import AnthropicModel
+
+llm = AnthropicModel()
+
+# Async usage
+async def main():
+    team = AsyncDevTeam(model=llm)
+    result = await team.run("Build JWT auth module")
+    print(result["code_artifacts"])
+
+# Run two teams concurrently
+async def run_parallel():
+    dev_team = AsyncDevTeam(model=llm)
+    research_team = AsyncResearchTeam(model=llm)
+    dev_result, research_result = await asyncio.gather(
+        dev_team.run("Build auth API"),
+        research_team.run("Research JWT best practices"),
+    )
+
+asyncio.run(main())
+```
+
+`AsyncCustomTeam`, `AsyncFeatureTeam`, and `AsyncRouter` use composition (not inheritance) so they accept the same constructor arguments as their sync counterparts:
+
+```python
+team = AsyncCustomTeam(
+    steps=[agent_a, RenameOp("draft", "content"), agent_b],
+    llm=llm,
+)
+result = await team.run("Build the feature")
+
+router = AsyncRouter(
+    classifier=RuleClassifier(rules=[...], default="complex"),
+    routes={"simple": DirectAgent(llm), "complex": DevTeam(model=llm)},
+    default="complex",
+)
+result = await router.run("What is REST?")
+```
+
+---
+
+## Testing utilities
+
+### `SequencedLLM`
+
+A test-only LLM that returns pre-defined responses in order. No API calls, fully deterministic.
+
+```python
+from antcrew.testing import SequencedLLM
+
+llm = SequencedLLM([
+    "Step 1: analyse requirements",
+    '{"title": "Auth PRD", "summary": "JWT authentication"}',
+    "def authenticate(token): ...",
+])
+
+team = CustomTeam(steps=[agent_a, agent_b, agent_c], llm=llm)
+result = team.run("Build auth")
+# agent_a gets "Step 1: ...", agent_b gets the JSON, agent_c gets the code
+```
+
+Useful properties:
+
+```python
+llm.call_count        # number of times the LLM was called
+llm.last_max_tokens   # max_tokens from the last call
+llm.get_usage_summary()  # same format as real LLMs — works with cost tracking
+```
+
+`SequencedLLM` is also exported directly from `antcrew`:
+
+```python
+from antcrew import SequencedLLM
+```
+
+---
+
 ## Persistence
 
 ```python
@@ -1184,7 +1596,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The full suite uses `SimulatedLLM` — no API keys required. ~1500 tests, no live network calls.
+The full suite uses `SimulatedLLM` — no API keys required. ~1700 tests, no live network calls.
 
 ---
 

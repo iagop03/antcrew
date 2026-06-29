@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
-from antcrew.core.artifacts import TestArtifact
+from antcrew.core.artifacts import CodeArtifact, TestArtifact, Ticket, coerce_list
 from antcrew.core.state import TeamState
 
 # File extensions that are worth testing; everything else is skipped.
@@ -73,8 +73,8 @@ class QAAgent(BaseAgent):
     produces: list[str] = ["test_artifacts", "metadata"]
 
     def run(self, state: TeamState) -> dict:
-        code_artifacts = state.get("code_artifacts") or []
-        tickets = state.get("tickets") or []
+        code_artifacts = coerce_list(state, "code_artifacts", CodeArtifact)
+        tickets = coerce_list(state, "tickets", Ticket)
 
         if not code_artifacts:
             return {
@@ -119,7 +119,7 @@ class QAAgent(BaseAgent):
             )
 
         # Preserve tests from previous sprints; replace current sprint's.
-        existing_tests = state.get("test_artifacts") or []
+        existing_tests = coerce_list(state, "test_artifacts", TestArtifact)
         preserved_tests = [t for t in existing_tests if t.ticket_id not in current_ticket_ids]
         test_artifacts = preserved_tests + new_tests
 

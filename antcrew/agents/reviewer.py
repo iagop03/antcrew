@@ -3,7 +3,7 @@
 import json
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import CodeReview, ReviewFinding
+from antcrew.core.artifacts import CodeArtifact, CodeReview, ReviewFinding, Ticket, coerce_list
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\
@@ -64,8 +64,8 @@ class ReviewerAgent(BaseAgent):
         )
 
     def run(self, state: TeamState) -> dict:
-        code_artifacts = state.get("code_artifacts") or []
-        tickets = state.get("tickets") or []
+        code_artifacts = coerce_list(state, "code_artifacts", CodeArtifact)
+        tickets = coerce_list(state, "tickets", Ticket)
         meta = state.get("metadata") or {}
 
         if not code_artifacts:

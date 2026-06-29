@@ -5,6 +5,84 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.12.0] — 2026-06-29
+
+### Added — Auto-routing, Operators, FeatureTeam, ArtifactContract, Async wrappers
+
+#### Router + DirectAgent (auto-routing)
+
+- `Router` — dispatches requests to the right team or agent based on classification; injects `_route` into state.
+- `LLMClassifier` — asks an LLM to classify a request into a route label; graceful fallback on error.
+- `RuleClassifier` — regex-based instant classification (no LLM call, instant).
+- `DirectAgent` — single LLM call returning `RunResult`; composable anywhere a team is expected.
+- YAML `team: auto` — 2-route setup (simple → DirectAgent, complex → configurable team).
+- YAML `team: routed` — full control: n routes, `classifier: llm|rule`, `default_route:`, `rules:`.
+- `classifier_model:` key — use a cheaper model (e.g. Groq) for classification only.
+- `Router` integrates with `TraceLog` — routing decisions appear in `antcrew trace` output.
+- All new classes exported from `antcrew` top-level.
+
+#### Operators — state transforms for CustomTeam
+
+- `BaseOperator` — lightweight transform; `run(state) -> dict` interface, composable as pipeline steps.
+- Built-in operators: `RenameOp`, `CopyOp`, `DropOp`, `SetOp`, `MergeOp`, `MapOp`.
+- `_DELETE` sentinel — returned by operators to remove a key from state without `del`.
+- `_apply_patch(state, patch)` — handles `_DELETE` cleanly in `CustomTeam` step execution.
+- `build_operator(cfg)` — parses YAML operator dicts (`rename`, `copy`, `drop`, `set`, `merge`, `map`).
+- All existing `CustomTeam` state updates now go through `_apply_patch`.
+- All operator classes and `build_operator` exported from `antcrew` top-level.
+
+#### ArtifactContract — type-safe state access
+
+- `ArtifactContract(key, ModelClass).extract(state)` — reads a typed artifact; raises `ContractError` on missing/wrong type.
+- `coerce_model(raw, cls)` — converts dict or model instance to typed model.
+- `coerce_list(state, key, cls)` — coerces each item in a list key; leaves invalid items in place.
+- All built-in agents (PM, BackendDev, Editor, Copywriter, Reviewer, QA, DevOps, DocWriter, FrontendDev, Business, SprintPlanner) migrated to use `ArtifactContract`/`coerce_list` for all state reads.
+- `coerce_model` and `coerce_list` exported from `antcrew` top-level.
+
+#### validate_agent_dag
+
+- `validate_agent_dag(agents, initial_keys, strict)` — checks that each agent's `consumes` keys are produced by prior agents.
+- `strict=True` (default): raises `ValueError` on first violation.
+- `strict=False`: returns list of violation strings.
+- `CustomTeam(validate_dag=True)` — auto-calls validator at construction time.
+- YAML key `validate_dag: true` in custom team configs.
+- `validate_agent_dag` exported from `antcrew` top-level.
+
+#### CLI: `antcrew dag` command
+
+- New `antcrew dag <config>` command — validates and displays the agent dependency graph as a rich table.
+- Highlights missing dependencies in red; exits 1 on violations (disable with `--no-strict`).
+- Supports `custom`, `dev`, and `fullstack` team configs.
+
+#### CLI: new team types
+
+- `_TEAM_CHOICES` now includes `custom`, `feature`, `auto`, `routed`, `direct`.
+- `--team feature` and `--team direct` work from the CLI.
+- `--team auto` / `--team routed` / `--team custom` emit a clear error directing users to `--config`.
+- `_print_state` handles `auto`, `routed`, `feature`, `direct` output; shows `_route` when set.
+
+#### Async wrappers
+
+- `AsyncCustomTeam`, `AsyncFeatureTeam`, `AsyncRouter` — composition-based async wrappers.
+- All delegate `run()` to `asyncio.to_thread`; expose `run_sync()` for sync contexts.
+- Attribute access falls through to the inner team via `__getattr__`.
+- All three exported from `antcrew` top-level alongside existing `AsyncDevTeam` etc.
+
+#### FeatureTeam (promoted)
+
+- `FeatureTeam` now available via CLI (`--team feature`) and YAML (`team: feature`).
+
+#### Testing utilities
+
+- `SequencedLLM` exported from `antcrew` top-level (was `antcrew.testing` only).
+
+### Changed
+
+- `CustomTeam` step execution uses `_apply_patch` for all state updates (no functional change for agents that don't use `_DELETE`).
+- `config.py`: extracted `_build_team_cfg(cfg, base_dir)` from `load()` to enable recursive team building for `team: auto/routed`.
+
+---
+
 ## [0.11.11] — 2026-06-29
 
 ### Added — Context keys: per-step state filtering

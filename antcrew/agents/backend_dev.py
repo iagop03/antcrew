@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
-from antcrew.core.artifacts import CodeArtifact, TicketStatus
+from antcrew.core.artifacts import (
+    ArtifactContract, ContractError, CodeArtifact, CodeReview, Ticket, TicketStatus, coerce_list,
+)
 from antcrew.core.state import TeamState
+
+_REVIEW_CONTRACT: ArtifactContract[CodeReview] = ArtifactContract("review", CodeReview)
 
 _PLAN_SYSTEM = """\
 You are a Senior Backend Developer.
@@ -107,8 +111,9 @@ class BackendDevAgent(BaseAgent):
         meta = state.get("metadata") or {}
         if not meta.get("reviewer_fix_requested"):
             return None
-        review = state.get("review")
-        if not review:
+        try:
+            review = _REVIEW_CONTRACT.extract(state)
+        except ContractError:
             return None
 
         bad_paths = {
@@ -118,7 +123,7 @@ class BackendDevAgent(BaseAgent):
         if not bad_paths:
             return None
 
-        code_artifacts = list(state.get("code_artifacts") or [])
+        code_artifacts = list(coerce_list(state, "code_artifacts", CodeArtifact))
         fixed: list[CodeArtifact] = []
         fixed_count = 0
 
@@ -171,7 +176,7 @@ class BackendDevAgent(BaseAgent):
         if fix_result is not None:
             return fix_result
 
-        tickets = state.get("tickets") or []
+        tickets = coerce_list(state, "tickets", Ticket)
         open_tickets = [t for t in tickets if t.status == TicketStatus.OPEN]
 
         if not open_tickets:
@@ -218,7 +223,7 @@ class BackendDevAgent(BaseAgent):
             updated_tickets[idx] = ticket.model_copy(update={"status": TicketStatus.DONE})
 
         # Preserve artifacts from other sprints; replace only the ones we just generated.
-        existing = state.get("code_artifacts") or []
+        existing = coerce_list(state, "code_artifacts", CodeArtifact)
         current_ids = {t.id for t in open_tickets}
         preserved = [a for a in existing if a.ticket_id not in current_ids]
         return {

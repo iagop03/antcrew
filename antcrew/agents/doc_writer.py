@@ -3,8 +3,13 @@
 import json
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import DocumentationArtifact
+from antcrew.core.artifacts import (
+    ArtifactContract, CodeArtifact, ContractError, DevOpsArtifact,
+    DocumentationArtifact, PRD, Ticket, coerce_list,
+)
 from antcrew.core.state import TeamState
+
+_PRD_CONTRACT: ArtifactContract[PRD] = ArtifactContract("prd", PRD)
 
 _SYSTEM = """\
 You are a Technical Writer on a software development team.
@@ -60,10 +65,13 @@ class DocWriterAgent(BaseAgent):
     produces: list[str] = ["doc_artifacts"]
 
     def run(self, state: TeamState) -> dict:
-        prd = state.get("prd")
-        tickets = state.get("tickets") or []
-        code_artifacts = state.get("code_artifacts") or []
-        devops_artifacts = state.get("devops_artifacts") or []
+        try:
+            prd = _PRD_CONTRACT.extract(state)
+        except ContractError:
+            prd = None
+        tickets = coerce_list(state, "tickets", Ticket)
+        code_artifacts = coerce_list(state, "code_artifacts", CodeArtifact)
+        devops_artifacts = coerce_list(state, "devops_artifacts", DevOpsArtifact)
 
         if not prd and not code_artifacts:
             return {

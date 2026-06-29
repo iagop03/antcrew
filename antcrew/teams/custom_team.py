@@ -72,6 +72,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.agents.template_agent import TemplateAgent
+from antcrew.core.operators import BaseOperator, _DELETE, build_operator
 from antcrew.core.run_result import RunResult
 
 if TYPE_CHECKING:
@@ -245,10 +246,28 @@ def _parse_steps(
 
     A plain dict / str / Path  →  single-step group (sequential).
     ``{"parallel": [cfg, …]}``  →  multi-step group (concurrent).
+    ``{"operator": "rename", …}``  →  lightweight state transform (no LLM call).
     ``{"team_file": "path.yaml"}``  →  nested CustomTeam step.
     """
     groups: list[_StepGroup] = []
     for item in raw_steps:
+        if isinstance(item, BaseOperator):
+            # Pre-built operator passed directly from Python code.
+            groups.append([_Step(agent=item)])
+            continue
+        if isinstance(item, dict) and "operator" in item:
+            op = build_operator(item)
+            # Operators can still use condition: and context_keys: from the same dict.
+            _, _, condition, _, on_error, default, gate, context_keys = _extract_step_meta(item)
+            groups.append([_Step(
+                agent=op,
+                condition=condition,
+                on_error=on_error,
+                default=default,
+                gate=gate,
+                context_keys=context_keys,
+            )])
+            continue
         if isinstance(item, dict) and "parallel" in item:
             parallel_cfgs = item["parallel"]
             if not parallel_cfgs:
@@ -277,6 +296,15 @@ def _run_agent_with_timeout(agent: Any, state: dict, timeout: float) -> dict:
             raise TimeoutError(
                 f"Step '{agent.name}' timed out after {timeout:.1f}s"
             )
+
+
+def _apply_patch(state: dict, patch: dict) -> None:
+    """Apply *patch* to *state* in-place, honouring the ``_DELETE`` sentinel."""
+    for k, v in patch.items():
+        if v is _DELETE:
+            state.pop(k, None)
+        else:
+            state[k] = v
 
 
 def _filter_state(state: dict, context_keys: "Optional[list[str]]") -> dict:
@@ -369,9 +397,14 @@ class CustomTeam:
         max_cost_usd: Abort if cumulative LLM cost exceeds this budget.
         max_workers:  Thread-pool size for parallel groups (default: 4).
         trace_log:    Optional :class:`~antcrew.trace.TraceLog`.
+        validate_dag: When ``True``, call
+                      :func:`~antcrew.core.validation.validate_agent_dag` at
+                      construction time.  Raises :class:`ValueError` if any
+                      agent's ``consumes`` keys are not produced by prior agents.
 
     Raises:
-        ValueError: If *steps* is empty or a ``parallel:`` group is empty.
+        ValueError: If *steps* is empty, a ``parallel:`` group is empty, or
+                    ``validate_dag=True`` and the DAG has unsatisfied dependencies.
     """
 
     def __init__(
@@ -384,6 +417,7 @@ class CustomTeam:
         max_cost_usd: Optional[float] = None,
         max_workers: int = 4,
         trace_log: "Optional[TraceLog]" = None,
+        validate_dag: bool = False,
     ) -> None:
         if not steps:
             raise ValueError("CustomTeam requires at least one step.")
@@ -403,6 +437,10 @@ class CustomTeam:
         self._agents: list[TemplateAgent] = [
             s.agent for group in self._step_groups for s in group
         ]
+
+        if validate_dag:
+            from antcrew.core.validation import validate_agent_dag
+            validate_agent_dag(self._agents, initial_keys={"request"}, strict=True)
 
         # Optional progress callback: called as _on_step(name, event) where
         # event is "start" | "done" | "skip".  Set by the CLI for live display.
@@ -457,7 +495,7 @@ class CustomTeam:
                         continue
                     _notify(step.agent.name, "start")
                     log.debug("custom_team step=%s", step.agent.name)
-                    state.update(_run_step(step, state))
+                    _apply_patch(state, _run_step(step, state))
                     _notify(step.agent.name, "done")
                 else:
                     # For parallel groups, filter to steps whose condition is met.
@@ -468,7 +506,7 @@ class CustomTeam:
                     group_name = " + ".join(s.agent.name for s in group)
                     if runnable:
                         _notify(group_name, "start")
-                        state.update(self._run_parallel(runnable, state))
+                        _apply_patch(state, self._run_parallel(runnable, state))
                         _notify(group_name, "done")
                     else:
                         _notify(group_name, "skip")

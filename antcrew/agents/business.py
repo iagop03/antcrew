@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import PRD
+from antcrew.core.artifacts import CodebaseAnalysis, PRD, coerce_list, coerce_model
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\
@@ -45,9 +45,10 @@ class BusinessAnalystAgent(BaseAgent):
         memory_ctx = self._recall(state["request"])
 
         # Collect analyses — multi-component list takes priority over single alias.
-        analyses = state.get("codebase_analyses") or (
-            [state["codebase_analysis"]] if state.get("codebase_analysis") else []
-        )
+        analyses = coerce_list(state, "codebase_analyses", CodebaseAnalysis)
+        if not analyses and state.get("codebase_analysis"):
+            raw = state["codebase_analysis"]
+            analyses = [coerce_model(raw, CodebaseAnalysis)]
 
         if analyses:
             if len(analyses) == 1:

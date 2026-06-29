@@ -1,7 +1,10 @@
 ﻿from __future__ import annotations
 
 from antcrew.core.agent import BaseAgent
+from antcrew.core.artifacts import ArtifactContract, ContractError, ContentPiece
 from antcrew.core.state import TeamState
+
+_PIECE_CONTRACT: ArtifactContract[ContentPiece] = ArtifactContract("content_piece", ContentPiece)
 
 _SYSTEM = """\
 You are a professional Editor. Given a draft content piece, refine it for clarity, flow,
@@ -46,7 +49,10 @@ class EditorAgent(BaseAgent):
     produces: list[str] = ["content_piece"]
 
     def run(self, state: TeamState) -> dict:
-        piece = state.get("content_piece")
+        try:
+            piece = _PIECE_CONTRACT.extract(state)
+        except ContractError:
+            piece = None
         if piece is None or not piece.body:
             return {
                 "errors": ["EditorAgent: no content_piece body to edit"],

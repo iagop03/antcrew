@@ -3,7 +3,7 @@
 import json
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import DevOpsArtifact
+from antcrew.core.artifacts import CodeArtifact, DevOpsArtifact, Ticket, coerce_list
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\
@@ -60,8 +60,8 @@ class DevOpsAgent(BaseAgent):
     produces: list[str] = ["devops_artifacts"]
 
     def run(self, state: TeamState) -> dict:
-        code_artifacts = state.get("code_artifacts") or []
-        tickets = state.get("tickets") or []
+        code_artifacts = coerce_list(state, "code_artifacts", CodeArtifact)
+        tickets = coerce_list(state, "tickets", Ticket)
 
         if not code_artifacts:
             return {

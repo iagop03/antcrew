@@ -45,6 +45,20 @@ def _build_team(
         from antcrew.teams.content_team import ContentTeam
         return ContentTeam(model=llm)
 
+    if team == "feature":
+        from antcrew.agents.feature_agent import FeatureTeam
+        return FeatureTeam(llm=llm, project_dir=project_dir)
+
+    if team == "direct":
+        from antcrew.agents.direct_agent import DirectAgent
+        return DirectAgent(llm)
+
+    if team in ("auto", "routed", "custom"):
+        raise typer.BadParameter(
+            f"'--team {team}' requires a --config file. "
+            "Use: antcrew run \"...\" --config agentteam.yaml"
+        )
+
     raise typer.BadParameter(f"Unknown team '{team}'. Choose from: {_TEAM_CHOICES}")
 
 
@@ -117,10 +131,13 @@ def _print_state(state: dict, team: str) -> None:
                 border_style="magenta",
             ))
 
-    elif team == "custom":
-        _SKIP = {"request", "messages", "errors", "metadata", "current_agent"}
+    elif team in ("custom", "auto", "routed", "feature", "direct"):
+        _SKIP = {"request", "messages", "errors", "metadata", "current_agent", "_route",
+                 "_feedback_error", "_feedback_round", "feedback_ok", "feedback_rounds_used"}
+        if state.get("_route"):
+            console.print(f"[dim]Route:[/] [bold cyan]{state['_route']}[/]")
         for key, value in state.items():
-            if key in _SKIP or value is None:
+            if key in _SKIP or value is None or str(value).strip() == "":
                 continue
             text = str(value)
             console.print(Panel(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from antcrew.core.agent import BaseAgent
+from antcrew.core.artifacts import Ticket, coerce_list
 from antcrew.core.state import TeamState
 
 _DEFAULT_SPRINT_SIZE = 4
@@ -26,12 +27,12 @@ class SprintPlannerAgent(BaseAgent):
         self.sprint_size = sprint_size
 
     def run(self, state: TeamState) -> dict:
-        backlog = list(state.get("sprint_backlog") or [])
+        backlog = coerce_list(state, "sprint_backlog", Ticket)
         sprint_num = (state.get("sprint_number") or 0) + 1
 
         # First sprint: backlog is empty — populate from PM-generated tickets.
         if not backlog:
-            backlog = list(state.get("tickets") or [])
+            backlog = coerce_list(state, "tickets", Ticket)
 
         sprint = backlog[: self.sprint_size]
         remaining = backlog[self.sprint_size :]

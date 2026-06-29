@@ -3,8 +3,10 @@
 import json
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import Ticket, TicketStatus
+from antcrew.core.artifacts import ArtifactContract, ContractError, PRD, Ticket, TicketStatus
 from antcrew.core.state import TeamState
+
+_PRD_CONTRACT: ArtifactContract[PRD] = ArtifactContract("prd", PRD)
 
 _SYSTEM = """\
 You are a Product Manager on a software development team.
@@ -51,9 +53,10 @@ class PMAgent(BaseAgent):
     produces: list[str] = ["tickets"]
 
     def run(self, state: TeamState) -> dict:
-        prd = state.get("prd")
-        if prd is None:
-            return {"errors": ["PMAgent: no PRD found in state"]}
+        try:
+            prd = _PRD_CONTRACT.extract(state)
+        except ContractError as exc:
+            return {"errors": [f"PMAgent: {exc}"]}
 
         context = self._recall(prd.title + " " + prd.summary)
         raw_tickets: list[dict] = self.system_parsed(
