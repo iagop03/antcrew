@@ -5,6 +5,102 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.11] — 2026-06-29
+
+### Added — Context keys: per-step state filtering
+
+Each step can now declare `context_keys:` to receive only the relevant slice
+of the shared state instead of the full accumulated dict.  Prevents context
+bloat in long pipelines and makes agent dependencies explicit.
+
+#### How it works
+
+The full pipeline state grows with every step: after 5 agents each writing
+1 000 tokens, agent 6 would receive 5 000 tokens of prior context it may not
+need.  With `context_keys:`, agent 6 declares exactly what it needs — the
+LLM sees only those keys (plus `request`, always available).
+
+The gate still runs on the full merged state — filtering is agent-scoped only.
+
+#### YAML — CustomTeam steps
+
+```yaml
+steps:
+  - name: analyst
+    system_prompt: "Analyse the codebase."
+    output_key: analysis
+
+  - name: planner
+    system_prompt: "Create a plan based on: {analysis}"
+    output_key: plan
+    context_keys: [analysis]      # only sees analysis + request
+
+  - name: backend
+    system_prompt: "Implement: {plan}"
+    output_key: code
+    context_keys: [plan]          # only sees plan + request; analyst output hidden
+
+  - name: reviewer
+    system_prompt: "Review {code} against plan {plan}"
+    output_key: review
+    context_keys: [plan, code]    # sees both plan and code
+```
+
+String shorthand also works: `context_keys: plan` (single key).
+
+#### Python — CustomTeam
+
+```python
+from antcrew.teams.custom_team import CustomTeam, _Step
+
+# Direct _Step construction:
+step = _Step(agent=my_agent, context_keys=["prd", "code"])
+
+# Dict config:
+team = CustomTeam(
+    steps=[
+        {"name": "builder", "system_prompt": "Build: {prd}", "output_key": "code",
+         "context_keys": ["prd"]},
+    ],
+    llm=llm,
+)
+```
+
+#### TemplateAgent — standalone
+
+```python
+agent = TemplateAgent(
+    {"name": "executor", "system_prompt": "Execute: {plan}", "context_keys": ["plan"]},
+    llm=llm,
+)
+```
+
+Or in a YAML agent file:
+
+```yaml
+name: executor
+system_prompt: "Execute the plan: {plan}"
+context_keys:
+  - plan
+```
+
+#### `_filter_state(state, context_keys)` — public helper
+
+```python
+from antcrew.teams.custom_team import _filter_state
+
+filtered = _filter_state(state, ["prd", "plan"])
+# → {"request": ..., "prd": ..., "plan": ...}
+```
+
+#### 21 new tests
+
+`TestFilterState` (6), `TestCustomTeamContextKeys` (7),
+`TestTemplateAgentContextKeys` (7), `TestContextKeysYAMLIntegration` (1) —
+in `tests/test_context_keys.py`.
+
+---
+
 ## [0.11.10] — 2026-06-29
 
 ### Added — Structured artifact contracts

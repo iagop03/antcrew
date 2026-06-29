@@ -84,7 +84,7 @@ log = logging.getLogger(__name__)
 # Keys consumed by CustomTeam itself — not forwarded to TemplateAgent config.
 _TEAM_KEYS = frozenset({
     "max_retries", "retry_delay", "parallel", "condition",
-    "timeout", "on_error", "default", "team_file", "gate",
+    "timeout", "on_error", "default", "team_file", "gate", "context_keys",
 })
 
 _VALID_ON_ERROR = frozenset({"raise", "skip"})
@@ -108,6 +108,9 @@ class _Step:
     default: Any = None
     # gate: optional verification gate run after the agent completes.
     gate: Any = None  # BaseGate | None
+    # context_keys: restrict which state keys the agent receives.
+    # None → full state passed. List → only those keys (plus "request") passed.
+    context_keys: "Optional[list[str]]" = None
 
 
 # A step group is a list of Steps.  len==1 → sequential; len>1 → parallel.
@@ -135,7 +138,7 @@ def _parse_condition(raw: "Any") -> "Optional[list[str]]":
 
 
 def _extract_step_meta(raw: dict) -> tuple:
-    """Pull team-level step keys; return (max_retries, retry_delay, condition, timeout, on_error, default, gate)."""
+    """Pull team-level step keys; return (max_retries, retry_delay, condition, timeout, on_error, default, gate, context_keys)."""
     max_retries = int(raw.get("max_retries", 0))
     retry_delay = float(raw.get("retry_delay", 0.0))
     condition = _parse_condition(raw.get("condition"))
@@ -152,7 +155,14 @@ def _extract_step_meta(raw: dict) -> tuple:
     if gate_raw is not None:
         from antcrew.core.gates import parse_gate as _pg
         gate = _pg(gate_raw)
-    return max_retries, retry_delay, condition, timeout, on_error, default, gate
+    ck_raw = raw.get("context_keys")
+    context_keys: "Optional[list[str]]" = None
+    if ck_raw is not None:
+        if isinstance(ck_raw, str):
+            context_keys = [ck_raw]
+        else:
+            context_keys = [str(k) for k in ck_raw]
+    return max_retries, retry_delay, condition, timeout, on_error, default, gate, context_keys
 
 
 def _make_step(raw: Any, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _Step:
@@ -167,7 +177,7 @@ def _make_step(raw: Any, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _
     if isinstance(raw, dict):
         if "team_file" in raw:
             return _make_nested_step(raw, llm, base_dir=base_dir)
-        max_retries, retry_delay, condition, timeout, on_error, default, gate = _extract_step_meta(raw)
+        max_retries, retry_delay, condition, timeout, on_error, default, gate, context_keys = _extract_step_meta(raw)
         raw = _agent_cfg(raw)
 
     return _Step(
@@ -179,6 +189,7 @@ def _make_step(raw: Any, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _
         on_error=on_error,
         default=default,
         gate=gate,
+        context_keys=context_keys,
     )
 
 
@@ -211,7 +222,7 @@ def _make_nested_step(raw: dict, llm: "BaseLLM", base_dir: "Optional[Path]" = No
     name = raw.get("name") or team_path.stem
 
     agent = _NestedTeamAgent(nested_team, input_key, name)
-    max_retries, retry_delay, condition, timeout, on_error, default, gate = _extract_step_meta(raw)
+    max_retries, retry_delay, condition, timeout, on_error, default, gate, context_keys = _extract_step_meta(raw)
     return _Step(
         agent=agent,
         max_retries=max_retries,
@@ -221,6 +232,7 @@ def _make_nested_step(raw: dict, llm: "BaseLLM", base_dir: "Optional[Path]" = No
         on_error=on_error,
         default=default,
         gate=gate,
+        context_keys=context_keys,
     )
 
 
@@ -267,17 +279,26 @@ def _run_agent_with_timeout(agent: Any, state: dict, timeout: float) -> dict:
             )
 
 
+def _filter_state(state: dict, context_keys: "Optional[list[str]]") -> dict:
+    """Return a state view restricted to *context_keys* (plus 'request' always)."""
+    if context_keys is None:
+        return state
+    keep = set(context_keys) | {"request"}
+    return {k: v for k, v in state.items() if k in keep}
+
+
 def _run_step(step: _Step, state: dict) -> dict:
     """Run *step* with its retry policy, on_error handling, and gate check."""
     from antcrew.core.gates import GateError as _GateError
+    run_state = _filter_state(state, step.context_keys)
     attempts = step.max_retries + 1
     last_exc: Exception = RuntimeError("unreachable")
     for attempt in range(attempts):
         try:
             if step.timeout is not None:
-                result = _run_agent_with_timeout(step.agent, state, step.timeout)
+                result = _run_agent_with_timeout(step.agent, run_state, step.timeout)
             else:
-                result = step.agent.run(state)
+                result = step.agent.run(run_state)
             if step.gate is not None:
                 merged = {**state, **result}
                 gate_result = step.gate.check(merged)

@@ -197,4 +197,4 @@ __all__ = [
     "load_template_agent",
     "register_transform",
 ]
-__version__ = "0.11.10"
+__version__ = "0.11.11"

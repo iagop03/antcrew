@@ -299,6 +299,16 @@ class TemplateAgent(BaseAgent):
         if raw_schema:
             from antcrew.core.artifacts import resolve_artifact_schema
             self._output_schema = resolve_artifact_schema(str(raw_schema))
+
+        # context_keys: restrict which state keys are visible to this agent.
+        # None → full state. List → only those keys (plus "request") interpolated.
+        ck_raw = cfg.get("context_keys")
+        if ck_raw is None:
+            self._context_keys: "Optional[list[str]]" = None
+        elif isinstance(ck_raw, str):
+            self._context_keys = [ck_raw]
+        else:
+            self._context_keys = [str(k) for k in ck_raw]
         self._save_output: "Optional[Path]" = (
             Path(cfg["save_output"]) if cfg.get("save_output") else None
         )
@@ -339,14 +349,21 @@ class TemplateAgent(BaseAgent):
 
         Writes the LLM response to ``{output_key}`` in the returned dict.
         """
+        # Restrict interpolation context when context_keys is declared.
+        if self._context_keys is not None:
+            keep = set(self._context_keys) | {"request"}
+            interp_state = {k: v for k, v in state.items() if k in keep}
+        else:
+            interp_state = state
+
         prompt = (
-            _interpolate(self._system_prompt, state)
+            _interpolate(self._system_prompt, interp_state)
             if self._interpolate
             else self._system_prompt
         )
 
         if self._user_template is not None:
-            user_msg = _interpolate(self._user_template, state)
+            user_msg = _interpolate(self._user_template, interp_state)
         else:
             raw = state.get(self._input_key)
             if raw is None:
