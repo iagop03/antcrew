@@ -196,3 +196,134 @@ class ReadFileTool(BaseTool):
             return ToolResult(content)
         except Exception as exc:
             return ToolResult("", error=str(exc))
+
+
+class WriteFileTool(BaseTool):
+    """Write content to a file on the local filesystem.
+
+    Input format (two parts separated by a ``---`` line)::
+
+        path/to/file.py
+        ---
+        <file content here>
+
+    When *root* is set, relative paths are resolved relative to it and
+    absolute paths that escape *root* are rejected.  Parent directories are
+    created automatically when *allow_create_dirs* is True (default).
+    """
+
+    name = "write_file"
+    description = (
+        "Write content to a file. "
+        "Input must be two parts separated by a line containing only '---': "
+        "first the file path, then the file content. "
+        "Example input: 'src/app.py\\n---\\nprint(\"hello\")'."
+    )
+
+    def __init__(
+        self,
+        *,
+        root: Optional[str] = None,
+        allow_create_dirs: bool = True,
+    ) -> None:
+        self.root = Path(root).resolve() if root else None
+        self.allow_create_dirs = allow_create_dirs
+
+    def _safe_path(self, raw: str) -> Path:
+        p = Path(raw.strip())
+        if self.root:
+            if not p.is_absolute():
+                p = self.root / p
+            resolved = p.resolve()
+            if not str(resolved).startswith(str(self.root)):
+                raise ValueError(
+                    f"Path '{raw}' escapes the allowed root '{self.root}'"
+                )
+            return resolved
+        return p
+
+    def run(self, input: str) -> ToolResult:
+        sep = "\n---\n"
+        if sep not in input:
+            return ToolResult("", error="Input must be 'path\\n---\\ncontent'.")
+        path_part, _, content = input.partition(sep)
+        try:
+            p = self._safe_path(path_part)
+            if self.allow_create_dirs:
+                p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+            return ToolResult(f"Written: {p}")
+        except Exception as exc:
+            return ToolResult("", error=str(exc))
+
+
+class ListDirTool(BaseTool):
+    """List files in a directory tree.
+
+    Returns a text tree of files, ignoring common noise directories
+    (``__pycache__``, ``.git``, ``node_modules``, ``venv``, ``.venv``).
+    """
+
+    name = "list_dir"
+    description = (
+        "List all files in a directory tree. "
+        "Input: a directory path (or '.' for the project root). "
+        "Returns a newline-delimited list of relative file paths."
+    )
+
+    _IGNORE = frozenset({
+        "__pycache__", ".git", "node_modules", "venv", ".venv",
+        ".mypy_cache", ".ruff_cache", ".pytest_cache", "dist", "build",
+        ".eggs", "*.egg-info",
+    })
+
+    def __init__(
+        self,
+        *,
+        root: Optional[str] = None,
+        max_depth: int = 4,
+        max_files: int = 200,
+    ) -> None:
+        self.root = Path(root).resolve() if root else None
+        self.max_depth = max_depth
+        self.max_files = max_files
+
+    def run(self, input: str) -> ToolResult:
+        try:
+            target = Path(input.strip())
+            if self.root:
+                if not target.is_absolute():
+                    target = self.root / target
+                target = target.resolve()
+            if not target.exists():
+                return ToolResult("", error=f"Directory not found: {target}")
+            if not target.is_dir():
+                return ToolResult("", error=f"Not a directory: {target}")
+
+            lines: list[str] = []
+            base = self.root or target
+
+            def _walk(d: Path, depth: int) -> None:
+                if depth > self.max_depth or len(lines) >= self.max_files:
+                    return
+                try:
+                    entries = sorted(d.iterdir(), key=lambda e: (e.is_file(), e.name))
+                except PermissionError:
+                    return
+                for entry in entries:
+                    if entry.name in self._IGNORE or entry.name.endswith(".egg-info"):
+                        continue
+                    rel = entry.relative_to(base)
+                    if entry.is_dir():
+                        lines.append(f"{rel}/")
+                        _walk(entry, depth + 1)
+                    else:
+                        lines.append(str(rel))
+                    if len(lines) >= self.max_files:
+                        lines.append("... (truncated)")
+                        return
+
+            _walk(target, 0)
+            return ToolResult("\n".join(lines) if lines else "(empty directory)")
+        except Exception as exc:
+            return ToolResult("", error=str(exc))

@@ -250,8 +250,21 @@ def load(path: str | Path):
             max_cost_usd=max_cost_usd,
         )
 
+    if team_type == "feature":
+        from antcrew.agents.feature_agent import FeatureTeam
+        project_dir = cfg.get("project_dir") or None
+        max_tool_steps = int(cfg.get("max_tool_steps", 10))
+        system_prompt_override = cfg.get("system_prompt") or None
+        return FeatureTeam(
+            llm=default_llm,
+            project_dir=project_dir,
+            max_tool_steps=max_tool_steps,
+            max_cost_usd=max_cost_usd,
+            system_prompt_override=system_prompt_override,
+        )
+
     raise ValueError(
-        f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content, custom."
+        f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content, custom, feature."
     )
 
 

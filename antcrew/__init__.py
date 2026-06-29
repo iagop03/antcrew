@@ -6,7 +6,11 @@ from antcrew.teams.async_teams import (
     AsyncDevTeam, AsyncFullStackTeam, AsyncResearchTeam, AsyncContentTeam,
 )
 from antcrew.core.supervisor import Supervisor, ParallelGroup, parallel
-from antcrew.core.tools import BaseTool, ToolResult, WebSearchTool, CodeExecutorTool, ReadFileTool
+from antcrew.core.tools import (
+    BaseTool, ToolResult,
+    WebSearchTool, CodeExecutorTool, ReadFileTool, WriteFileTool, ListDirTool,
+)
+from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
 from antcrew.core.pipeline import Pipeline
 from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import DevOpsArtifact, DocumentationArtifact
@@ -83,6 +87,8 @@ __all__ = [
     "WebSearchTool",
     "CodeExecutorTool",
     "ReadFileTool",
+    "WriteFileTool",
+    "ListDirTool",
     "BaseChannel",
     "DevOpsArtifact",
     "DocumentationArtifact",
@@ -91,6 +97,8 @@ __all__ = [
     "DocWriterAgent",
     "CodebaseScannerAgent",
     "SprintPlannerAgent",
+    "FeatureAgent",
+    "FeatureTeam",
     # Models
     "SimulatedLLM",
     "GeminiModel",
@@ -166,4 +174,4 @@ __all__ = [
     "load_template_agent",
     "register_transform",
 ]
-__version__ = "0.11.7"
+__version__ = "0.11.8"

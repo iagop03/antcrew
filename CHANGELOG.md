@@ -5,6 +5,79 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.8] — 2026-06-29
+
+### Added — Feature Agent (vertical-slice single-context agent)
+
+Introduces `FeatureAgent` and `FeatureTeam`: a single LLM context that owns
+a complete feature end-to-end using tools, instead of splitting work across
+role-based agents (PM → backend_dev → frontend_dev) whose contexts never overlap.
+
+#### New tools
+
+| Tool | Description |
+|---|---|
+| `WriteFileTool(root, allow_create_dirs)` | Write content to a file. Input: `path\n---\ncontent`. Blocks path traversal outside `root`. |
+| `ListDirTool(root, max_depth, max_files)` | List directory tree. Skips `__pycache__`, `.git`, `node_modules`, etc. |
+
+Both exported from `antcrew` top-level.
+
+#### `FeatureAgent`
+
+```python
+from antcrew import FeatureAgent, AnthropicModel
+
+agent = FeatureAgent(
+    AnthropicModel(),
+    project_dir="./src",      # all file I/O scoped here
+    max_tool_steps=12,        # default 10
+)
+result_dict = agent.run({"request": "Add JWT auth", "plan": "..."})
+# result_dict["feature_output"]  → agent summary
+# result_dict["files_written"]   → list of paths written
+```
+
+Default tool stack: `read_file` → `write_file` → `list_dir` → `execute_code`.
+Pass `extra_tools=[...]` to extend.
+
+#### `FeatureTeam`
+
+Thin wrapper with the same `run(request) -> RunResult` interface as DevTeam:
+
+```python
+from antcrew import FeatureTeam, AnthropicModel
+
+team = FeatureTeam(llm=AnthropicModel(), project_dir="./src", max_cost_usd=2.0)
+result = team.run("Add JWT authentication to the REST API")
+print(result.state["files_written"])
+```
+
+#### YAML config
+
+```yaml
+team: feature
+model: claude-sonnet-4-6
+project_dir: ./src
+max_tool_steps: 12
+max_cost_usd: 2.0
+```
+
+```bash
+antcrew run "Add JWT auth" --config feature.yaml
+```
+
+#### Agent registry
+
+`feature` is now a first-class registry entry, usable in any `agents:` block.
+
+#### 32 new tests
+
+`TestWriteFileTool` (6), `TestListDirTool` (5), `TestFeatureAgent` (9),
+`TestFeatureTeam` (5), `TestConfigFeatureTeam` (3), `TestPublicExports` (4) —
+in `tests/test_feature_agent.py`.
+
+---
+
 ## [0.11.7] — 2026-06-29
 
 ### Added — Workflow-as-primary-API: gates in YAML + `parse_gate`

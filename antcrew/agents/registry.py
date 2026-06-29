@@ -46,6 +46,7 @@ AGENT_REGISTRY: dict[str, tuple[str, str]] = {
     "codebase_scanner":  ("antcrew.agents.codebase_scanner",  "CodebaseScannerAgent"),
     "sprint_planner":    ("antcrew.agents.sprint_planner",    "SprintPlannerAgent"),
     "doc_writer":        ("antcrew.agents.doc_writer",        "DocWriterAgent"),
+    "feature":           ("antcrew.agents.feature_agent",     "FeatureAgent"),
 }
 
 
@@ -121,5 +122,12 @@ def instantiate_agent(
         kwargs["max_cost_usd"] = float(cfg["max_cost_usd"])
     if name == "codebase_scanner" and "ignore_dirs" in cfg:
         kwargs["extra_ignore_dirs"] = list(cfg["ignore_dirs"])
+    if name == "feature":
+        if "project_dir" in cfg:
+            kwargs["project_dir"] = str(cfg["project_dir"])
+        if "max_tool_steps" in cfg:
+            kwargs["max_tool_steps"] = int(cfg["max_tool_steps"])
+        if "system_prompt" in cfg:
+            kwargs["system_prompt_override"] = str(cfg["system_prompt"])
 
     return cls(**kwargs)
