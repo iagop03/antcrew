@@ -30,6 +30,11 @@ from antcrew.sandbox import RunResult as SandboxRunResult
 from antcrew.core.run_result import RunResult
 from antcrew.checkpointers import SqliteSaver
 from antcrew.core.exceptions import CostLimitExceeded
+from antcrew.core.gates import (
+    BaseGate, GateResult, GateError,
+    NonEmptyGate, PythonSyntaxGate, JsonGate, SchemaGate,
+    AllGate, AnyGate,
+)
 from antcrew.trace import TraceLog
 from antcrew.flow import load_flow, validate_flow, format_flow
 from antcrew.project import Project
@@ -108,6 +113,16 @@ __all__ = [
     "SandboxRunResult",
     "SqliteSaver",
     "CostLimitExceeded",
+    # Gates
+    "BaseGate",
+    "GateResult",
+    "GateError",
+    "NonEmptyGate",
+    "PythonSyntaxGate",
+    "JsonGate",
+    "SchemaGate",
+    "AllGate",
+    "AnyGate",
     "TraceLog",
     # Flow
     "load_flow",
@@ -150,4 +165,4 @@ __all__ = [
     "load_template_agent",
     "register_transform",
 ]
-__version__ = "0.11.5"
+__version__ = "0.11.6"

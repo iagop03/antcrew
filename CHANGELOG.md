@@ -5,6 +5,65 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.6] — 2026-06-29
+
+### Added — Verification gates (`antcrew.core.gates`)
+
+Gates run **after** an agent completes and verify its output before the next
+agent starts. A failing gate raises `GateError` and stops the pipeline with a
+clear diagnostic instead of silently propagating bad output downstream.
+
+#### New module: `antcrew/core/gates.py`
+- `BaseGate` — abstract base; subclass and implement `check(state) -> GateResult`.
+- `GateResult(passed, message, field=None)` — frozen dataclass returned by every gate.
+- `GateError(gate_name, message, field=None)` — exception with structured attributes.
+- **Built-in gates:**
+  - `NonEmptyGate(field, min_length=1)` — field must be non-None and non-empty.
+  - `PythonSyntaxGate(field)` — every Python snippet (plain or fenced) in the field
+    must parse without `SyntaxError`. Handles `str`, `list[str]`, and lists of
+    objects with a `.content` attribute (e.g. `CodeArtifact`).
+  - `JsonGate(field)` — field must be valid JSON.
+  - `SchemaGate(field, model)` — field must validate against a Pydantic v2 model.
+- **Composable gates:**
+  - `AllGate(*gates)` — passes only when all sub-gates pass (short-circuits).
+  - `AnyGate(*gates)` — passes when at least one sub-gate passes.
+
+#### `Supervisor` changes
+- `Supervisor(flow, gates={})` — optional `gates` dict mapping agent names to `BaseGate`.
+- For each gated agent, the node's `run` function is wrapped so the gate fires
+  on the merged state after the agent writes its output. Zero overhead when no
+  gates are configured.
+
+#### CLI changes
+- `GateError` is caught in `antcrew run` and displayed with the gate name,
+  field, and a plain-English hint about what failed.
+
+#### All gates are top-level exports
+```python
+from antcrew import NonEmptyGate, PythonSyntaxGate, JsonGate, SchemaGate, AllGate, AnyGate
+```
+
+#### Usage example
+```python
+from antcrew import DevTeam, Supervisor, NonEmptyGate, PythonSyntaxGate
+
+supervisor = Supervisor(
+    flow=[("pm", "backend_dev"), ("backend_dev", "qa")],
+    gates={
+        "pm":          NonEmptyGate("prd"),
+        "backend_dev": PythonSyntaxGate("code_artifacts"),
+    },
+)
+team = DevTeam(supervisor=supervisor)
+team.run("Build authentication module")
+```
+
+#### 44 new tests (`tests/test_gates.py`)
+All gate types, composables, `Supervisor` integration (pass / fail / mixed),
+`AllGate` short-circuit, `AnyGate` partial pass, and CLI error formatting.
+
+---
+
 ## [0.11.5] — 2026-06-29
 
 ### Added — Full prompt/response tracing (`--full-trace`)

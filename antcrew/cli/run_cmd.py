@@ -335,10 +335,20 @@ def run(
         raise typer.Exit(1)
     except Exception as exc:
         from antcrew.core.exceptions import CostLimitExceeded as _CLE
+        from antcrew.core.gates import GateError as _GE
         if isinstance(exc, _CLE):
             console.print(
                 f"\n[yellow bold]Cost limit reached:[/] ${exc.cost_usd:.4f} spent "
                 f"(limit: ${exc.limit_usd:.4f}). Pipeline stopped."
+            )
+        elif isinstance(exc, _GE):
+            field_hint = f"  field: [cyan]{exc.field}[/cyan]\n" if exc.field else ""
+            console.print(
+                f"\n[red bold]Gate check failed[/] ([yellow]{exc.gate_name}[/yellow])\n"
+                f"{field_hint}"
+                f"  {exc.args[0]}\n\n"
+                "[dim]The agent's output did not meet the required criteria. "
+                "Fix the agent prompt or relax the gate.[/dim]"
             )
         else:
             console.print(f"\n[red bold]Error:[/] {exc}")

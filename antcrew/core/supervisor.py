@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import TYPE_CHECKING, Optional
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -48,6 +49,9 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from antcrew.core.agent import BaseAgent
 from antcrew.core.state import TeamState
+
+if TYPE_CHECKING:
+    from antcrew.core.gates import BaseGate
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +140,22 @@ def _parse_edge(raw: tuple) -> _FlowEdge:
     )
 
 
+def _make_gated_run(run_fn, gate, agent_name: str):
+    """Wrap a node's run function so a gate is checked after each call."""
+    from antcrew.core.gates import GateError as _GateError
+
+    def _gated(state: TeamState) -> dict:
+        result = run_fn(state)
+        # Build the merged state the next node would see
+        merged = {**dict(state), **result}
+        gate_result = gate.check(merged)
+        if not gate_result.passed:
+            raise _GateError(gate.name, gate_result.message, gate_result.field)
+        return result
+
+    return _gated
+
+
 class Supervisor:
     """
     Orchestration engine — converts a declarative flow list into a LangGraph
@@ -145,10 +165,28 @@ class Supervisor:
     Conditional edges look up `when_key` in ``state["metadata"]``:
         agents["qa"].run() should set state["metadata"]["has_critical_bugs"] = True
         before the edge is evaluated.
+
+    Verification gates::
+
+        from antcrew.core.gates import NonEmptyGate, PythonSyntaxGate
+
+        supervisor = Supervisor(
+            flow=[("pm", "backend_dev"), ("backend_dev", "qa")],
+            gates={
+                "pm":          NonEmptyGate("prd"),
+                "backend_dev": PythonSyntaxGate("code_artifacts"),
+            },
+        )
     """
 
-    def __init__(self, flow: list[tuple]) -> None:
+    def __init__(
+        self,
+        flow: list[tuple],
+        *,
+        gates: "Optional[dict[str, BaseGate]]" = None,
+    ) -> None:
         self._flow: list[_FlowEdge] = [_parse_edge(e) for e in flow]
+        self._gates: dict = gates or {}
 
     # ------------------------------------------------------------------
     # Build
@@ -183,7 +221,10 @@ class Supervisor:
 
         for name in all_nodes:
             if name in agents:
-                graph.add_node(name, agents[name].run)
+                run_fn = agents[name].run
+                if name in self._gates:
+                    run_fn = _make_gated_run(run_fn, self._gates[name], name)
+                graph.add_node(name, run_fn)
 
         # ── Entry / exit wiring ───────────────────────────────────────
         entry_nodes = all_sources - all_targets
