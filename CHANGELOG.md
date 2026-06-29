@@ -5,6 +5,86 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.10] — 2026-06-29
+
+### Added — Structured artifact contracts
+
+Agents now speak in typed Pydantic models instead of unstructured strings.
+An `ArtifactContract` declares the state key and model class for a pipeline
+artifact; `TemplateAgent` can validate and parse LLM output directly into a
+named model with the new `output_schema:` config key.
+
+#### `resolve_artifact_schema(name) -> type[BaseModel]`
+
+Maps a string name to a Pydantic model class:
+
+```python
+from antcrew import resolve_artifact_schema, PRD
+
+cls = resolve_artifact_schema("PRD")          # → PRD
+cls = resolve_artifact_schema("antcrew.core.artifacts.PRD")  # dotted path
+```
+
+Built-in schemas: `PRD`, `CodeArtifact`, `TestArtifact`, `CodeReview`,
+`ResearchDocument`, `DevOpsArtifact`, `DocumentationArtifact`, `ContentPiece`,
+`CodebaseAnalysis`, `Ticket`.
+
+#### `ArtifactContract`
+
+Typed state accessor that handles dict/string/instance deserialization:
+
+```python
+from antcrew import ArtifactContract, PRD
+
+prd_contract = ArtifactContract("prd", PRD)
+
+# Producing agent:
+def run(self, state):
+    prd = PRD(title="...", summary="...", goals=["..."])
+    return prd_contract.inject(prd)          # → {"prd": {...dict...}}
+
+# Consuming agent:
+def run(self, state):
+    prd = prd_contract.extract(state)        # → PRD instance, validated
+    print(prd.title)
+```
+
+`inject()` stores as a plain dict (JSON-serializable for checkpointers).
+`extract()` accepts model instance, dict, or JSON string — transparent to how the value was stored.
+
+#### `output_schema:` in TemplateAgent
+
+```yaml
+steps:
+  - name: pm
+    system_prompt: |
+      Write a Product Requirements Document for: {request}
+      Return JSON matching the PRD schema.
+    output_key: prd
+    output_schema: PRD            # built-in name
+    output_parse_retries: 2       # retry if schema validation fails
+```
+
+The LLM is called with `json_mode=True`; output is validated against `PRD`
+and stored as `model_dump()` (dict) in state. A downstream step can then call
+`ArtifactContract("prd", PRD).extract(state)` to get a typed instance.
+
+If validation fails after all retries, the step raises (contract is strict).
+
+#### `ContractError`
+
+Raised by `ArtifactContract.extract()` and `inject()` on type mismatches or
+missing keys — distinct from `GateError` (output quality) and `ValidationError`
+(Pydantic schema).
+
+#### 35 new tests
+
+`TestResolveArtifactSchema` (9), `TestArtifactContract` (11),
+`TestTemplateAgentOutputSchema` (8), `TestPublicExports` (7) —
+in `tests/test_artifact_contracts.py`.
+
+---
+
 ## [0.11.9] — 2026-06-29
 
 ### Added — Feedback loop: execute-validate-retry for code-generating agents

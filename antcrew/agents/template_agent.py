@@ -292,6 +292,13 @@ class TemplateAgent(BaseAgent):
         self._interpolate: bool = bool(cfg.get("interpolate", True))
         self._output_json: bool = bool(cfg.get("output_json", False))
         self._output_parse_retries: int = int(cfg.get("output_parse_retries", 0))
+
+        # output_schema: validate LLM output against a named Pydantic model.
+        raw_schema = cfg.get("output_schema")
+        self._output_schema: "Optional[type]" = None
+        if raw_schema:
+            from antcrew.core.artifacts import resolve_artifact_schema
+            self._output_schema = resolve_artifact_schema(str(raw_schema))
         self._save_output: "Optional[Path]" = (
             Path(cfg["save_output"]) if cfg.get("save_output") else None
         )
@@ -351,7 +358,14 @@ class TemplateAgent(BaseAgent):
             else:
                 user_msg = str(raw)
 
-        if self._output_json:
+        if self._output_schema is not None:
+            parsed = self.system_parsed(
+                prompt, user_msg, self._output_schema,
+                max_retries=self._output_parse_retries,
+            )
+            # Store as plain dict so the result is JSON-serializable in state
+            result = parsed.model_dump() if hasattr(parsed, "model_dump") else parsed
+        elif self._output_json:
             result = self.system_parsed(
                 prompt, user_msg, dict,
                 max_retries=self._output_parse_retries,

@@ -14,7 +14,12 @@ from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
 from antcrew.core.feedback import FeedbackRunner, FeedbackLoop, FeedbackResult
 from antcrew.core.pipeline import Pipeline
 from antcrew.core.channel import BaseChannel
-from antcrew.core.artifacts import DevOpsArtifact, DocumentationArtifact
+from antcrew.core.artifacts import (
+    DevOpsArtifact, DocumentationArtifact,
+    PRD, CodeArtifact, TestArtifact, CodeReview, ResearchDocument,
+    ContentPiece, CodebaseAnalysis, Ticket,
+    ArtifactContract, ContractError, ARTIFACT_REGISTRY, resolve_artifact_schema,
+)
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent
@@ -104,6 +109,19 @@ __all__ = [
     "FeedbackRunner",
     "FeedbackLoop",
     "FeedbackResult",
+    # Artifact contracts
+    "PRD",
+    "CodeArtifact",
+    "TestArtifact",
+    "CodeReview",
+    "ResearchDocument",
+    "ContentPiece",
+    "CodebaseAnalysis",
+    "Ticket",
+    "ArtifactContract",
+    "ContractError",
+    "ARTIFACT_REGISTRY",
+    "resolve_artifact_schema",
     # Models
     "SimulatedLLM",
     "GeminiModel",
@@ -179,4 +197,4 @@ __all__ = [
     "load_template_agent",
     "register_transform",
 ]
-__version__ = "0.11.9"
+__version__ = "0.11.10"

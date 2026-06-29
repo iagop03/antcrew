@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import importlib
 from enum import Enum
-from typing import Literal, Optional
+from typing import Generic, Literal, Optional, TypeVar
 from pydantic import BaseModel, Field
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class Priority(str, Enum):
@@ -140,3 +143,147 @@ class ContentPiece(BaseModel):
     outline: list[str] = Field(default_factory=list)
     body: str = ""
     word_count: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
+# Contract system
+# ---------------------------------------------------------------------------
+
+class ContractError(Exception):
+    """Raised when an artifact cannot be extracted or validated from state."""
+
+
+class ArtifactContract(Generic[T]):
+    """Typed state accessor for a Pydantic artifact model.
+
+    Encapsulates the key under which an artifact lives in the shared state
+    and the Pydantic model used to validate it.  Agents that produce or
+    consume a typed artifact use this to exchange objects instead of raw
+    strings.
+
+    Usage::
+
+        from antcrew.core.artifacts import ArtifactContract, PRD
+
+        prd_contract = ArtifactContract("prd", PRD)
+
+        # In a producing agent:
+        def run(self, state):
+            prd = PRD(title="...", summary="...", ...)
+            return prd_contract.inject(prd)   # → {"prd": {...}}
+
+        # In a consuming agent:
+        def run(self, state):
+            prd = prd_contract.extract(state)  # → PRD instance, validated
+            ...
+    """
+
+    def __init__(self, key: str, model: type[T]) -> None:
+        self.key = key
+        self.model = model
+
+    def extract(self, state: dict) -> T:
+        """Return the artifact from *state* as a validated model instance.
+
+        Accepts three stored forms:
+        - Already a model instance (pass-through)
+        - A ``dict`` (``model.model_validate``)
+        - A JSON string (``model.model_validate_json``)
+
+        Raises :class:`ContractError` on missing key or validation failure.
+        """
+        import json as _json
+        value = state.get(self.key)
+        if value is None:
+            raise ContractError(
+                f"Missing required artifact '{self.key}' in state. "
+                f"Expected {self.model.__name__}."
+            )
+        try:
+            if isinstance(value, self.model):
+                return value
+            if isinstance(value, dict):
+                return self.model.model_validate(value)
+            if isinstance(value, str):
+                return self.model.model_validate(_json.loads(value))
+        except Exception as exc:
+            raise ContractError(
+                f"Cannot parse state['{self.key}'] as {self.model.__name__}: {exc}"
+            ) from exc
+        raise ContractError(
+            f"Unsupported type for '{self.key}': {type(value).__name__}. "
+            f"Expected dict, str, or {self.model.__name__}."
+        )
+
+    def inject(self, instance: T) -> dict:
+        """Return ``{key: model_dump()}`` ready to be returned from ``agent.run()``.
+
+        Stores as a plain dict (JSON-serializable) so checkpointers, the REPL,
+        and downstream agents all work without special handling.
+        """
+        if not isinstance(instance, self.model):
+            raise ContractError(
+                f"inject() received {type(instance).__name__}, "
+                f"expected {self.model.__name__}."
+            )
+        return {self.key: instance.model_dump()}
+
+    def __repr__(self) -> str:
+        return f"ArtifactContract(key={self.key!r}, model={self.model.__name__})"
+
+
+# ---------------------------------------------------------------------------
+# Schema registry + resolver
+# ---------------------------------------------------------------------------
+
+#: Short-name → class mapping for all built-in artifact types.
+ARTIFACT_REGISTRY: dict[str, type[BaseModel]] = {
+    "CodebaseAnalysis":     CodebaseAnalysis,
+    "PRD":                  PRD,
+    "Ticket":               Ticket,
+    "CodeArtifact":         CodeArtifact,
+    "TestArtifact":         TestArtifact,
+    "ReviewFinding":        ReviewFinding,
+    "CodeReview":           CodeReview,
+    "ResearchSection":      ResearchSection,
+    "ResearchDocument":     ResearchDocument,
+    "DevOpsArtifact":       DevOpsArtifact,
+    "DocumentationArtifact": DocumentationArtifact,
+    "ContentPiece":         ContentPiece,
+}
+
+
+def resolve_artifact_schema(name: str) -> type[BaseModel]:
+    """Resolve a schema name to a Pydantic model class.
+
+    Accepts:
+    - Short built-in name: ``"PRD"``, ``"CodeArtifact"``
+    - Fully-qualified dotted path: ``"mypackage.models.MyModel"``
+
+    Raises :class:`ValueError` when the name cannot be resolved.
+    """
+    if name in ARTIFACT_REGISTRY:
+        return ARTIFACT_REGISTRY[name]
+    if "." in name:
+        module_path, class_name = name.rsplit(".", 1)
+        try:
+            module = importlib.import_module(module_path)
+            cls = getattr(module, class_name)
+            if not (isinstance(cls, type) and issubclass(cls, BaseModel)):
+                raise ValueError(
+                    f"'{name}' is not a Pydantic BaseModel subclass."
+                )
+            return cls
+        except ImportError as exc:
+            raise ValueError(
+                f"Cannot import '{module_path}' to resolve schema '{name}': {exc}"
+            ) from exc
+        except AttributeError:
+            raise ValueError(
+                f"Module '{module_path}' has no class '{class_name}'."
+            )
+    raise ValueError(
+        f"Unknown artifact schema '{name}'. "
+        f"Built-in schemas: {sorted(ARTIFACT_REGISTRY)}. "
+        "For custom schemas use the fully-qualified path: 'mypackage.models.MyModel'."
+    )
