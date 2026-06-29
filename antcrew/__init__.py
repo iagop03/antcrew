@@ -11,6 +11,7 @@ from antcrew.core.tools import (
     WebSearchTool, CodeExecutorTool, ReadFileTool, WriteFileTool, ListDirTool,
 )
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
+from antcrew.core.feedback import FeedbackRunner, FeedbackLoop, FeedbackResult
 from antcrew.core.pipeline import Pipeline
 from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import DevOpsArtifact, DocumentationArtifact
@@ -99,6 +100,10 @@ __all__ = [
     "SprintPlannerAgent",
     "FeatureAgent",
     "FeatureTeam",
+    # Feedback loop
+    "FeedbackRunner",
+    "FeedbackLoop",
+    "FeedbackResult",
     # Models
     "SimulatedLLM",
     "GeminiModel",
@@ -174,4 +179,4 @@ __all__ = [
     "load_template_agent",
     "register_transform",
 ]
-__version__ = "0.11.8"
+__version__ = "0.11.9"

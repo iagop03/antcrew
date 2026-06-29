@@ -255,12 +255,19 @@ def load(path: str | Path):
         project_dir = cfg.get("project_dir") or None
         max_tool_steps = int(cfg.get("max_tool_steps", 10))
         system_prompt_override = cfg.get("system_prompt") or None
+        max_feedback_rounds = int(cfg.get("feedback_rounds", 0))
+        validate_cmd_raw = cfg.get("validate_cmd")
+        validate_cmd = list(validate_cmd_raw) if validate_cmd_raw else None
+        validate_timeout = float(cfg.get("validate_timeout", 60.0))
         return FeatureTeam(
             llm=default_llm,
             project_dir=project_dir,
             max_tool_steps=max_tool_steps,
             max_cost_usd=max_cost_usd,
             system_prompt_override=system_prompt_override,
+            max_feedback_rounds=max_feedback_rounds,
+            validate_cmd=validate_cmd,
+            validate_timeout=validate_timeout,
         )
 
     raise ValueError(

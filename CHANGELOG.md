@@ -5,6 +5,87 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.9] — 2026-06-29
+
+### Added — Feedback loop: execute-validate-retry for code-generating agents
+
+Closes the most critical gap in the original architecture: generated code was
+never executed. The feedback loop runs a real command (pytest, mypy, etc.)
+against the files the agent wrote, and injects the error output back into the
+agent's context for self-correction — up to a configurable round budget.
+
+#### `FeedbackRunner`
+
+```python
+from antcrew import FeedbackRunner
+
+runner = FeedbackRunner(
+    ["pytest", "-x", "--tb=short"],
+    work_dir="./src",
+    timeout=60.0,
+)
+result = runner.run()   # FeedbackResult(ok, output, returncode, duration_ms)
+```
+
+Captures stdout + stderr, handles timeouts gracefully, supports any shell
+command (not just pytest).
+
+#### `FeedbackLoop`
+
+```python
+from antcrew import FeedbackLoop
+
+loop = FeedbackLoop(runner=runner, max_rounds=3)
+final_state = loop.run(agent.run, {"request": "Add JWT auth"})
+# final_state["feedback_ok"]           → True if validation passed
+# final_state["feedback_rounds_used"]  → how many rounds it took
+```
+
+On failure: injects `_feedback_error` (truncated command output) and
+`_feedback_round` (round number) into state.  `FeatureAgent.run()` reads these
+keys and prepends a structured error block to the user message so the LLM can
+diagnose and fix the issue.
+
+#### `FeatureTeam` — feedback shorthand
+
+```python
+from antcrew import FeatureTeam, AnthropicModel
+
+team = FeatureTeam(
+    llm=AnthropicModel(),
+    project_dir="./src",
+    max_feedback_rounds=3,
+    validate_cmd=["pytest", "-x", "--tb=short"],
+)
+result = team.run("Add JWT authentication to the REST API")
+print(result.state["feedback_ok"])           # True
+print(result.state["feedback_rounds_used"])  # 1, 2, or 3
+```
+
+When `max_feedback_rounds=0` (default) or `validate_cmd` is absent, the loop
+is disabled and behaviour is identical to v0.11.8.
+
+#### YAML config
+
+```yaml
+team: feature
+model: claude-sonnet-4-6
+project_dir: ./src
+max_tool_steps: 12
+feedback_rounds: 3
+validate_cmd: ["pytest", "-x", "--tb=short"]
+validate_timeout: 60
+max_cost_usd: 3.0
+```
+
+#### 32 new tests
+
+`TestFeedbackResult` (4), `TestFeedbackRunner` (8), `TestFeedbackLoop` (9),
+`TestFeatureTeamFeedback` (6), `TestConfigFeedbackYAML` (2),
+`TestPublicExports` (3) — in `tests/test_feedback.py`.
+
+---
+
 ## [0.11.8] — 2026-06-29
 
 ### Added — Feature Agent (vertical-slice single-context agent)

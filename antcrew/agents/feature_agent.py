@@ -119,11 +119,23 @@ class FeatureAgent(BaseAgent):
     def run(self, state: "TeamState") -> dict:
         request = state.get("request", "")
         plan = state.get("plan", "")
+        feedback_error = state.get("_feedback_error", "")
+        feedback_round = state.get("_feedback_round", 0)
+
         context_parts: list[str] = []
         if plan:
             context_parts.append(f"Project plan:\n{plan}")
         if self._project_dir:
             context_parts.append(f"Project root: {self._project_dir}")
+        if feedback_error:
+            context_parts.append(
+                f"[Feedback round {feedback_round} — validation FAILED]\n"
+                f"The following errors were produced when running the validation "
+                f"command against your previously written files. Read the files "
+                f"you wrote, diagnose the root cause, and fix them.\n\n"
+                f"```\n{feedback_error}\n```"
+            )
+
         if context_parts:
             user = "\n\n".join(context_parts) + f"\n\nFeature to implement: {request}"
         else:
@@ -149,6 +161,17 @@ class FeatureTeam:
 
     Has the same ``run(request) -> RunResult`` interface as DevTeam /
     CustomTeam so it works everywhere a team is expected.
+
+    When *max_feedback_rounds* > 0 and *validate_cmd* is set, the team runs a
+    feedback loop: after the agent writes files the command executes; on
+    failure the error output is injected back into the agent's context for the
+    next round.
+
+    Args:
+        max_feedback_rounds: Max rounds of execute-validate-retry (0 = disabled).
+        validate_cmd:        Command to run for validation, e.g.
+                             ``["pytest", "-x", "--tb=short"]``.
+        validate_timeout:    Seconds before the validation process is killed.
     """
 
     def __init__(
@@ -160,9 +183,10 @@ class FeatureTeam:
         max_tool_steps: int = 10,
         max_cost_usd: Optional[float] = None,
         system_prompt_override: Optional[str] = None,
+        max_feedback_rounds: int = 0,
+        validate_cmd: Optional[list[str]] = None,
+        validate_timeout: float = 60.0,
     ) -> None:
-        if max_cost_usd is not None:
-            llm = llm  # cost guard is set on the agent
         self._agent = FeatureAgent(
             llm,
             project_dir=project_dir,
@@ -172,9 +196,21 @@ class FeatureTeam:
             system_prompt_override=system_prompt_override,
         )
         self.llm = llm
+        self._feedback_loop = None
+        if max_feedback_rounds > 0 and validate_cmd:
+            from antcrew.core.feedback import FeedbackRunner, FeedbackLoop
+            runner = FeedbackRunner(
+                validate_cmd,
+                work_dir=project_dir,
+                timeout=validate_timeout,
+            )
+            self._feedback_loop = FeedbackLoop(runner=runner, max_rounds=max_feedback_rounds)
 
     def run(self, request: str) -> RunResult:
         state: dict = {"request": request}
-        result = self._agent.run(state)
-        state.update(result)
+        if self._feedback_loop is not None:
+            state = self._feedback_loop.run(self._agent.run, state)
+        else:
+            result = self._agent.run(state)
+            state.update(result)
         return RunResult(state=state)
