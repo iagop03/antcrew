@@ -412,3 +412,93 @@ class TestExports:
         assert AsyncCustomTeam is not None
         assert AsyncFeatureTeam is not None
         assert AsyncRouter is not None
+
+
+# ---------------------------------------------------------------------------
+# Mixing built-in agents with operators in CustomTeam
+# ---------------------------------------------------------------------------
+
+class TestMixedPipeline:
+    """Built-in agent instances can be used as CustomTeam steps."""
+
+    def _make_dummy_agent(self, name: str, output_key: str, output_value):
+        """Return a minimal agent-like object (not TemplateAgent)."""
+        class _Dummy:
+            def __init__(self):
+                self.name = name
+                self._output_key = output_key
+            def run(self, state: dict) -> dict:
+                return {output_key: output_value}
+        return _Dummy()
+
+    def test_agent_instance_accepted_as_step(self):
+        agent = self._make_dummy_agent("gen", "data", "hello")
+        team = CustomTeam(steps=[agent], llm=SimulatedLLM())
+        result = team.run("task")
+        assert result.state["data"] == "hello"
+
+    def test_agent_then_operator(self):
+        agent = self._make_dummy_agent("gen", "draft", "content")
+        team = CustomTeam(
+            steps=[agent, RenameOp("draft", "final")],
+            llm=SimulatedLLM(),
+        )
+        result = team.run("task")
+        assert result.state["final"] == "content"
+        assert "draft" not in result.state
+
+    def test_operator_then_agent(self):
+        agent = self._make_dummy_agent("consumer", "out", "done")
+        team = CustomTeam(
+            steps=[SetOp("injected", True), agent],
+            llm=SimulatedLLM(),
+        )
+        result = team.run("task")
+        assert result.state["injected"] is True
+        assert result.state["out"] == "done"
+
+    def test_mixed_pipeline_order(self):
+        a1 = self._make_dummy_agent("a1", "step1", "A")
+        a2 = self._make_dummy_agent("a2", "step2", "B")
+        team = CustomTeam(
+            steps=[
+                a1,
+                CopyOp("step1", "step1_copy"),
+                a2,
+                DropOp("step1_copy"),
+            ],
+            llm=SimulatedLLM(),
+        )
+        result = team.run("task")
+        assert result.state["step1"] == "A"
+        assert result.state["step2"] == "B"
+        assert "step1_copy" not in result.state
+
+    def test_template_agent_and_builtin_agent_together(self):
+        from antcrew.agents.pm import PMAgent
+        llm = SimulatedLLM()
+        # PMAgent is a built-in typed agent — should be accepted as a step
+        team = CustomTeam(
+            steps=[
+                {"name": "intro", "system_prompt": "Say hello.", "output_key": "greeting"},
+                PMAgent(llm),
+            ],
+            llm=llm,
+        )
+        # Construction must not raise — that's the contract
+        assert team is not None
+        assert len(team._step_groups) == 2
+
+    def test_three_agent_types_together(self):
+        """TemplateAgent + built-in agent + operator all in one pipeline."""
+        from antcrew.agents.business import BusinessAnalystAgent
+        llm = SimulatedLLM()
+        team = CustomTeam(
+            steps=[
+                {"name": "intro", "system_prompt": "Start.", "output_key": "note"},
+                SetOp("ready", True),
+                BusinessAnalystAgent(llm),
+            ],
+            llm=llm,
+        )
+        assert len(team._step_groups) == 3

@@ -69,6 +69,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.agents.template_agent import TemplateAgent
@@ -76,7 +77,6 @@ from antcrew.core.operators import BaseOperator, _DELETE, build_operator
 from antcrew.core.run_result import RunResult
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from antcrew.models.base import BaseLLM
     from antcrew.trace import TraceLog
 
@@ -253,6 +253,10 @@ def _parse_steps(
     for item in raw_steps:
         if isinstance(item, BaseOperator):
             # Pre-built operator passed directly from Python code.
+            groups.append([_Step(agent=item)])
+            continue
+        if hasattr(item, "run") and not isinstance(item, (dict, str, Path)):
+            # Any agent instance (built-in or custom) with run(state)->dict.
             groups.append([_Step(agent=item)])
             continue
         if isinstance(item, dict) and "operator" in item:
