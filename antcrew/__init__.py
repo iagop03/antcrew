@@ -33,7 +33,7 @@ from antcrew.core.exceptions import CostLimitExceeded
 from antcrew.core.gates import (
     BaseGate, GateResult, GateError,
     NonEmptyGate, PythonSyntaxGate, JsonGate, SchemaGate,
-    AllGate, AnyGate,
+    AllGate, AnyGate, parse_gate,
 )
 from antcrew.trace import TraceLog
 from antcrew.flow import load_flow, validate_flow, format_flow
@@ -123,6 +123,7 @@ __all__ = [
     "SchemaGate",
     "AllGate",
     "AnyGate",
+    "parse_gate",
     "TraceLog",
     # Flow
     "load_flow",
@@ -165,4 +166,4 @@ __all__ = [
     "load_template_agent",
     "register_transform",
 ]
-__version__ = "0.11.6"
+__version__ = "0.11.7"

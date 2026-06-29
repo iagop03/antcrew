@@ -84,7 +84,7 @@ log = logging.getLogger(__name__)
 # Keys consumed by CustomTeam itself — not forwarded to TemplateAgent config.
 _TEAM_KEYS = frozenset({
     "max_retries", "retry_delay", "parallel", "condition",
-    "timeout", "on_error", "default", "team_file",
+    "timeout", "on_error", "default", "team_file", "gate",
 })
 
 _VALID_ON_ERROR = frozenset({"raise", "skip"})
@@ -106,6 +106,8 @@ class _Step:
     on_error: str = "raise"
     # default: fallback value written to output_key when on_error="skip".
     default: Any = None
+    # gate: optional verification gate run after the agent completes.
+    gate: Any = None  # BaseGate | None
 
 
 # A step group is a list of Steps.  len==1 → sequential; len>1 → parallel.
@@ -133,7 +135,7 @@ def _parse_condition(raw: "Any") -> "Optional[list[str]]":
 
 
 def _extract_step_meta(raw: dict) -> tuple:
-    """Pull team-level step keys; return (max_retries, retry_delay, condition, timeout, on_error, default)."""
+    """Pull team-level step keys; return (max_retries, retry_delay, condition, timeout, on_error, default, gate)."""
     max_retries = int(raw.get("max_retries", 0))
     retry_delay = float(raw.get("retry_delay", 0.0))
     condition = _parse_condition(raw.get("condition"))
@@ -145,7 +147,12 @@ def _extract_step_meta(raw: dict) -> tuple:
             f"'on_error' must be one of {sorted(_VALID_ON_ERROR)}; got {on_error!r}"
         )
     default = raw.get("default", None)
-    return max_retries, retry_delay, condition, timeout, on_error, default
+    gate_raw = raw.get("gate")
+    gate = None
+    if gate_raw is not None:
+        from antcrew.core.gates import parse_gate as _pg
+        gate = _pg(gate_raw)
+    return max_retries, retry_delay, condition, timeout, on_error, default, gate
 
 
 def _make_step(raw: Any, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _Step:
@@ -160,7 +167,7 @@ def _make_step(raw: Any, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _
     if isinstance(raw, dict):
         if "team_file" in raw:
             return _make_nested_step(raw, llm, base_dir=base_dir)
-        max_retries, retry_delay, condition, timeout, on_error, default = _extract_step_meta(raw)
+        max_retries, retry_delay, condition, timeout, on_error, default, gate = _extract_step_meta(raw)
         raw = _agent_cfg(raw)
 
     return _Step(
@@ -171,6 +178,7 @@ def _make_step(raw: Any, llm: "BaseLLM", base_dir: "Optional[Path]" = None) -> _
         timeout=timeout,
         on_error=on_error,
         default=default,
+        gate=gate,
     )
 
 
@@ -203,7 +211,7 @@ def _make_nested_step(raw: dict, llm: "BaseLLM", base_dir: "Optional[Path]" = No
     name = raw.get("name") or team_path.stem
 
     agent = _NestedTeamAgent(nested_team, input_key, name)
-    max_retries, retry_delay, condition, timeout, on_error, default = _extract_step_meta(raw)
+    max_retries, retry_delay, condition, timeout, on_error, default, gate = _extract_step_meta(raw)
     return _Step(
         agent=agent,
         max_retries=max_retries,
@@ -212,6 +220,7 @@ def _make_nested_step(raw: dict, llm: "BaseLLM", base_dir: "Optional[Path]" = No
         timeout=timeout,
         on_error=on_error,
         default=default,
+        gate=gate,
     )
 
 
@@ -259,14 +268,22 @@ def _run_agent_with_timeout(agent: Any, state: dict, timeout: float) -> dict:
 
 
 def _run_step(step: _Step, state: dict) -> dict:
-    """Run *step* with its retry policy and on_error handling; raise on final failure."""
+    """Run *step* with its retry policy, on_error handling, and gate check."""
+    from antcrew.core.gates import GateError as _GateError
     attempts = step.max_retries + 1
     last_exc: Exception = RuntimeError("unreachable")
     for attempt in range(attempts):
         try:
             if step.timeout is not None:
-                return _run_agent_with_timeout(step.agent, state, step.timeout)
-            return step.agent.run(state)
+                result = _run_agent_with_timeout(step.agent, state, step.timeout)
+            else:
+                result = step.agent.run(state)
+            if step.gate is not None:
+                merged = {**state, **result}
+                gate_result = step.gate.check(merged)
+                if not gate_result.passed:
+                    raise _GateError(step.gate.name, gate_result.message, gate_result.field)
+            return result
         except Exception as exc:
             last_exc = exc
             log.warning(

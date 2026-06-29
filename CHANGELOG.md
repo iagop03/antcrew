@@ -5,6 +5,80 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.11.7] — 2026-06-29
+
+### Added — Workflow-as-primary-API: gates in YAML + `parse_gate`
+
+Gates defined in code (v0.11.6) can now be expressed entirely in YAML, making
+`agentteam.yaml` the single source of truth for a complete pipeline including
+verification logic. No Python required.
+
+#### `parse_gate(raw) -> BaseGate` (new public function)
+Parses a gate from a YAML value — string shorthand or full dict:
+
+```yaml
+# String shorthand: "type:field"
+gate: "non_empty:prd"
+gate: "python_syntax:code_artifacts"
+gate: "json:payload"
+
+# Full dict (all options):
+gate:
+  type: non_empty
+  field: prd
+  min_length: 100
+
+# Composable:
+gate:
+  type: all
+  gates:
+    - type: non_empty
+      field: prd
+    - type: python_syntax
+      field: code_artifacts
+```
+
+Exported from `antcrew` top-level: `from antcrew import parse_gate`.
+
+#### `gates:` in flow YAML (`agentteam.yaml`)
+```yaml
+team: dev
+model: claude
+flow:
+  - [pm, backend_dev]
+  - [backend_dev, qa]
+gates:
+  pm: "non_empty:prd"
+  backend_dev: "python_syntax:code_artifacts"
+```
+`config.load()` now parses the `gates:` key and passes them to `Supervisor`.
+
+#### `gate:` per step in `CustomTeam` YAML
+```yaml
+team: custom
+model: claude
+steps:
+  - name: planner
+    system_prompt: "Create a numbered plan."
+    output_key: plan
+    gate: "non_empty:plan"
+  - name: executor
+    system_prompt: "Execute: {plan}"
+    output_key: result
+    gate:
+      type: non_empty
+      field: result
+      min_length: 50
+```
+Gate fires after the step writes its output key; `GateError` stops the
+pipeline with the same structured diagnostic as v0.11.6.
+
+#### 17 new tests
+`TestCustomTeamGates` (5), `TestParseGate` (9), `TestConfigGatesYAML` (3) —
+in `tests/test_custom_team.py`.
+
+---
+
 ## [0.11.6] — 2026-06-29
 
 ### Added — Verification gates (`antcrew.core.gates`)

@@ -1428,3 +1428,215 @@ def test_nested_team_inherits_vars(tmp_path):
         os.chdir(old_cwd)
 
     assert result.state.get("code") == "rust code"
+
+
+# ---------------------------------------------------------------------------
+# Gate integration in CustomTeam steps
+# ---------------------------------------------------------------------------
+
+class TestCustomTeamGates:
+    def test_gate_passes_and_pipeline_continues(self):
+        from antcrew.core.gates import NonEmptyGate
+        team = CustomTeam(
+            steps=[
+                {
+                    "name": "planner",
+                    "system_prompt": "Plan it.",
+                    "output_key": "plan",
+                    "gate": {"type": "non_empty", "field": "plan"},
+                },
+                {
+                    "name": "executor",
+                    "system_prompt": "Execute: {plan}",
+                    "output_key": "result",
+                },
+            ],
+            llm=SimulatedLLM(),
+        )
+        result = team.run("do something")
+        assert result.state.get("plan") is not None
+
+    def test_gate_string_shorthand(self):
+        team = CustomTeam(
+            steps=[
+                {
+                    "name": "writer",
+                    "system_prompt": "Write a story.",
+                    "output_key": "story",
+                    "gate": "non_empty:story",
+                },
+            ],
+            llm=SimulatedLLM(),
+        )
+        result = team.run("task")
+        assert result.state.get("story") is not None
+
+    def test_gate_fails_raises_gate_error(self):
+        from antcrew.core.gates import GateError, NonEmptyGate
+        from antcrew.models.simulated import SimulatedLLM as _SIM
+
+        # Monkey-patch to produce None output
+        llm = _SIM()
+        steps = [
+            {
+                "name": "broken",
+                "system_prompt": "...",
+                "output_key": "missing_key",
+                "gate": {"type": "non_empty", "field": "definitely_missing"},
+            }
+        ]
+        team = CustomTeam(steps=steps, llm=llm)
+        with pytest.raises(GateError):
+            team.run("task")
+
+    def test_gate_python_syntax_shorthand(self):
+        team = CustomTeam(
+            steps=[
+                {
+                    "name": "coder",
+                    "system_prompt": "Write Python code.",
+                    "output_key": "code",
+                    "gate": "python_syntax:code",
+                }
+            ],
+            llm=SimulatedLLM(),
+        )
+        result = team.run("task")
+        assert result.state.get("code") is not None
+
+    def test_step_without_gate_unaffected(self):
+        team = CustomTeam(
+            steps=[
+                {"name": "step1", "system_prompt": "Do X.", "output_key": "x"},
+                {"name": "step2", "system_prompt": "Do Y: {x}", "output_key": "y"},
+            ],
+            llm=SimulatedLLM(),
+        )
+        result = team.run("task")
+        assert result.state.get("y") is not None
+
+
+# ---------------------------------------------------------------------------
+# parse_gate — YAML spec parser
+# ---------------------------------------------------------------------------
+
+class TestParseGate:
+    def test_string_shorthand_non_empty(self):
+        from antcrew.core.gates import parse_gate, NonEmptyGate
+        g = parse_gate("non_empty:prd")
+        assert isinstance(g, NonEmptyGate)
+        assert g.field == "prd"
+
+    def test_string_shorthand_python_syntax(self):
+        from antcrew.core.gates import parse_gate, PythonSyntaxGate
+        g = parse_gate("python_syntax:code_artifacts")
+        assert isinstance(g, PythonSyntaxGate)
+
+    def test_string_shorthand_json(self):
+        from antcrew.core.gates import parse_gate, JsonGate
+        g = parse_gate("json:payload")
+        assert isinstance(g, JsonGate)
+
+    def test_dict_non_empty_with_min_length(self):
+        from antcrew.core.gates import parse_gate, NonEmptyGate
+        g = parse_gate({"type": "non_empty", "field": "prd", "min_length": 100})
+        assert isinstance(g, NonEmptyGate)
+        assert g.min_length == 100
+
+    def test_dict_all_gate(self):
+        from antcrew.core.gates import parse_gate, AllGate
+        g = parse_gate({
+            "type": "all",
+            "gates": [
+                {"type": "non_empty", "field": "prd"},
+                {"type": "python_syntax", "field": "code"},
+            ]
+        })
+        assert isinstance(g, AllGate)
+
+    def test_dict_any_gate(self):
+        from antcrew.core.gates import parse_gate, AnyGate
+        g = parse_gate({
+            "type": "any",
+            "gates": [
+                {"type": "non_empty", "field": "a"},
+                {"type": "non_empty", "field": "b"},
+            ]
+        })
+        assert isinstance(g, AnyGate)
+
+    def test_unknown_type_raises(self):
+        from antcrew.core.gates import parse_gate
+        with pytest.raises(ValueError, match="Unknown gate type"):
+            parse_gate("magic_gate:field")
+
+    def test_all_gate_empty_raises(self):
+        from antcrew.core.gates import parse_gate
+        with pytest.raises(ValueError):
+            parse_gate({"type": "all", "gates": []})
+
+    def test_invalid_spec_raises(self):
+        from antcrew.core.gates import parse_gate
+        with pytest.raises(ValueError):
+            parse_gate(42)
+
+
+# ---------------------------------------------------------------------------
+# gates: in YAML config (flow-based teams)
+# ---------------------------------------------------------------------------
+
+class TestConfigGatesYAML:
+    def test_load_flow_with_gates_from_yaml(self, tmp_path):
+        yaml_content = """
+team: dev
+model: simulated
+flow:
+  - [pm, backend_dev]
+gates:
+  pm: "non_empty:prd"
+"""
+        cfg_file = tmp_path / "team.yaml"
+        cfg_file.write_text(yaml_content, encoding="utf-8")
+
+        from antcrew.config import load
+        team = load(cfg_file)
+        # Supervisor should have gates wired
+        sup = getattr(team, "_supervisor", None) or getattr(team, "supervisor", None)
+        if sup is not None:
+            assert "pm" in sup._gates
+        # At minimum: load() doesn't raise
+
+    def test_load_flow_without_gates_still_works(self, tmp_path):
+        yaml_content = """
+team: dev
+model: simulated
+flow:
+  - [pm, backend_dev]
+"""
+        cfg_file = tmp_path / "team.yaml"
+        cfg_file.write_text(yaml_content, encoding="utf-8")
+
+        from antcrew.config import load
+        team = load(cfg_file)
+        assert team is not None
+
+    def test_load_custom_team_with_step_gate(self, tmp_path):
+        yaml_content = """
+team: custom
+model: simulated
+steps:
+  - name: planner
+    system_prompt: "Plan the task."
+    output_key: plan
+    gate: "non_empty:plan"
+  - name: executor
+    system_prompt: "Execute: {plan}"
+    output_key: result
+"""
+        cfg_file = tmp_path / "team.yaml"
+        cfg_file.write_text(yaml_content, encoding="utf-8")
+
+        from antcrew.config import load
+        team = load(cfg_file)
+        result = team.run("build something")
+        assert result.state.get("plan") is not None

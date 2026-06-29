@@ -293,3 +293,70 @@ class AnyGate(BaseGate):
                 return result
             messages.append(result.message)
         return GateResult(False, " | ".join(messages))
+
+
+# ---------------------------------------------------------------------------
+# YAML / dict spec parser
+# ---------------------------------------------------------------------------
+
+def parse_gate(raw) -> "BaseGate":
+    """Parse a gate from a YAML value — string shorthand or full dict.
+
+    String shorthand ``"type:field"``::
+
+        "non_empty:prd"
+        "python_syntax:code_artifacts"
+        "json:payload"
+
+    Full dict (all options available)::
+
+        type: non_empty
+        field: prd
+        min_length: 100
+
+    Composable::
+
+        type: all
+        gates:
+          - type: non_empty
+            field: prd
+          - type: python_syntax
+            field: code_artifacts
+
+    Raises:
+        ValueError: if the gate type is unknown or the spec is malformed.
+    """
+    if isinstance(raw, str):
+        parts = raw.strip().split(":", 1)
+        gate_type = parts[0].lower()
+        field = parts[1] if len(parts) > 1 else ""
+        return _build_gate(gate_type, field, {})
+
+    if isinstance(raw, dict):
+        gate_type = str(raw.get("type", "")).lower()
+        field = str(raw.get("field", ""))
+        if gate_type in ("all", "any"):
+            sub_specs = raw.get("gates") or []
+            if not sub_specs:
+                raise ValueError(f"'{gate_type}' gate requires a non-empty 'gates' list.")
+            sub = [parse_gate(s) for s in sub_specs]
+            return AllGate(*sub) if gate_type == "all" else AnyGate(*sub)
+        return _build_gate(gate_type, field, raw)
+
+    raise ValueError(
+        f"Cannot parse gate spec: {raw!r}. "
+        "Expected a string ('non_empty:field') or a dict ({'type': 'non_empty', 'field': 'prd'})."
+    )
+
+
+def _build_gate(gate_type: str, field: str, cfg: dict) -> "BaseGate":
+    if gate_type == "non_empty":
+        return NonEmptyGate(field, min_length=int(cfg.get("min_length", 1)))
+    if gate_type in ("python_syntax", "python"):
+        return PythonSyntaxGate(field)
+    if gate_type == "json":
+        return JsonGate(field)
+    raise ValueError(
+        f"Unknown gate type '{gate_type}'. "
+        "Known types: non_empty, python_syntax, json, all, any."
+    )

@@ -170,12 +170,15 @@ def load(path: str | Path):
     # Use first channel for per-agent channel assignment
     channel = integrations[0] if integrations else None
 
-    # Supervisor: support `flow:` key for custom pipeline
+    # Supervisor: support `flow:` key for custom pipeline + optional `gates:`
     supervisor = None
     if "flow" in cfg:
         from antcrew.core.supervisor import Supervisor
+        from antcrew.core.gates import parse_gate as _pg
         flow = [tuple(step) for step in cfg["flow"]]
-        supervisor = Supervisor(flow=flow)
+        gates_raw: dict = cfg.get("gates") or {}
+        gates = {name: _pg(spec) for name, spec in gates_raw.items()}
+        supervisor = Supervisor(flow=flow, gates=gates if gates else None)
 
     # Per-agent overrides
     agent_overrides: dict = {}
