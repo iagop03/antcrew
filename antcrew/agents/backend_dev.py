@@ -204,11 +204,12 @@ class BackendDevAgent(BaseAgent):
             }
 
         query = " ".join(t.title for t in open_tickets[:5])
+        kb_ctx = str(state.get("_kb_context") or "")
         sym_ctx = ""
         if self.symbol_index is not None:
             topics = query.split() + [t.title for t in open_tickets[:3]]
             sym_ctx = self.symbol_index.context_for(topics)
-        repo_ctx = sym_ctx + self._search_repo(query) + self._recall(query)
+        repo_ctx = kb_ctx + sym_ctx + self._search_repo(query) + self._recall(query)
         plan_prompt = _PLAN_SYSTEM + repo_ctx
         file_prompt = _FILE_SYSTEM + repo_ctx
 

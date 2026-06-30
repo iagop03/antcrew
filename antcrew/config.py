@@ -189,16 +189,18 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
     max_cost_usd: Optional[float] = float(max_cost_usd_cfg) if max_cost_usd_cfg is not None else None
 
     feedback_rounds: int = int(cfg.get("feedback_rounds", 0))
-    lint_cmd = cfg.get("lint_cmd") or None         # list[str] or str or None
-    work_dir = cfg.get("work_dir") or None         # str path for lint runner
+    lint_cmd = cfg.get("lint_cmd") or None           # list[str] or str or None
+    work_dir = cfg.get("work_dir") or None           # str path for lint runner
     enable_coherence = bool(cfg.get("enable_coherence", False))
+    project_kb_path = cfg.get("project_kb_path") or None  # path for KB JSON file
 
     if team_type == "dev":
         from antcrew.teams.dev_team import DevTeam
         team = DevTeam(model=default_llm, integrations=integrations,
                        agents=agent_overrides, supervisor=supervisor, runner=runner,
                        max_cost_usd=max_cost_usd, feedback_rounds=feedback_rounds,
-                       lint_cmd=lint_cmd, work_dir=work_dir, enable_coherence=enable_coherence)
+                       lint_cmd=lint_cmd, work_dir=work_dir, enable_coherence=enable_coherence,
+                       project_kb_path=project_kb_path)
         team.output_dir = cfg.get("output_dir") or None
         return team
 

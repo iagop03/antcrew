@@ -87,6 +87,7 @@ class DevTeam(InteractiveMixin):
         lint_cmd: "Optional[list[str] | str]" = None,
         work_dir: "Optional[str]" = None,
         enable_coherence: bool = False,
+        project_kb_path: "Optional[str]" = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
@@ -97,6 +98,11 @@ class DevTeam(InteractiveMixin):
         self._work_dir = work_dir
         self._enable_coherence: bool = enable_coherence
         self._checkpointer = checkpointer
+        self._project_kb = None
+        if project_kb_path:
+            from antcrew.core.project_kb import ProjectKB
+            self._project_kb = ProjectKB.load(project_kb_path)
+            self._project_kb._path = Path(project_kb_path)
         self._trace_log = trace_log
         if max_cost_usd is not None:
             self.llm.max_cost_usd = max_cost_usd
@@ -150,6 +156,7 @@ class DevTeam(InteractiveMixin):
             "current_agent": "",
             "errors": [],
             "metadata": {},
+            "_kb_context": "",
         }
 
     def _get_telegram(self) -> "TelegramChannel":
@@ -182,7 +189,16 @@ class DevTeam(InteractiveMixin):
         try:
             app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
             config = {"configurable": {"thread_id": thread_id}}
-            state = app.invoke(self._initial_state(request), config=config)
+            initial = self._initial_state(request)
+            if self._project_kb:
+                initial["_kb_context"] = self._project_kb.context_for_agent("backend_dev")
+            state = app.invoke(initial, config=config)
+            if self._project_kb:
+                try:
+                    self._project_kb.update_from_state(state)
+                    self._project_kb.save()
+                except Exception as exc:
+                    log.warning("ProjectKB update failed: %s", exc)
             if self._enable_coherence and "coherence" in self._agents and state.get("code_artifacts"):
                 try:
                     coherence_result = self._agents["coherence"].run(state)

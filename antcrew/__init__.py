@@ -25,6 +25,7 @@ from antcrew.core.artifacts import (
     coerce_model, coerce_list,
 )
 from antcrew.agents.coherence import CoherenceAgent
+from antcrew.core.project_kb import ProjectKB
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent
