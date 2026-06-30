@@ -306,6 +306,22 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
 
         return Router(classifier=classifier, routes=built_routes, default=default_route)
 
+    if team_type == "minimal":
+        from antcrew.core.task_classifier import MinimalPipeline, TaskType
+        task_type_raw = cfg.get("task_type") or "auto"
+        forced_type = None if task_type_raw == "auto" else TaskType(task_type_raw)
+        use_llm = bool(cfg.get("use_llm_classifier", False))
+        return MinimalPipeline(
+            model=default_llm,
+            task_type=forced_type,
+            use_llm_classifier=use_llm,
+            feedback_rounds=feedback_rounds,
+            lint_cmd=lint_cmd,
+            work_dir=work_dir,
+            enable_coherence=enable_coherence,
+            project_kb_path=project_kb_path,
+        )
+
     if team_type == "feature":
         from antcrew.agents.feature_agent import FeatureTeam
         project_dir = cfg.get("project_dir") or None

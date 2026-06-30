@@ -26,6 +26,7 @@ from antcrew.core.artifacts import (
 )
 from antcrew.agents.coherence import CoherenceAgent
 from antcrew.core.project_kb import ProjectKB
+from antcrew.core.task_classifier import TaskType, classify_task, MinimalPipeline
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent
