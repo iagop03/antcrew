@@ -24,6 +24,7 @@ from antcrew.core.artifacts import (
     ArtifactContract, ContractError, ARTIFACT_REGISTRY, resolve_artifact_schema,
     coerce_model, coerce_list,
 )
+from antcrew.agents.coherence import CoherenceAgent
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent

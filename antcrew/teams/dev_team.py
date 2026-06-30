@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional
 from antcrew.agents.business import BusinessAnalystAgent
 from antcrew.agents.pm import PMAgent
 from antcrew.agents.backend_dev import BackendDevAgent
+from antcrew.agents.coherence import CoherenceAgent
 from antcrew.core.artifacts import PRD, Ticket
 from antcrew.core.supervisor import Supervisor
 from antcrew.core.state import TeamState
@@ -85,6 +86,7 @@ class DevTeam(InteractiveMixin):
         feedback_rounds: int = 0,
         lint_cmd: "Optional[list[str] | str]" = None,
         work_dir: "Optional[str]" = None,
+        enable_coherence: bool = False,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
@@ -93,6 +95,7 @@ class DevTeam(InteractiveMixin):
         self._feedback_rounds: int = feedback_rounds
         self._lint_cmd = lint_cmd
         self._work_dir = work_dir
+        self._enable_coherence: bool = enable_coherence
         self._checkpointer = checkpointer
         self._trace_log = trace_log
         if max_cost_usd is not None:
@@ -103,6 +106,7 @@ class DevTeam(InteractiveMixin):
             "business_analyst": BusinessAnalystAgent(_am.get("business_analyst", self.llm)),
             "pm":               PMAgent(_am.get("pm", self.llm)),
             "backend_dev":      BackendDevAgent(_am.get("backend_dev", self.llm)),
+            "coherence":        CoherenceAgent(_am.get("coherence", self.llm)),
         }
         if agents:
             defaults.update(agents)
@@ -175,6 +179,12 @@ class DevTeam(InteractiveMixin):
             app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
             config = {"configurable": {"thread_id": thread_id}}
             state = app.invoke(self._initial_state(request), config=config)
+            if self._enable_coherence and "coherence" in self._agents and state.get("code_artifacts"):
+                try:
+                    coherence_result = self._agents["coherence"].run(state)
+                    state.update(coherence_result)
+                except Exception as exc:
+                    log.warning("CoherenceAgent failed: %s", exc)
             if self.memory:
                 self.memory.store_run(state)
             if self._runner and state.get("test_artifacts"):
