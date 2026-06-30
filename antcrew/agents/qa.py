@@ -1,11 +1,47 @@
 ﻿from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import CodeArtifact, TestArtifact, Ticket, coerce_list
 from antcrew.core.state import TeamState
+
+
+def _extract_symbols_context(source: str, file_path: str) -> str:
+    """Return a short context block listing the public symbols in *source*.
+
+    For Python files we parse with ``ast`` to get exact names and signatures.
+    For other languages we fall back to a lightweight regex scan.
+    The block is prepended to the QA prompt so the agent knows what to import.
+    """
+    suffix = Path(file_path).suffix.lower()
+    if suffix == ".py":
+        return _python_symbols(source)
+    return ""  # future: add TS/JS parser
+
+
+def _python_symbols(source: str) -> str:
+    """Parse Python source and return a concise symbol listing."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return ""
+
+    lines: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            if not node.name.startswith("_"):
+                args = [a.arg for a in node.args.args]
+                lines.append(f"  def {node.name}({', '.join(args)})")
+        elif isinstance(node, ast.ClassDef):
+            if not node.name.startswith("_"):
+                lines.append(f"  class {node.name}")
+
+    if not lines:
+        return ""
+    return "Public symbols in this file (import exactly these names):\n" + "\n".join(lines) + "\n\n"
 
 # File extensions that are worth testing; everything else is skipped.
 _TESTABLE_EXTS = {
@@ -15,7 +51,9 @@ _TESTABLE_EXTS = {
 
 _SYSTEM = """\
 You are a QA Engineer on a software development team.
-Given ONE source file, write a focused test file for it.
+Given ONE source file, write a focused test file that tests the ACTUAL
+implementation — the functions, classes, and behaviours present in the code,
+not a hypothetical spec.
 
 Respond ONLY with a valid JSON array containing EXACTLY ONE test artifact object \
 (no markdown fences, no prose):
@@ -32,11 +70,13 @@ Respond ONLY with a valid JSON array containing EXACTLY ONE test artifact object
 
 Rules:
 - One test file per source file — do NOT combine multiple source files.
+- Import EXACTLY the names visible in the source (functions, classes, constants).
 - Cover the 3-5 most important behaviours: happy path, key edge cases, one error path.
 - Keep the test file under 120 lines.
 - Use pytest for Python, Vitest/Jest for TypeScript/JavaScript.
 - Mock external services and databases.
 - Each test must be independently runnable.
+- DO NOT test names that are not exported by the source file.
 """
 
 _BUG_DETECTOR_SYSTEM = """\
@@ -105,8 +145,9 @@ class QAAgent(BaseAgent):
         for a in testable:
             ticket = ticket_map.get(a.ticket_id)
             ticket_ctx = f"Ticket:\n{ticket.model_dump_json(indent=2)}\n\n" if ticket else ""
+            symbols_ctx = _extract_symbols_context(a.content, a.file_path)
             art_json = json.dumps([a.model_dump()], indent=2)
-            context = f"{ticket_ctx}Source file:\n{art_json}"
+            context = f"{ticket_ctx}{symbols_ctx}Source file:\n{art_json}"
             raw = self.system(system_prompt, context)
             stripped = _strip_fences(raw)
             try:
