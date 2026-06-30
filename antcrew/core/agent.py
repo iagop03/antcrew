@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from antcrew.core.tools import BaseTool
     from antcrew.memory.store import BaseMemory
     from antcrew.memory.repo_index import RepoIndex
+    from antcrew.core.symbol_index import SymbolIndex
 
 
 _TOOL_CALL_RE = re.compile(
@@ -144,8 +145,9 @@ class BaseAgent(ABC):
     name: str = "base"
     role_description: str = ""
     conversational: bool = False  # True in agents that implement refine()
-    memory: Optional["BaseMemory"] = None      # set by team after construction
-    repo_index: Optional["RepoIndex"] = None   # set by team after construction
+    memory: Optional["BaseMemory"] = None           # set by team after construction
+    repo_index: Optional["RepoIndex"] = None        # set by team after construction
+    symbol_index: Optional["SymbolIndex"] = None    # set by team after construction
 
     def __init__(
         self,

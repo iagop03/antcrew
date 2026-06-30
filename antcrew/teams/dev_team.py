@@ -118,12 +118,16 @@ class DevTeam(InteractiveMixin):
                 agent.memory = memory
 
         self.repo_index: "Optional[_RepoIndexT]" = None
+        self.symbol_index = None
         if repo_path:
             from antcrew.memory.repo_index import RepoIndex
+            from antcrew.core.symbol_index import SymbolIndex
             self.repo_index = RepoIndex(repo_path)
             self.repo_index.build()
+            self.symbol_index = SymbolIndex.build([repo_path])
             for agent in self._agents.values():
                 agent.repo_index = self.repo_index
+                agent.symbol_index = self.symbol_index
 
     # ------------------------------------------------------------------
     # Shared helpers
