@@ -5,6 +5,95 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.0] — 2026-06-30
+
+### Added — Depth improvements: smarter code generation, richer feedback, structured memory
+
+#### Lint pre-pass in FeedbackLoop (commit 1)
+
+- `run_test_feedback_loop()` now accepts `lint_cmd` and `work_dir`.  When given,
+  a static check (ruff, mypy, eslint, etc.) runs before the test suite each round.
+  Lint failures are fed to `BackendDevAgent.fix_test_failures()` directly —
+  catching import errors and type errors in milliseconds, not test-run time.
+- `DevTeam(lint_cmd=..., work_dir=...)` and `FullStackTeam(...)` propagate both params.
+- State key written: `lint_ok` (bool) when `lint_cmd` is provided.
+- YAML keys: `lint_cmd` (list or string), `work_dir`.
+
+#### QAAgent code-first test generation (commit 2)
+
+- `QAAgent` now extracts the public API of each source file via AST before generating
+  tests.  Function names with argument names and public class names are prepended to
+  the LLM context so the agent imports exactly what exists.
+- System prompt updated: agents are instructed to test functions present in the code,
+  not hypothetical signatures from the ticket description.
+- `_extract_symbols_context(source, file_path)` and `_python_symbols(source)` public
+  helpers available in `antcrew.agents.qa`.
+
+#### CoherenceAgent — cross-file consistency pass (commit 3)
+
+- New `CoherenceAgent` receives all generated code files in one LLM call and fixes:
+  broken imports (wrong name or path), signature mismatches, type inconsistencies.
+- Only touches what needs fixing; preserves all other code.
+- `DevTeam(enable_coherence=True)` and `FullStackTeam(enable_coherence=True)` run the
+  pass between pipeline completion and test runner — before the feedback loop.
+- YAML key: `enable_coherence: true`.
+- State key written: `coherence_issues` (list of changed file paths).
+- `antcrew.CoherenceAgent` exported from top-level package.
+
+#### AST Symbol Index (commit 4)
+
+- `SymbolIndex.build(paths)` scans Python files via `ast` (no LLM, no vectors)
+  and indexes all functions, methods, and classes with exact signatures, argument
+  names, return types, docstrings, and source locations.
+- `query_function(name)` / `query_class(name)`: O(1) exact lookup.
+- `context_for(topics)`: fuzzy-match topics → compact snippet for LLM injection.
+- `BaseAgent.symbol_index: Optional[SymbolIndex]` attribute (like `repo_index`).
+- `DevTeam(repo_path=...)` now builds both a semantic `RepoIndex` and an AST
+  `SymbolIndex`, attaching both to all agents automatically.
+- `BackendDevAgent.run()` prepends symbol context alongside `_kb_context` so agents
+  know what names, signatures, and types exist before writing imports.
+- `antcrew.core.symbol_index.SymbolIndex` available for direct use.
+
+#### Project Knowledge Base (commit 5)
+
+- `ProjectKB` stores structured records across runs: API endpoints (path, method,
+  handler), data models (name, fields), service classes, and dependencies.
+  Built by AST-parsing generated code — not relying on the LLM to recall prior work.
+- `update_from_state(state)`: extracts from FastAPI/Flask decorators, Pydantic/SQLAlchemy
+  models, service classes, and requirements.txt / pyproject.toml.
+- `save()` / `load(path)`: JSON persistence; survives restarts.
+- `context_for_agent(name)`: compact KB block filtered per agent role for LLM injection.
+- `DevTeam(project_kb_path="./.antcrew/kb.json")`: loads KB at startup, injects
+  `context_for_agent("backend_dev")` into every run's initial state via `_kb_context`,
+  then updates and saves after each run.
+- YAML key: `project_kb_path`.
+- `antcrew.ProjectKB` exported from top-level package.
+
+#### Minimal pipelines by task type (commit 6)
+
+- `classify_task(request)`: fast rule-based classifier (no LLM call).
+  - fix → bug|broken|failing|crash|error|exception|traceback|…
+  - refactor → refactor|restructure|cleanup|rename|extract|…
+  - test → test|pytest|coverage|mock|fixture|…
+  - docs → docs|documentation|readme|changelog|docstring|…
+  - feature → build|create|implement|add|endpoint|api|… (fallback default)
+- `classify_task_llm(request, llm)`: single LLM call, falls back to rules on error.
+- `MinimalPipeline`: DevTeam-like runner that selects the narrowest pipeline for the
+  classified task type.  A bugfix runs only BackendDevAgent + QA; a docs update runs
+  only DocWriterAgent.  Accepts `task_type=` to force a type, `use_llm_classifier=True`
+  for LLM classification, and all DevTeam kwargs.
+- YAML: `team: minimal`, with optional `task_type: fix|refactor|feature|test|docs`
+  (default: `auto`) and `use_llm_classifier: true`.
+- `antcrew.TaskType`, `antcrew.classify_task`, `antcrew.MinimalPipeline` exported.
+
+### Tests
+
+- 74 new tests across 6 test files: `test_qa_agent.py` (10), `test_coherence_agent.py`
+  (10), `test_symbol_index.py` (20), `test_project_kb.py` (16), `test_task_classifier.py`
+  (18).  Total test count: 2255 passing.
+
+---
+
 ## [0.12.0] — 2026-06-29
 
 ### Added — Auto-routing, Operators, FeatureTeam, ArtifactContract, Async wrappers

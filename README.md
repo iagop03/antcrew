@@ -1115,6 +1115,186 @@ the source tree during generation (requires `pip install antcrew[memory]`):
 antcrew run "Refactor auth" --team fullstack --repo-index ./src
 ```
 
+### AST Symbol Index
+
+`SymbolIndex` parses Python files via `ast` (no LLM, no network) and builds an
+exact index of every public function, method, and class — including signatures,
+argument names, return types, and source locations.
+
+```python
+from antcrew.core.symbol_index import SymbolIndex
+
+idx = SymbolIndex.build(["src/", "lib/"])
+print(idx.summary())
+# → "42 functions, 8 classes across 15 files"
+
+# Exact lookup
+hits = idx.query_function("hash_password")
+# → [FunctionSymbol(name="hash_password", signature="(plain: str) -> str", ...)]
+
+# Context snippet for injection into an agent prompt
+print(idx.context_for(["auth", "User"]))
+```
+
+When `DevTeam(repo_path="./src")` is used, `SymbolIndex` is built automatically
+alongside `RepoIndex` and attached to all agents.  `BackendDevAgent` injects the
+symbol context before generating code, so it knows what names to import.
+
+---
+
+### Project Knowledge Base
+
+`ProjectKB` stores structured knowledge that persists across pipeline runs: API
+endpoints, data models, service classes, and dependencies.  Unlike free-text memory
+it can be queried programmatically.
+
+```python
+from antcrew.core.project_kb import ProjectKB
+
+kb = ProjectKB.load("./.antcrew/kb.json")
+print(kb.summary())
+# → "12 endpoints, 5 models, 3 services, 8 dependencies"
+print(kb.context_for_agent("backend_dev"))
+# → formatted block injected into BackendDevAgent context
+```
+
+**Python:**
+
+```python
+team = DevTeam(model=llm, project_kb_path="./.antcrew/kb.json")
+result = team.run("Add order history endpoint")
+# KB is loaded, injected into context, then updated and saved after each run
+```
+
+**YAML:**
+
+```yaml
+team: dev
+model: claude
+project_kb_path: ./.antcrew/kb.json
+```
+
+---
+
+### CoherenceAgent — cross-file consistency pass
+
+`CoherenceAgent` receives all generated files in a single LLM call and fixes:
+- Broken imports (name doesn't exist in the referenced module)
+- Signature mismatches (caller args don't match definition)
+- Type inconsistencies across files
+
+```python
+team = DevTeam(model=llm, enable_coherence=True)
+result = team.run("Build auth module with user service")
+print(result.state["coherence_issues"])  # list of corrected file paths
+```
+
+**YAML:**
+
+```yaml
+team: dev
+model: claude
+enable_coherence: true
+```
+
+The pass runs between pipeline completion and the test runner, so tests see the
+already-corrected code.  Use `CoherenceAgent` standalone in a `CustomTeam` too.
+
+---
+
+### Lint pre-pass in FeedbackLoop
+
+When `feedback_rounds > 0`, add a fast static check that runs before the test
+suite each round.  Lint failures (import errors, type errors) are fed to the
+agent without consuming a full sandbox run:
+
+```python
+team = DevTeam(
+    model=llm,
+    runner=LocalRunner(test_cmd=["pytest", "-x"]),
+    feedback_rounds=3,
+    lint_cmd=["ruff", "check", "."],   # or ["mypy", "src/"]
+    work_dir="./src",
+)
+```
+
+**YAML:**
+
+```yaml
+team: dev
+model: claude
+feedback_rounds: 3
+lint_cmd: ["ruff", "check", "."]
+work_dir: ./src
+runner:
+  type: local
+  test_cmd: ["pytest", "-x", "--tb=short"]
+```
+
+State key written: `lint_ok` (bool) after each lint run.
+
+---
+
+### QAAgent — code-first test generation
+
+`QAAgent` now extracts the public API of each source file via `ast` before generating
+tests.  The exact function and class names that exist in the code are prepended to the
+LLM context, preventing tests that import non-existent names.
+
+The improvement is automatic — no configuration needed.  To use the symbol extractor
+directly:
+
+```python
+from antcrew.agents.qa import _extract_symbols_context
+
+ctx = _extract_symbols_context(source_code, "auth.py")
+# → "Public symbols in this file (import exactly these names):\n  def login(user, password)\n  class AuthService\n..."
+```
+
+---
+
+### Minimal pipelines — task-type routing
+
+Instead of running 8 agents for every request, `MinimalPipeline` classifies the task
+and selects the narrowest pipeline:
+
+| Task type | Agents used                     |
+|-----------|--------------------------------|
+| `fix`     | BackendDevAgent + QAAgent       |
+| `refactor`| BackendDevAgent + ReviewerAgent |
+| `feature` | BusinessAnalyst + PM + BackendDev (default) |
+| `test`    | QAAgent only                   |
+| `docs`    | DocWriterAgent only            |
+
+```python
+from antcrew import MinimalPipeline, TaskType
+
+# Auto-classify from request text (rule-based, no LLM call):
+pipeline = MinimalPipeline(model=llm)
+result = pipeline.run("Fix the failing test in auth.py")
+print(result.state["_task_type"])   # "fix"
+
+# Force a task type:
+pipeline = MinimalPipeline(model=llm, task_type=TaskType.REFACTOR)
+
+# LLM classifier (more accurate, costs one extra LLM call):
+pipeline = MinimalPipeline(model=llm, use_llm_classifier=True)
+```
+
+**YAML:**
+
+```yaml
+team: minimal
+model: claude
+task_type: auto          # auto | fix | refactor | feature | test | docs
+use_llm_classifier: true # optional, default false
+```
+
+`MinimalPipeline` accepts all `DevTeam` kwargs: `feedback_rounds`, `lint_cmd`,
+`enable_coherence`, `project_kb_path`, etc.
+
+---
+
 ### Sprint planning
 
 Divide a product backlog into fixed-size sprints without an LLM call:
