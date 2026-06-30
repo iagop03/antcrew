@@ -83,12 +83,16 @@ class DevTeam(InteractiveMixin):
         trace_log: "Optional[TraceLog]" = None,
         agent_models: Optional[dict[str, BaseLLM]] = None,
         feedback_rounds: int = 0,
+        lint_cmd: "Optional[list[str] | str]" = None,
+        work_dir: "Optional[str]" = None,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
         self.memory = memory
         self._runner = runner
         self._feedback_rounds: int = feedback_rounds
+        self._lint_cmd = lint_cmd
+        self._work_dir = work_dir
         self._checkpointer = checkpointer
         self._trace_log = trace_log
         if max_cost_usd is not None:
@@ -190,6 +194,8 @@ class DevTeam(InteractiveMixin):
                             self._agents["backend_dev"],
                             self._runner,
                             max_rounds=self._feedback_rounds,
+                            lint_cmd=self._lint_cmd,
+                            work_dir=self._work_dir,
                         )
                 except Exception as exc:
                     log.warning("SandboxRunner failed: %s", exc)

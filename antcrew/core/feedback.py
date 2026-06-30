@@ -219,6 +219,11 @@ class FeedbackLoop:
 # Test-failure feedback loop for DevTeam / FullStackTeam
 # ---------------------------------------------------------------------------
 
+def _run_lint(lint_cmd: "Union[list[str], str]", work_dir: "Optional[Union[str, Path]]" = None) -> FeedbackResult:
+    """Run a lint/typecheck command and return a :class:`FeedbackResult`."""
+    return FeedbackRunner(lint_cmd, work_dir=work_dir, timeout=60.0).run()
+
+
 def run_test_feedback_loop(
     state: dict,
     backend_agent: "Any",
@@ -226,34 +231,66 @@ def run_test_feedback_loop(
     *,
     max_rounds: int = 3,
     max_error_chars: int = 2000,
+    lint_cmd: "Optional[Union[list[str], str]]" = None,
+    work_dir: "Optional[Union[str, Path]]" = None,
 ) -> dict:
     """Execute-validate-retry loop driven by a sandbox test runner.
 
     After the main pipeline finishes, this loop:
-    1. Runs the sandbox tests with the current code + test artifacts.
-    2. If they pass → returns immediately.
-    3. If they fail → injects the truncated error into ``_feedback_error``,
+    1. (Optional) Runs *lint_cmd* first — cheap static checks (mypy, ruff, eslint).
+       Lint failures are fed to the agent before running the full test suite.
+    2. Runs the sandbox tests with the current code + test artifacts.
+    3. If they pass → returns immediately.
+    4. If they fail → injects the truncated error into ``_feedback_error``,
        calls ``backend_agent.fix_test_failures(state)`` to get updated code,
        and repeats.
 
     Writes to state:
-        ``feedback_ok``          — True when all tests passed.
+        ``feedback_ok``          — True when all checks passed.
         ``feedback_rounds_used`` — number of fix rounds consumed.
         ``_feedback_error``      — last error text (empty when ok).
         ``test_results``         — always the most recent test run result.
+        ``lint_ok``              — True when lint passed (only set when lint_cmd given).
 
     Args:
-        state:         Shared pipeline state dict (mutated in-place).
-        backend_agent: An agent with ``fix_test_failures(state) -> dict|None``.
-        runner:        A sandbox runner with
-                       ``run(test_artifacts, code_artifacts) -> TestResults``.
-        max_rounds:    Maximum number of fix iterations (default: 3).
-        max_error_chars: How many chars of test output to inject (default: 2000).
+        state:           Shared pipeline state dict (mutated in-place).
+        backend_agent:   An agent with ``fix_test_failures(state) -> dict|None``.
+        runner:          A sandbox runner with
+                         ``run(test_artifacts, code_artifacts) -> TestResults``.
+        max_rounds:      Maximum number of fix iterations (default: 3).
+        max_error_chars: How many chars of error output to inject (default: 2000).
+        lint_cmd:        Optional lint/typecheck command run before tests each round.
+                         E.g. ``["ruff", "check", "."]`` or ``"mypy src/"``.
+        work_dir:        Working directory for *lint_cmd*.
     """
     state = dict(state)
 
     for round_num in range(1, max_rounds + 1):
-        log.info("test_feedback_loop round=%d/%d — running tests", round_num, max_rounds)
+        log.info("test_feedback_loop round=%d/%d", round_num, max_rounds)
+        state["_feedback_round"] = round_num
+
+        # --- lint pre-pass (optional) -----------------------------------------
+        if lint_cmd:
+            lint_result = _run_lint(lint_cmd, work_dir=work_dir)
+            if not lint_result.ok:
+                snippet = lint_result.short(max_error_chars)
+                log.warning(
+                    "test_feedback_loop lint FAILED round=%d — feeding to backend_dev",
+                    round_num,
+                )
+                state["lint_ok"] = False
+                state["_feedback_error"] = f"[LINT ERRORS]\n{snippet}"
+                patch = backend_agent.fix_test_failures(state)
+                if patch:
+                    state.update(patch)
+                else:
+                    log.warning("test_feedback_loop: fix returned no patch after lint failure")
+                    break
+                continue  # re-run lint next round before tests
+            state["lint_ok"] = True
+            log.info("test_feedback_loop lint OK round=%d", round_num)
+
+        # --- test run ------------------------------------------------------------
         try:
             test_results = runner.run(
                 state.get("test_artifacts") or [],
@@ -275,11 +312,10 @@ def run_test_feedback_loop(
         raw_output = getattr(test_results, "output", "") or ""
         error_snippet = raw_output[-max_error_chars:] if len(raw_output) > max_error_chars else raw_output
         log.warning(
-            "test_feedback_loop FAILED round=%d/%d — feeding error to backend_dev",
+            "test_feedback_loop tests FAILED round=%d/%d — feeding to backend_dev",
             round_num, max_rounds,
         )
         state["_feedback_error"] = error_snippet
-        state["_feedback_round"] = round_num
 
         patch = backend_agent.fix_test_failures(state)
         if patch:
