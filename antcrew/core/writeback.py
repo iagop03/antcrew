@@ -84,24 +84,54 @@ def _unified_diff(old: str, new: str, filename: str) -> str:
     ))
 
 
+def _smart_apply(old: str, new: str) -> str:
+    """Apply only the changed hunks from *new* onto *old*.
+
+    Equal regions are kept from *old* exactly (preserving whitespace, line endings,
+    any incidental differences the agent didn't intentionally change).
+    Changed regions are taken from *new*.
+
+    This is preferable to full-file replacement when the agent regenerated a whole
+    file but only a handful of lines were intentionally different — it avoids
+    overwriting unchanged code with slightly reformatted or miscopied variants.
+
+    Returns the merged string.  If *old* and *new* are identical the original
+    content is returned unchanged.
+    """
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
+    result: list[str] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            result.extend(old_lines[i1:i2])
+        else:
+            result.extend(new_lines[j1:j2])
+    return "".join(result)
+
+
 def write_back(
     state,
     project_root: Path,
     *,
     dry_run: bool = False,
     yes: bool = False,
+    patch_mode: bool = False,
     confirm_fn=None,
     print_fn=None,
 ) -> WriteBackResult:
     """Write artifacts from *state* to *project_root*.
 
     Args:
-        state: RunResult, dict, or object with .state attribute.
+        state:        RunResult, dict, or object with .state attribute.
         project_root: Base directory — artifact file_paths are resolved relative to it.
-        dry_run: If True, report what would be written but don't write anything.
-        yes: If True, write modified files without confirmation.
-        confirm_fn: Optional callable(prompt) -> bool for interactive confirmation.
-        print_fn: Optional callable(msg) for status messages.
+        dry_run:      If True, report what would be written but don't write anything.
+        yes:          If True, write modified files without confirmation.
+        patch_mode:   If True, apply only changed hunks to existing files instead of
+                      replacing them entirely.  Equal lines are kept from the original
+                      (preserving exact formatting for unmodified code).
+        confirm_fn:   Optional callable(prompt) -> bool for interactive confirmation.
+        print_fn:     Optional callable(msg) for status messages.
     """
     if print_fn is None:
         print_fn = print
@@ -154,22 +184,27 @@ def write_back(
             print_fn(f"  {op_str}  {rel}")
             continue
 
-        if operation == "modify" and not yes:
+        if operation == "modify":
             old_content = target.read_text(encoding="utf-8", errors="replace")
-            diff = _unified_diff(old_content, content, rel)
-            if diff:
-                print_fn(f"\n[bold]{rel}[/bold] [yellow](modify)[/yellow]")
-                print_fn(diff)
-            else:
+            # In patch-mode, compute the final content by merging only changed hunks.
+            final_content = _smart_apply(old_content, content) if patch_mode else content
+
+            diff = _unified_diff(old_content, final_content, rel)
+            if not diff:
                 print_fn(f"  [dim]no change[/dim]  {rel}")
                 entry.skipped = True
                 continue
 
-            if confirm_fn is not None:
-                if not confirm_fn(f"Write {rel}? [y/N] "):
-                    entry.skipped = True
-                    print_fn(f"  [dim]skipped[/dim]  {rel}")
-                    continue
+            if not yes:
+                print_fn(f"\n[bold]{rel}[/bold] [yellow](modify{' — patch mode' if patch_mode else ''})[/yellow]")
+                print_fn(diff)
+                if confirm_fn is not None:
+                    if not confirm_fn(f"Write {rel}? [y/N] "):
+                        entry.skipped = True
+                        print_fn(f"  [dim]skipped[/dim]  {rel}")
+                        continue
+
+            content = final_content  # write the (possibly patch-merged) content
 
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")  # target already resolved/validated

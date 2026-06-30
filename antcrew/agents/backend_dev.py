@@ -72,6 +72,24 @@ Respond ONLY with a valid JSON object (no markdown fences, no prose):
 }
 """
 
+_TEST_FIX_SYSTEM = """\
+You are a Senior Backend Developer. Automated tests ran on your generated code and FAILED.
+Fix the code so the tests pass. Analyse the failures carefully before changing anything.
+
+Test output (last 2 000 chars):
+{errors}
+
+Current code artifacts (JSON):
+{code}
+
+Rules:
+- Fix ONLY what is needed to make the tests pass.
+- Keep all existing functionality intact.
+- Respond ONLY with a valid JSON array of ALL code artifact objects (no markdown fences),
+  including both fixed and unchanged files.
+  Each object: ticket_id, file_path, description, language, content.
+"""
+
 
 def _parse_list(raw: str) -> list[dict]:
     stripped = _strip_fences(raw)
@@ -240,6 +258,44 @@ class BackendDevAgent(BaseAgent):
                 }
             ],
         }
+
+    def fix_test_failures(self, state: TeamState) -> "dict | None":
+        """Re-generate code to fix failing tests.
+
+        Called by :func:`~antcrew.core.feedback.run_test_feedback_loop` when
+        the sandbox runner reports test failures.  Expects ``_feedback_error``
+        in *state* with the truncated test output.
+
+        Returns a patch dict ``{"code_artifacts": [...]}`` or ``None`` when
+        there is nothing to fix (no error in state or no artifacts).
+        """
+        error = state.get("_feedback_error", "")
+        if not error:
+            return None
+        code_artifacts = coerce_list(state, "code_artifacts", CodeArtifact)
+        if not code_artifacts:
+            return None
+
+        context = _TEST_FIX_SYSTEM.format(
+            errors=error,
+            code=json.dumps([a.model_dump() for a in code_artifacts], indent=2),
+        )
+        raw = self.system(context, "Fix the failing tests.")
+        raw_list = _parse_list(raw)
+        if not raw_list:
+            return None
+        updated = [
+            CodeArtifact(
+                ticket_id=d.get("ticket_id", ""),
+                **{k: v for k, v in d.items() if k in CodeArtifact.model_fields and k != "ticket_id"},
+            )
+            for d in raw_list
+            if d.get("content") and d.get("file_path")
+        ]
+        if not updated:
+            return None
+        log.info("backend_dev fix_test_failures regenerated %d artifacts", len(updated))
+        return {"code_artifacts": updated}
 
     def refine(self, state: TeamState, artifact: list[CodeArtifact], feedback: str) -> dict:
         raw_artifacts: list[dict] = self.system_parsed(

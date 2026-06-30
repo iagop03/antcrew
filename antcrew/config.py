@@ -188,11 +188,13 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
     max_cost_usd_cfg = cfg.get("max_cost_usd")
     max_cost_usd: Optional[float] = float(max_cost_usd_cfg) if max_cost_usd_cfg is not None else None
 
+    feedback_rounds: int = int(cfg.get("feedback_rounds", 0))
+
     if team_type == "dev":
         from antcrew.teams.dev_team import DevTeam
         team = DevTeam(model=default_llm, integrations=integrations,
                        agents=agent_overrides, supervisor=supervisor, runner=runner,
-                       max_cost_usd=max_cost_usd)
+                       max_cost_usd=max_cost_usd, feedback_rounds=feedback_rounds)
         team.output_dir = cfg.get("output_dir") or None
         return team
 
@@ -206,6 +208,7 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
             agents=agent_overrides, supervisor=supervisor, runner=runner,
             project_dir=project_dir, project_dirs=project_dirs,
             sprint_size=sprint_size, max_cost_usd=max_cost_usd,
+            feedback_rounds=feedback_rounds,
         )
         team.output_dir = cfg.get("output_dir") or None
         return team

@@ -82,11 +82,13 @@ class DevTeam(InteractiveMixin):
         max_cost_usd: Optional[float] = None,
         trace_log: "Optional[TraceLog]" = None,
         agent_models: Optional[dict[str, BaseLLM]] = None,
+        feedback_rounds: int = 0,
     ) -> None:
         self.llm = model or AnthropicModel()
         self.integrations: list = integrations or []
         self.memory = memory
         self._runner = runner
+        self._feedback_rounds: int = feedback_rounds
         self._checkpointer = checkpointer
         self._trace_log = trace_log
         if max_cost_usd is not None:
@@ -177,6 +179,18 @@ class DevTeam(InteractiveMixin):
                         state["test_artifacts"],
                         code_artifacts=state.get("code_artifacts") or [],
                     )
+                    if (
+                        self._feedback_rounds > 0
+                        and not state["test_results"].success
+                        and "backend_dev" in self._agents
+                    ):
+                        from antcrew.core.feedback import run_test_feedback_loop
+                        state = run_test_feedback_loop(
+                            state,
+                            self._agents["backend_dev"],
+                            self._runner,
+                            max_rounds=self._feedback_rounds,
+                        )
                 except Exception as exc:
                     log.warning("SandboxRunner failed: %s", exc)
             cost = sum(

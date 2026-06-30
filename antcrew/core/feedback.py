@@ -213,3 +213,81 @@ class FeedbackLoop:
         state["feedback_ok"] = False
         state["feedback_rounds_used"] = self.max_rounds
         return state
+
+
+# ---------------------------------------------------------------------------
+# Test-failure feedback loop for DevTeam / FullStackTeam
+# ---------------------------------------------------------------------------
+
+def run_test_feedback_loop(
+    state: dict,
+    backend_agent: "Any",
+    runner: "Any",
+    *,
+    max_rounds: int = 3,
+    max_error_chars: int = 2000,
+) -> dict:
+    """Execute-validate-retry loop driven by a sandbox test runner.
+
+    After the main pipeline finishes, this loop:
+    1. Runs the sandbox tests with the current code + test artifacts.
+    2. If they pass → returns immediately.
+    3. If they fail → injects the truncated error into ``_feedback_error``,
+       calls ``backend_agent.fix_test_failures(state)`` to get updated code,
+       and repeats.
+
+    Writes to state:
+        ``feedback_ok``          — True when all tests passed.
+        ``feedback_rounds_used`` — number of fix rounds consumed.
+        ``_feedback_error``      — last error text (empty when ok).
+        ``test_results``         — always the most recent test run result.
+
+    Args:
+        state:         Shared pipeline state dict (mutated in-place).
+        backend_agent: An agent with ``fix_test_failures(state) -> dict|None``.
+        runner:        A sandbox runner with
+                       ``run(test_artifacts, code_artifacts) -> TestResults``.
+        max_rounds:    Maximum number of fix iterations (default: 3).
+        max_error_chars: How many chars of test output to inject (default: 2000).
+    """
+    state = dict(state)
+
+    for round_num in range(1, max_rounds + 1):
+        log.info("test_feedback_loop round=%d/%d — running tests", round_num, max_rounds)
+        try:
+            test_results = runner.run(
+                state.get("test_artifacts") or [],
+                code_artifacts=state.get("code_artifacts") or [],
+            )
+        except Exception as exc:
+            log.warning("test_feedback_loop runner error: %s", exc)
+            break
+
+        state["test_results"] = test_results
+
+        if test_results.success:
+            log.info("test_feedback_loop PASSED round=%d", round_num)
+            state["feedback_ok"] = True
+            state["feedback_rounds_used"] = round_num
+            state["_feedback_error"] = ""
+            return state
+
+        raw_output = getattr(test_results, "output", "") or ""
+        error_snippet = raw_output[-max_error_chars:] if len(raw_output) > max_error_chars else raw_output
+        log.warning(
+            "test_feedback_loop FAILED round=%d/%d — feeding error to backend_dev",
+            round_num, max_rounds,
+        )
+        state["_feedback_error"] = error_snippet
+        state["_feedback_round"] = round_num
+
+        patch = backend_agent.fix_test_failures(state)
+        if patch:
+            state.update(patch)
+        else:
+            log.warning("test_feedback_loop: fix_test_failures returned no patch — stopping")
+            break
+
+    state.setdefault("feedback_ok", False)
+    state.setdefault("feedback_rounds_used", max_rounds)
+    return state

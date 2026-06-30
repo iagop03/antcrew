@@ -9,7 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli._app import app
-from antcrew.core.writeback import WriteBackResult, write_back
+from antcrew.core.writeback import WriteBackResult, write_back, _smart_apply
 
 runner = CliRunner()
 
@@ -222,3 +222,188 @@ class TestWriteBackCmd:
         result = runner.invoke(app, ["write-back", str(p), "--project-root", str(tmp_path), "--dry-run"])
         assert result.exit_code == 0
         assert "2" in result.output
+
+
+# ── _smart_apply (patch mode) ────────────────────────────────────────────────
+
+class TestSmartApply:
+    def test_identical_returns_old(self):
+        content = "line1\nline2\nline3\n"
+        assert _smart_apply(content, content) == content
+
+    def test_changed_line_uses_new(self):
+        old = "line1\nline2\nline3\n"
+        new = "line1\nLINE2\nline3\n"
+        result = _smart_apply(old, new)
+        assert "LINE2" in result
+        assert "line1" in result
+        assert "line3" in result
+
+    def test_equal_lines_kept_from_old(self):
+        old = "aaa\nbbb\nccc\n"
+        new = "aaa\nBBB\nccc\n"
+        result = _smart_apply(old, new)
+        # equal lines come from old
+        assert result.startswith("aaa\n")
+        assert result.endswith("ccc\n")
+
+    def test_insertion_applied(self):
+        old = "a\nb\n"
+        new = "a\nnew\nb\n"
+        result = _smart_apply(old, new)
+        assert "new" in result
+        assert "a" in result
+        assert "b" in result
+
+    def test_deletion_applied(self):
+        old = "a\nremove_me\nb\n"
+        new = "a\nb\n"
+        result = _smart_apply(old, new)
+        assert "remove_me" not in result
+
+    def test_empty_old(self):
+        result = _smart_apply("", "new content\n")
+        assert result == "new content\n"
+
+    def test_empty_new(self):
+        result = _smart_apply("old content\n", "")
+        assert result == ""
+
+    def test_multiline_block_change(self):
+        old = "def foo():\n    return 1\n\ndef bar():\n    return 2\n"
+        new = "def foo():\n    return 99\n\ndef bar():\n    return 2\n"
+        result = _smart_apply(old, new)
+        assert "return 99" in result
+        assert "def bar" in result
+        assert "return 2" in result
+
+
+# ── patch-mode in write_back ─────────────────────────────────────────────────
+
+class TestPatchMode:
+    def _state(self, path, content):
+        return {"code_artifacts": [{"ticket_id": "T-1", "file_path": path,
+                                     "content": content, "description": ""}]}
+
+    def test_patch_mode_applies_only_changed_lines(self, tmp_path):
+        existing = tmp_path / "app.py"
+        existing.write_text("line1\nline2\nline3\n")
+        state = self._state("app.py", "line1\nLINE2\nline3\n")
+        write_back(state, tmp_path, yes=True, patch_mode=True)
+        result = existing.read_text()
+        assert "LINE2" in result
+        assert "line1" in result
+        assert "line3" in result
+
+    def test_patch_mode_skips_truly_identical(self, tmp_path):
+        content = "hello\nworld\n"
+        existing = tmp_path / "f.py"
+        existing.write_text(content)
+        state = self._state("f.py", content)
+        result = write_back(state, tmp_path, yes=True, patch_mode=True)
+        assert result.total_written == 0
+
+    def test_no_patch_mode_replaces_fully(self, tmp_path):
+        existing = tmp_path / "f.py"
+        existing.write_text("OLD\n")
+        state = self._state("f.py", "NEW\n")
+        write_back(state, tmp_path, yes=True, patch_mode=False)
+        assert existing.read_text() == "NEW\n"
+
+    def test_patch_mode_creates_new_files(self, tmp_path):
+        state = self._state("new_file.py", "content\n")
+        result = write_back(state, tmp_path, yes=True, patch_mode=True)
+        assert result.total_written == 1
+        assert (tmp_path / "new_file.py").read_text() == "content\n"
+
+
+# ── FeedbackLoop pipeline integration ────────────────────────────────────────
+
+class TestFeedbackLoopIntegration:
+    def test_dev_team_accepts_feedback_rounds(self):
+        from antcrew.teams.dev_team import DevTeam
+        from antcrew.models.simulated import SimulatedLLM
+        team = DevTeam(model=SimulatedLLM(), feedback_rounds=3)
+        assert team._feedback_rounds == 3
+
+    def test_fullstack_team_accepts_feedback_rounds(self):
+        from antcrew.teams.fullstack_team import FullStackTeam
+        from antcrew.models.simulated import SimulatedLLM
+        team = FullStackTeam(model=SimulatedLLM(), feedback_rounds=2)
+        assert team._feedback_rounds == 2
+
+    def test_backend_dev_fix_test_failures_no_error(self):
+        from antcrew.agents.backend_dev import BackendDevAgent
+        from antcrew.models.simulated import SimulatedLLM
+        agent = BackendDevAgent(SimulatedLLM())
+        assert agent.fix_test_failures({"_feedback_error": ""}) is None
+
+    def test_backend_dev_fix_test_failures_no_artifacts(self):
+        from antcrew.agents.backend_dev import BackendDevAgent
+        from antcrew.models.simulated import SimulatedLLM
+        agent = BackendDevAgent(SimulatedLLM())
+        assert agent.fix_test_failures({"_feedback_error": "error!", "code_artifacts": []}) is None
+
+    def test_run_test_feedback_loop_passes_on_success(self):
+        from antcrew.core.feedback import run_test_feedback_loop
+        from unittest.mock import MagicMock
+
+        mock_results = MagicMock()
+        mock_results.success = True
+        mock_results.output = ""
+
+        runner = MagicMock()
+        runner.run.return_value = mock_results
+
+        agent = MagicMock()
+        state = {"test_artifacts": ["t"], "code_artifacts": []}
+
+        final = run_test_feedback_loop(state, agent, runner, max_rounds=3)
+        assert final["feedback_ok"] is True
+        assert final["feedback_rounds_used"] == 1
+        agent.fix_test_failures.assert_not_called()
+
+    def test_run_test_feedback_loop_calls_fix_on_failure(self):
+        from antcrew.core.feedback import run_test_feedback_loop
+        from unittest.mock import MagicMock
+
+        fail_result = MagicMock()
+        fail_result.success = False
+        fail_result.output = "FAILED: assertion error"
+
+        pass_result = MagicMock()
+        pass_result.success = True
+        pass_result.output = ""
+
+        runner = MagicMock()
+        runner.run.side_effect = [fail_result, pass_result]
+
+        agent = MagicMock()
+        agent.fix_test_failures.return_value = {"code_artifacts": ["fixed"]}
+
+        state = {"test_artifacts": ["t"], "code_artifacts": []}
+        final = run_test_feedback_loop(state, agent, runner, max_rounds=3)
+
+        assert final["feedback_ok"] is True
+        assert final["feedback_rounds_used"] == 2
+        agent.fix_test_failures.assert_called_once()
+
+    def test_run_test_feedback_loop_exhausted(self):
+        from antcrew.core.feedback import run_test_feedback_loop
+        from unittest.mock import MagicMock
+
+        fail_result = MagicMock()
+        fail_result.success = False
+        fail_result.output = "always fails"
+
+        runner = MagicMock()
+        runner.run.return_value = fail_result
+
+        agent = MagicMock()
+        agent.fix_test_failures.return_value = {"code_artifacts": ["fixed"]}
+
+        state = {"test_artifacts": ["t"], "code_artifacts": []}
+        final = run_test_feedback_loop(state, agent, runner, max_rounds=2)
+
+        assert final["feedback_ok"] is False
+        assert final["feedback_rounds_used"] == 2

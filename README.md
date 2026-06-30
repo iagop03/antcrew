@@ -137,6 +137,25 @@ system_prompt: |
 post_process: extract_json
 ```
 
+Use `output_schema` to validate and coerce the LLM response to a known Pydantic model:
+
+```yaml
+name: prd_generator
+system_prompt: |
+  You are a product manager. Given the request, produce a PRD as JSON.
+output_schema: PRD          # built-in: PRD, CodeArtifact, Ticket, CodeReview, etc.
+output_key: prd             # stored as a PRD model instance, not a string
+```
+
+For custom models:
+
+```yaml
+output_schema: mypackage.models.FeatureSpec   # dotted import path
+output_parse_retries: 2                        # retry LLM call on parse failure
+```
+
+The agent retries the LLM call up to `output_parse_retries` times when the response does not conform to the schema before raising.
+
 ### FeatureTeam + FeedbackLoop
 
 Lightweight pipeline for a single, isolated feature — specification, implementation, and review in one step. Faster and cheaper than the full `DevTeam` when you don't need the BA/PM planning cycle.

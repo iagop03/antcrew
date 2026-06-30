@@ -41,12 +41,23 @@ def writeback_cmd(
         False, "--yes", "-y",
         help="Overwrite existing files without confirmation.",
     ),
+    patch_mode: bool = typer.Option(
+        False, "--patch-mode",
+        help=(
+            "Apply only changed hunks to existing files instead of replacing them "
+            "entirely. Equal lines are kept from the original, preserving exact "
+            "formatting for code the agent did not intentionally modify."
+        ),
+    ),
 ) -> None:
     """Write generated artifacts from a saved state back to the project filesystem.
 
     By default, artifact file paths are written relative to the current directory
     (or --project-root). Files that already exist are shown as a unified diff and
     require confirmation unless --yes is passed.
+
+    Use --patch-mode for brownfield projects: only the lines that actually changed
+    are written; identical lines are kept from the original file.
 
     \b
     Examples:
@@ -56,14 +67,11 @@ def writeback_cmd(
         # Write to current directory, confirm each modified file
         antcrew write-back run.json
 
+        # Brownfield: apply only changed hunks, skip confirmation
+        antcrew write-back run.json --project-root ~/myproject --patch-mode --yes
+
         # Write to an existing project, skip confirmation
         antcrew write-back run.json --project-root ~/myproject --yes
-
-        # Typical brownfield workflow:
-        antcrew run "Add rate limiting to the auth API" --team fullstack \\
-          --config agentteam.yaml --save run.json
-        antcrew write-back run.json --project-root ~/myproject --dry-run
-        antcrew write-back run.json --project-root ~/myproject
     """
     from antcrew.utils.persistence import load_state
     from antcrew.core.writeback import write_back
@@ -96,6 +104,7 @@ def writeback_cmd(
         root,
         dry_run=dry_run,
         yes=yes,
+        patch_mode=patch_mode,
         confirm_fn=None if yes else _confirm,
         print_fn=_print,
     )
