@@ -5,6 +5,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.3] — 2026-07-02
+
+### Added — Third gap pass: CLI visibility, MinimalPipeline context, KB for all roles
+
+#### `_print_state` shows v0.13.x metadata (Gap 1 + Gap 4)
+
+- `antcrew run` output now surfaces four new state keys after every pipeline:
+  - `task=<type>` — task type chosen by MinimalPipeline
+  - `coherence=N corrected / no issues` — CoherenceAgent result
+  - `lint=ok / failed` — lint pre-pass result
+  - `feedback=ok (N rounds) / failed after N rounds` — FeedbackLoop result
+  - Line is suppressed when none of these keys are present (existing pipelines unaffected).
+- `minimal` team added to the `("dev", "fullstack")` branch so `antcrew run --team minimal`
+  now renders PRD, tickets, code artifacts, test files, test results, and code review.
+
+#### `MinimalPipeline` builds `SymbolIndex` from `repo_path` for single-agent tasks (Gap 2)
+
+- `MinimalPipeline.__init__` stores `repo_path` from `**kwargs`.
+- In `_build_team`, when the task resolves to a single-agent path (TEST or DOCS) and
+  `repo_path` is set, `SymbolIndex.build([repo_path])` is called and the index is
+  attached to the agent before `_SingleAgentTeam` wraps it.  Build errors are caught
+  and logged — never crash the pipeline.
+
+#### `antcrew run --task-type` / `-T` (Gap 3)
+
+- `antcrew run "..." --team minimal --task-type fix` forces a specific task type.
+- Valid values: `fix`, `refactor`, `feature`, `test`, `docs`.  Default: `auto`.
+- `_build_team()` in `_shared.py` now has a `minimal` branch that instantiates
+  `MinimalPipeline` with all v0.13.x options (`--lint-cmd`, `--coherence`, `--kb`,
+  `--repo-index`, `--task-type`) working together.
+
+#### `ProjectKB.context_for_agent()` now serves `reviewer`, `pm`, `doc_writer` (Gap 5)
+
+- Previously these roles always received an empty string from the KB.
+- New role → section mapping:
+  - `reviewer`: dependencies, endpoints, models, services
+  - `pm`: endpoints, models, services
+  - `doc_writer`: endpoints, models, services
+  - `business_analyst`: tech_stack only (works from scratch, not from the existing KB)
+- 5 new tests in `TestContextForAgentRoles`.
+
+### Tests
+
+- 2274 passing (up from 2269); 18 new tests across 2 files.
+
+---
+
 ## [0.13.2] — 2026-07-02
 
 ### Added — Second gap pass: frontend context, FEATURE QA, feedback everywhere, labeled symbols

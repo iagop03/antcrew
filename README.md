@@ -1278,13 +1278,13 @@ ctx = _extract_symbols_context(source_code, "auth.py")
 Instead of running 8 agents for every request, `MinimalPipeline` classifies the task
 and selects the narrowest pipeline:
 
-| Task type | Agents used                     |
-|-----------|--------------------------------|
-| `fix`     | BackendDevAgent + QAAgent       |
-| `refactor`| BackendDevAgent + ReviewerAgent |
-| `feature` | BusinessAnalyst + PM + BackendDev (default) |
-| `test`    | QAAgent only                   |
-| `docs`    | DocWriterAgent only            |
+| Task type  | Agents used                                     |
+|------------|------------------------------------------------|
+| `fix`      | BackendDevAgent → QAAgent                      |
+| `refactor` | BackendDevAgent → ReviewerAgent                |
+| `feature`  | BusinessAnalyst → PM → BackendDev → QAAgent    |
+| `test`     | QAAgent only                                   |
+| `docs`     | DocWriterAgent only                            |
 
 ```python
 from antcrew import MinimalPipeline, TaskType
@@ -1311,9 +1311,17 @@ use_llm_classifier: true # optional, default false
 ```
 
 `MinimalPipeline` accepts all `DevTeam` kwargs: `feedback_rounds`, `lint_cmd`,
-`enable_coherence`, `project_kb_path`, etc.
+`enable_coherence`, `project_kb_path`, `repo_path`, etc.
 
-**CLI flags** — use any combination without a YAML config file:
+**CLI — `--team minimal` with all options:**
+
+```bash
+antcrew run "Fix the login bug" --team minimal --task-type fix
+antcrew run "Add payment endpoint" --team minimal -T feature --coherence --kb .antcrew/kb.json
+antcrew run "Update README" --team minimal --task-type docs
+```
+
+**CLI flags** — usable with any team without a YAML config file:
 
 ```bash
 antcrew run "Fix the auth bug" \
@@ -1326,6 +1334,7 @@ antcrew run "Fix the auth bug" \
 
 | Flag | Description |
 |---|---|
+| `--task-type TEXT` / `-T` | Force task type for `--team minimal` (`fix\|refactor\|feature\|test\|docs`) |
 | `--lint-cmd TEXT` | Static check command run before tests each feedback round |
 | `--coherence` | Run CoherenceAgent after code generation |
 | `--kb PATH` | Path to project knowledge base JSON (created if missing) |
