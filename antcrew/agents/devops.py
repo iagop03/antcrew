@@ -71,12 +71,20 @@ class DevOpsAgent(BaseAgent):
                 ],
             }
 
+        infra_query = "dockerfile ci docker-compose kubernetes " + " ".join(
+            a.file_path for a in code_artifacts[:4]
+        )
+        kb_ctx = str(state.get("_kb_context") or "")
+        repo_ctx = self._search_repo(infra_query)
+        memory_ctx = self._recall(infra_query)
+
         context = (
             f"Tickets:\n{json.dumps([t.model_dump() for t in tickets], indent=2)}\n\n"
             f"Code Artifacts:\n{json.dumps([a.model_dump() for a in code_artifacts], indent=2)}"
         )
-        kb_ctx = str(state.get("_kb_context") or "")
-        raw_artifacts: list[dict] = self.system_parsed(_SYSTEM + kb_ctx, context, list[dict])
+        raw_artifacts: list[dict] = self.system_parsed(
+            _SYSTEM + kb_ctx + repo_ctx + memory_ctx, context, list[dict]
+        )
         devops_artifacts = [
             DevOpsArtifact(
                 **{k: v for k, v in a.items() if k in DevOpsArtifact.model_fields}
