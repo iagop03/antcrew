@@ -209,54 +209,62 @@ class MinimalPipeline:
         return classify_task(request)
 
     def _build_team(self, task_type: TaskType):
-        from antcrew.teams.dev_team import DevTeam
-        from antcrew.core.supervisor import Supervisor
-
         agents_needed = _AGENTS_FOR_TYPE[task_type]
-        flow = _PIPELINE_FLOWS[task_type]
-
-        # For single-node pipelines (TEST, DOCS), build a trivial 1-step flow
-        if len(agents_needed) == 1:
-            # Supervisor needs at least one edge — use a self-loop sentinel
-            # DevTeam's default flow expects at least 2 agents, so we override
-            # the supervisor with a single-node graph
-            supervisor = _SingleNodeSupervisor(agents_needed[0])
-        else:
-            supervisor = Supervisor(flow=list(flow))
-
-        # Build agent overrides (only instantiate what's needed)
         agents = _make_agents(agents_needed, self._model)
 
+        if len(agents_needed) == 1:
+            # Single-agent tasks (TEST, DOCS): bypass LangGraph entirely.
+            # _SingleAgentTeam calls the agent directly and returns a RunResult.
+            return _SingleAgentTeam(
+                list(agents.values())[0],
+                project_kb=getattr(self, "_project_kb_instance", None),
+            )
+
+        from antcrew.teams.dev_team import DevTeam
+        from antcrew.core.supervisor import Supervisor
         return DevTeam(
             model=self._model,
             agents=agents,
-            supervisor=supervisor,
+            supervisor=Supervisor(flow=list(_PIPELINE_FLOWS[task_type])),
             **self._team_kwargs,
         )
 
 
-class _SingleNodeSupervisor:
-    """Minimal supervisor that runs exactly one agent and returns."""
+class _SingleAgentTeam:
+    """Runs exactly one agent and returns a :class:`RunResult`.
 
-    def __init__(self, agent_name: str) -> None:
-        self._agent_name = agent_name
+    Bypasses LangGraph and DevTeam entirely — no fake supervisor needed.
+    """
 
-    def build(self, agents: dict, *, checkpointer=None):
-        return _SingleNodeApp(agents[self._agent_name])
-
-
-class _SingleNodeApp:
-    """Graph-like object that calls one agent and returns its output as state."""
-
-    def __init__(self, agent) -> None:
+    def __init__(self, agent, *, project_kb=None) -> None:
         self._agent = agent
+        self._project_kb = project_kb
 
-    def invoke(self, state: dict, config: dict = None) -> dict:
-        result = self._agent.run(state)
-        return {**state, **result}
-
-    def get_state(self, config: dict):
-        return type("S", (), {"values": {}})()
+    def run(self, request: str, *, thread_id: str = "default") -> "RunResult":
+        from antcrew.core.run_result import RunResult
+        initial: dict = {
+            "request": request,
+            "messages": [{"role": "user", "content": request}],
+            "code_artifacts": None,
+            "test_artifacts": None,
+            "current_agent": "",
+            "errors": [],
+            "metadata": {},
+            "_kb_context": "",
+        }
+        if self._project_kb:
+            initial["_kb_context"] = self._project_kb.context_for_agent(
+                getattr(self._agent, "name", "")
+            )
+        result = self._agent.run(initial)
+        state = {**initial, **result}
+        if self._project_kb:
+            try:
+                self._project_kb.update_from_state(state)
+                self._project_kb.save()
+            except Exception:
+                pass
+        return RunResult(state=state, thread_id=thread_id, cost_usd=0.0)
 
 
 def _make_agents(names: list[str], model: "BaseLLM") -> dict:
