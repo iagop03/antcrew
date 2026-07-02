@@ -75,7 +75,8 @@ class DevOpsAgent(BaseAgent):
             f"Tickets:\n{json.dumps([t.model_dump() for t in tickets], indent=2)}\n\n"
             f"Code Artifacts:\n{json.dumps([a.model_dump() for a in code_artifacts], indent=2)}"
         )
-        raw_artifacts: list[dict] = self.system_parsed(_SYSTEM, context, list[dict])
+        kb_ctx = str(state.get("_kb_context") or "")
+        raw_artifacts: list[dict] = self.system_parsed(_SYSTEM + kb_ctx, context, list[dict])
         devops_artifacts = [
             DevOpsArtifact(
                 **{k: v for k, v in a.items() if k in DevOpsArtifact.model_fields}

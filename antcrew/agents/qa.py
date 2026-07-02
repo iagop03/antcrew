@@ -162,8 +162,9 @@ class QAAgent(BaseAgent):
         ]
 
         ticket_map = {t.id: t for t in tickets}
+        kb_ctx = str(state.get("_kb_context") or "")
         repo_query = "tests fixtures " + " ".join(a.file_path for a in testable[:4])
-        system_prompt = _SYSTEM + self._search_repo(repo_query)
+        system_prompt = _SYSTEM + kb_ctx + self._search_repo(repo_query)
 
         new_tests: list[TestArtifact] = []
         for a in testable:

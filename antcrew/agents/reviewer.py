@@ -78,6 +78,7 @@ class ReviewerAgent(BaseAgent):
             }
 
         ticket_summary = " ".join(t.title for t in tickets[:3])
+        kb_ctx = str(state.get("_kb_context") or "")
         memory_context = self._recall(ticket_summary or "code review")
         repo_context   = self._search_repo(ticket_summary or "code conventions style")
 
@@ -93,7 +94,7 @@ class ReviewerAgent(BaseAgent):
             f"Code Artifacts:\n{json.dumps([a.model_dump() for a in code_artifacts], indent=2)}"
             + qa_note
         )
-        data: dict = self.system_parsed(_SYSTEM + memory_context + repo_context, context, dict)
+        data: dict = self.system_parsed(_SYSTEM + kb_ctx + memory_context + repo_context, context, dict)
         findings = [
             ReviewFinding(**{k: v for k, v in f.items() if k in ReviewFinding.model_fields})
             for f in data.get("findings", [])

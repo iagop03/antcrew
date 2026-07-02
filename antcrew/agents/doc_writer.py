@@ -98,7 +98,8 @@ class DocWriterAgent(BaseAgent):
                          for a in devops_artifacts]
             context_parts.append(f"DevOps files:\n{json.dumps(summaries, indent=2)}")
 
-        raw_artifacts: list[dict] = self.system_parsed(_SYSTEM, "\n\n".join(context_parts), list[dict])
+        kb_ctx = str(state.get("_kb_context") or "")
+        raw_artifacts: list[dict] = self.system_parsed(_SYSTEM + kb_ctx, "\n\n".join(context_parts), list[dict])
         doc_artifacts = [
             DocumentationArtifact(
                 **{k: v for k, v in a.items() if k in DocumentationArtifact.model_fields}

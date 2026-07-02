@@ -58,9 +58,10 @@ class PMAgent(BaseAgent):
         except ContractError as exc:
             return {"errors": [f"PMAgent: {exc}"]}
 
+        kb_ctx = str(state.get("_kb_context") or "")
         context = self._recall(prd.title + " " + prd.summary)
         raw_tickets: list[dict] = self.system_parsed(
-            _SYSTEM + context,
+            _SYSTEM + kb_ctx + context,
             f"PRD:\n{prd.model_dump_json(indent=2)}",
             list[dict],
             max_tokens=16384,
