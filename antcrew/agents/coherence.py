@@ -26,7 +26,8 @@ _SYSTEM = """\
 You are a Senior Software Engineer performing a cross-file consistency review.
 
 You will receive a set of code files that were generated together as part of
-one feature.  Your job is to find and fix three categories of problems:
+one feature.  The files may be in different languages (Python, TypeScript,
+JavaScript, etc.).  Your job is to find and fix three categories of problems:
 
 1. **Broken imports** — a file imports a name that does not exist in the
    referenced module (wrong name, wrong path, or the name was never defined).
@@ -35,17 +36,20 @@ one feature.  Your job is to find and fix three categories of problems:
 3. **Type inconsistencies** — a function is annotated to return type A but is
    used as if it returns type B elsewhere.
 
+CRITICAL language rules:
+- Apply only the import/module conventions of EACH file's own language.
+  Python uses `from module import name`; TypeScript/JavaScript uses
+  `import { name } from './module'`.  Do NOT mix conventions across languages.
+- Do NOT convert Python code to TypeScript or vice versa.
+- Do NOT rename functions, classes, or variables to match a different language's
+  naming convention.
+
 DO NOT rewrite working code.  Only change what is strictly necessary to make
 the files consistent with each other.  Keep all existing logic intact.
 
 Respond ONLY with a valid JSON array of ALL artifact objects (no markdown
 fences, no prose), including both corrected and unchanged files.  Each object:
   ticket_id, file_path, description, language, content
-"""
-
-_NO_ISSUES = """\
-Respond ONLY with a valid JSON array of ALL artifact objects unchanged
-(same format as input) — no markdown fences, no prose.
 """
 
 
@@ -68,9 +72,10 @@ class CoherenceAgent(BaseAgent):
                 "messages": [{"role": "assistant", "content": "[Coherence] Single file — skipped."}],
             }
 
-        files_json = _build_context(artifacts)
+        files_json, lang_summary = _build_context(artifacts)
         prompt = (
-            f"Review these {len(artifacts)} files for cross-file consistency issues.\n\n"
+            f"Review these {len(artifacts)} files for cross-file consistency issues.\n"
+            f"{lang_summary}\n"
             f"Files:\n{files_json}"
         )
         raw = self.system(_SYSTEM, prompt)
@@ -107,11 +112,39 @@ class CoherenceAgent(BaseAgent):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _build_context(artifacts: list[CodeArtifact]) -> str:
-    """Serialise artifacts to JSON, truncating to stay under *_MAX_CONTEXT_CHARS*."""
+def _lang_summary(artifacts: list[CodeArtifact]) -> str:
+    """One-line summary of languages present, for the coherence prompt header."""
+    from collections import Counter
+    from pathlib import Path
+    _EXT_TO_LANG = {
+        ".py": "Python", ".pyw": "Python",
+        ".ts": "TypeScript", ".tsx": "TypeScript",
+        ".js": "JavaScript", ".jsx": "JavaScript",
+        ".mjs": "JavaScript", ".cjs": "JavaScript",
+        ".go": "Go", ".java": "Java", ".rs": "Rust",
+        ".rb": "Ruby", ".php": "PHP", ".cs": "C#",
+    }
+    counts: Counter[str] = Counter()
+    for a in artifacts:
+        lang = _EXT_TO_LANG.get(Path(a.file_path).suffix.lower(), getattr(a, "language", None) or "unknown")
+        counts[lang] += 1
+    parts = [f"{n} {lang}" for lang, n in counts.most_common()]
+    summary = ", ".join(parts)
+    if len(counts) > 1:
+        summary += " — apply each language's own import conventions; do NOT mix them."
+    return f"Languages present: {summary}\n"
+
+
+def _build_context(artifacts: list[CodeArtifact]) -> tuple[str, str]:
+    """Serialise artifacts to JSON, truncating to stay under *_MAX_CONTEXT_CHARS*.
+
+    Returns ``(files_json, lang_summary)`` so the caller can embed the language
+    header separately at the top of the prompt.
+    """
+    lang_header = _lang_summary(artifacts)
     full = json.dumps([a.model_dump() for a in artifacts], indent=2)
     if len(full) <= _MAX_CONTEXT_CHARS:
-        return full
+        return full, lang_header
     # Truncate content of large files — keep file_path / description intact
     truncated = []
     budget = _MAX_CONTEXT_CHARS
@@ -120,7 +153,7 @@ def _build_context(artifacts: list[CodeArtifact]) -> str:
         if len(d.get("content", "")) > budget // max(len(artifacts), 1):
             d["content"] = d["content"][: budget // len(artifacts)] + "\n# [truncated]"
         truncated.append(d)
-    return json.dumps(truncated, indent=2)
+    return json.dumps(truncated, indent=2), lang_header
 
 
 def _parse_artifacts(raw: list[dict], originals: list[CodeArtifact]) -> list[CodeArtifact]:

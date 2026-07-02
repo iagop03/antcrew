@@ -22,15 +22,27 @@ def _state(*artifacts: CodeArtifact) -> dict:
 class TestBuildContext:
     def test_small_payload_unchanged(self):
         arts = [_artifact("a.py", "x=1"), _artifact("b.py", "y=2")]
-        result = _build_context(arts)
+        result, lang_summary = _build_context(arts)
         data = json.loads(result)
         assert len(data) == 2
 
     def test_truncates_large_content(self):
         big = "x" * 100_000
         arts = [_artifact("big.py", big)]
-        result = _build_context(arts)
+        result, _ = _build_context(arts)
         assert len(result) <= 42_000  # slightly above cap for metadata
+
+    def test_lang_summary_single_language(self):
+        arts = [_artifact("a.py", "x=1"), _artifact("b.py", "y=2")]
+        _, lang_summary = _build_context(arts)
+        assert "Python" in lang_summary
+
+    def test_lang_summary_mixed_languages_warns(self):
+        arts = [_artifact("a.py", "x=1"), _artifact("b.ts", "export const x = 1")]
+        _, lang_summary = _build_context(arts)
+        assert "Python" in lang_summary
+        assert "TypeScript" in lang_summary
+        assert "import conventions" in lang_summary
 
 
 class TestDetectChanges:
