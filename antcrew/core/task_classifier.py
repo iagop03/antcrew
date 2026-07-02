@@ -191,6 +191,9 @@ class MinimalPipeline:
             TaskType(task_type) if isinstance(task_type, str) else task_type
         )
         self._use_llm = use_llm_classifier
+        # repo_path is consumed here to build the SymbolIndex; it is still
+        # forwarded to DevTeam for multi-agent pipelines via _team_kwargs.
+        self._repo_path: Optional[str] = kwargs.get("repo_path")
         self._team_kwargs = kwargs
 
     def run(self, request: str, *, thread_id: str = "default") -> "RunResult":
@@ -217,8 +220,16 @@ class MinimalPipeline:
             # Single-agent tasks (TEST, DOCS): bypass LangGraph entirely.
             # _SingleAgentTeam calls the agent directly and returns a RunResult.
             kw = self._team_kwargs
+            agent = list(agents.values())[0]
+            # Attach SymbolIndex when repo_path is available (same as DevTeam does).
+            if self._repo_path:
+                try:
+                    from antcrew.core.symbol_index import SymbolIndex
+                    agent.symbol_index = SymbolIndex.build([self._repo_path])
+                except Exception as exc:
+                    log.warning("MinimalPipeline: SymbolIndex build failed — %s", exc)
             return _SingleAgentTeam(
-                list(agents.values())[0],
+                agent,
                 project_kb=getattr(self, "_project_kb_instance", None),
                 model=self._model,
                 runner=kw.get("runner"),
