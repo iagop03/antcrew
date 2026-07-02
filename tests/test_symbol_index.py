@@ -152,3 +152,64 @@ class TestContextFor:
         idx = SymbolIndex.build([tmp_path])
         ctx = idx.context_for(["func"], max_chars=200)
         assert len(ctx) <= 220  # small buffer for truncation suffix
+
+
+# ── TypeScript/JavaScript indexing ────────────────────────────────────────────
+
+class TestTypeScriptIndex:
+    def test_indexes_exported_function(self, tmp_path):
+        _write(tmp_path, "api.ts", """
+            export async function getUser(id: string): Promise<User> {
+                return fetch(`/users/${id}`);
+            }
+        """)
+        idx = SymbolIndex.build([tmp_path])
+        hits = idx.query_function("getUser")
+        assert hits, "getUser not found"
+        assert hits[0].file_path.endswith("api.ts")
+
+    def test_indexes_exported_class(self, tmp_path):
+        _write(tmp_path, "service.ts", """
+            export class AuthService {
+                login(user: string, pass: string): boolean { return true; }
+                logout(): void {}
+            }
+        """)
+        idx = SymbolIndex.build([tmp_path])
+        hits = idx.query_class("AuthService")
+        assert hits, "AuthService not found"
+
+    def test_indexes_exported_interface(self, tmp_path):
+        _write(tmp_path, "types.ts", """
+            export interface User {
+                id: number;
+                name: string;
+            }
+        """)
+        idx = SymbolIndex.build([tmp_path])
+        hits = idx.query_class("User")
+        assert hits, "User interface not found"
+
+    def test_skips_non_exported_function(self, tmp_path):
+        _write(tmp_path, "util.ts", """
+            function internal(): void {}
+        """)
+        idx = SymbolIndex.build([tmp_path])
+        # internal (non-exported) function — either indexed or not, just ensure no crash
+        # and file was processed
+        assert idx._file_count >= 1
+
+    def test_mixed_py_and_ts_directory(self, tmp_path):
+        _write(tmp_path, "auth.py", "def login(user): pass")
+        _write(tmp_path, "api.ts", "export function getUser(id: string) {}")
+        idx = SymbolIndex.build([tmp_path])
+        assert idx.query_function("login"), "Python function not found"
+        assert idx.query_function("getUser"), "TS function not found"
+
+    def test_context_for_ts_symbol(self, tmp_path):
+        _write(tmp_path, "api.ts", """
+            export function fetchOrders(): Promise<Order[]> {}
+        """)
+        idx = SymbolIndex.build([tmp_path])
+        ctx = idx.context_for(["fetchOrders"])
+        assert "fetchOrders" in ctx

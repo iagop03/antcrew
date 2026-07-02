@@ -2,6 +2,7 @@
 
 import ast
 import json
+import re
 from pathlib import Path
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
@@ -9,17 +10,40 @@ from antcrew.core.artifacts import CodeArtifact, TestArtifact, Ticket, coerce_li
 from antcrew.core.state import TeamState
 
 
+_TS_EXTS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+
+
 def _extract_symbols_context(source: str, file_path: str) -> str:
     """Return a short context block listing the public symbols in *source*.
 
     For Python files we parse with ``ast`` to get exact names and signatures.
-    For other languages we fall back to a lightweight regex scan.
+    For TypeScript/JavaScript we use regex to find exported names.
     The block is prepended to the QA prompt so the agent knows what to import.
     """
     suffix = Path(file_path).suffix.lower()
     if suffix == ".py":
         return _python_symbols(source)
-    return ""  # future: add TS/JS parser
+    if suffix in _TS_EXTS:
+        return _ts_symbols(source)
+    return ""
+
+
+_TS_EXPORTED = re.compile(
+    r"^export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|const|let|var)\s+(\w+)",
+    re.MULTILINE,
+)
+
+
+def _ts_symbols(source: str) -> str:
+    """Regex-scan TypeScript/JavaScript source and return exported names."""
+    names = list(dict.fromkeys(m.group(1) for m in _TS_EXPORTED.finditer(source)))
+    if not names:
+        return ""
+    return (
+        "Public exports in this file (import exactly these names):\n"
+        + "\n".join(f"  {n}" for n in names)
+        + "\n\n"
+    )
 
 
 def _python_symbols(source: str) -> str:

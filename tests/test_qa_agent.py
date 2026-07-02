@@ -48,7 +48,23 @@ class TestExtractSymbolsContext:
         assert "def add" in out
 
     def test_non_python_file_returns_empty(self):
-        src = "export function greet() {}"
+        # Unsupported extension (.go) → empty
+        src = "fn greet() {}"
+        assert _extract_symbols_context(src, "utils.go") == ""
+
+    def test_ts_file_returns_exports(self):
+        src = "export function greet(name: string): string { return name; }"
+        ctx = _extract_symbols_context(src, "utils.ts")
+        assert "greet" in ctx
+
+    def test_tsx_file_returns_exports(self):
+        src = "export const Button = () => <button />;"
+        # Button is a const arrow export
+        ctx = _extract_symbols_context(src, "Button.tsx")
+        assert "Button" in ctx
+
+    def test_ts_file_no_exports_returns_empty(self):
+        src = "function internal() {}"
         assert _extract_symbols_context(src, "utils.ts") == ""
 
     def test_context_prepended_with_import_hint(self):

@@ -1,4 +1,4 @@
-"""AST-based symbol index for Python codebases.
+"""AST-based symbol index for Python and TypeScript/JavaScript codebases.
 
 Provides an exact, fast lookup of functions, classes, and their signatures
 without vector search — complements RepoIndex (semantic) with structural data.
@@ -21,12 +21,14 @@ from __future__ import annotations
 
 import ast
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
 _PYTHON_EXTS = {".py", ".pyw"}
+_TS_EXTS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 _MAX_CONTEXT_CHARS = 4_000  # cap for LLM injection
 
 
@@ -75,28 +77,43 @@ class SymbolIndex:
 
     @classmethod
     def build(cls, paths: list[str | Path]) -> "SymbolIndex":
-        """Scan *paths* (files or directories) and return a populated index."""
+        """Scan *paths* (files or directories) and return a populated index.
+
+        Supports Python (.py, .pyw) and TypeScript/JavaScript
+        (.ts, .tsx, .js, .jsx, .mjs, .cjs) files.
+        """
         idx = cls()
         for p in paths:
             root = Path(p)
             if root.is_file():
                 idx._index_file(root, root.parent)
             elif root.is_dir():
-                for py_file in root.rglob("*.py"):
-                    idx._index_file(py_file, root)
+                for src_file in root.rglob("*"):
+                    if src_file.suffix.lower() in (_PYTHON_EXTS | _TS_EXTS):
+                        idx._index_file(src_file, root)
         return idx
 
     def _index_file(self, path: Path, root: Path) -> None:
+        suffix = path.suffix.lower()
         try:
             source = path.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(path))
-        except (SyntaxError, OSError) as exc:
+        except OSError as exc:
             log.debug("symbol_index: skipping %s — %s", path, exc)
             return
 
         self._file_count += 1
         module = _path_to_module(path, root)
-        _Visitor(module, str(path), self).visit(tree)
+
+        if suffix in _PYTHON_EXTS:
+            try:
+                tree = ast.parse(source, filename=str(path))
+            except SyntaxError as exc:
+                log.debug("symbol_index: parse error %s — %s", path, exc)
+                self._file_count -= 1
+                return
+            _Visitor(module, str(path), self).visit(tree)
+        elif suffix in _TS_EXTS:
+            _index_ts(source, module, str(path), self)
 
     # ------------------------------------------------------------------
     # Querying
@@ -270,3 +287,90 @@ def _build_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
         ret = f" -> {ast.unparse(node.returns)}"
 
     return f"({', '.join(parts)}){ret}"
+
+
+# ---------------------------------------------------------------------------
+# TypeScript / JavaScript regex indexer
+# ---------------------------------------------------------------------------
+
+# Patterns for exported declarations
+_TS_EXPORT_FN = re.compile(
+    r"^export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)",
+    re.MULTILINE,
+)
+_TS_EXPORT_ARROW = re.compile(
+    r"^export\s+(?:const|let|var)\s+(\w+)\s*(?::\s*\([^)]*\)\s*=>\s*\S+)?\s*=\s*(?:async\s*)?\(",
+    re.MULTILINE,
+)
+_TS_EXPORT_CLASS = re.compile(
+    r"^export\s+(?:default\s+)?(?:abstract\s+)?class\s+(\w+)",
+    re.MULTILINE,
+)
+_TS_EXPORT_INTERFACE = re.compile(
+    r"^export\s+(?:default\s+)?interface\s+(\w+)",
+    re.MULTILINE,
+)
+_TS_EXPORT_TYPE = re.compile(
+    r"^export\s+type\s+(\w+)",
+    re.MULTILINE,
+)
+_TS_METHOD = re.compile(
+    r"^\s{2,}(?:public\s+|private\s+|protected\s+|static\s+|async\s+)*(\w+)\s*\(([^)]*)\)",
+    re.MULTILINE,
+)
+
+
+def _index_ts(source: str, module: str, file_path: str, idx: "SymbolIndex") -> None:
+    """Regex-based extraction of exported symbols from TypeScript/JavaScript."""
+    current_class = ""
+
+    # Exported functions
+    for m in _TS_EXPORT_FN.finditer(source):
+        name = m.group(1)
+        params = m.group(2).strip()
+        sig = f"({params})"
+        line = source[: m.start()].count("\n") + 1
+        idx._add_function(FunctionSymbol(
+            name=name, module=module, file_path=file_path,
+            signature=sig, docstring="", line=line,
+        ))
+
+    # Exported arrow functions
+    for m in _TS_EXPORT_ARROW.finditer(source):
+        name = m.group(1)
+        line = source[: m.start()].count("\n") + 1
+        idx._add_function(FunctionSymbol(
+            name=name, module=module, file_path=file_path,
+            signature="(...)", docstring="", line=line,
+        ))
+
+    # Exported classes
+    for m in _TS_EXPORT_CLASS.finditer(source):
+        name = m.group(1)
+        line = source[: m.start()].count("\n") + 1
+        # Collect method names in approximate class body (next 3000 chars)
+        body = source[m.end(): m.end() + 3000]
+        methods = [mm.group(1) for mm in _TS_METHOD.finditer(body)
+                   if not mm.group(1).startswith("_")]
+        idx._add_class(ClassSymbol(
+            name=name, module=module, file_path=file_path,
+            methods=methods[:20], line=line,
+        ))
+
+    # Exported interfaces
+    for m in _TS_EXPORT_INTERFACE.finditer(source):
+        name = m.group(1)
+        line = source[: m.start()].count("\n") + 1
+        idx._add_class(ClassSymbol(
+            name=name, module=module, file_path=file_path,
+            line=line,
+        ))
+
+    # Exported type aliases
+    for m in _TS_EXPORT_TYPE.finditer(source):
+        name = m.group(1)
+        line = source[: m.start()].count("\n") + 1
+        idx._add_class(ClassSymbol(
+            name=name, module=module, file_path=file_path,
+            line=line,
+        ))
