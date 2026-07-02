@@ -23,6 +23,9 @@ def _build_team(
     project_dirs: "dict | None" = None,
     scan_context: "dict | None" = None,
     repo_path: "str | None" = None,
+    lint_cmd: "list[str] | str | None" = None,
+    enable_coherence: bool = False,
+    project_kb_path: "str | None" = None,
 ):
     from antcrew.config import build_llm
 
@@ -30,13 +33,19 @@ def _build_team(
 
     if team == "dev":
         from antcrew.teams.dev_team import DevTeam
-        return DevTeam(model=llm, integrations=integrations)
+        return DevTeam(
+            model=llm, integrations=integrations,
+            lint_cmd=lint_cmd, enable_coherence=enable_coherence,
+            project_kb_path=project_kb_path,
+        )
     if team == "fullstack":
         from antcrew.teams.fullstack_team import FullStackTeam
         return FullStackTeam(
             model=llm, integrations=integrations,
             project_dir=project_dir, project_dirs=project_dirs,
             scan_context=scan_context, repo_path=repo_path,
+            lint_cmd=lint_cmd, enable_coherence=enable_coherence,
+            project_kb_path=project_kb_path,
         )
     if team == "research":
         from antcrew.teams.research_team import ResearchTeam

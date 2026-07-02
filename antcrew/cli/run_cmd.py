@@ -140,6 +140,22 @@ def run(
         False, "--repl-stateful",
         help="Carry output state from each REPL iteration into the next (implies --repl).",
     ),
+    lint_cmd: Optional[str] = typer.Option(
+        None, "--lint-cmd",
+        help="Command to run as a lint/typecheck pre-pass before tests each feedback round "
+             "(e.g. 'ruff check .' or 'mypy src/'). Only used when --feedback-rounds > 0.",
+    ),
+    enable_coherence: bool = typer.Option(
+        False, "--coherence",
+        help="Run CoherenceAgent after code generation to fix cross-file import and "
+             "signature inconsistencies before tests run.",
+    ),
+    project_kb_path: Optional[Path] = typer.Option(
+        None, "--kb", "--project-kb",
+        help="Path to project knowledge base JSON (created if missing). "
+             "Accumulates endpoints, models, and services across runs so agents "
+             "know what already exists.",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -219,10 +235,13 @@ def run(
                     )
                 else:
                     _repo_path = str(repo_index.resolve())
+            _lint = lint_cmd.split() if isinstance(lint_cmd, str) and " " in lint_cmd else lint_cmd
+            _kb_str = str(project_kb_path.resolve()) if project_kb_path else None
             active_team = _build_team(
                 team, model, integrations=[], llm=_llm_ref,
                 project_dir=_pd, project_dirs=_pds, scan_context=_ctx,
-                repo_path=_repo_path,
+                repo_path=_repo_path, lint_cmd=_lint,
+                enable_coherence=enable_coherence, project_kb_path=_kb_str,
             )
 
         # Resolve the request from file, argument, or interactive prompt.
