@@ -215,7 +215,7 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
             project_dir=project_dir, project_dirs=project_dirs,
             sprint_size=sprint_size, max_cost_usd=max_cost_usd,
             feedback_rounds=feedback_rounds, lint_cmd=lint_cmd, work_dir=work_dir,
-            enable_coherence=enable_coherence,
+            enable_coherence=enable_coherence, project_kb_path=project_kb_path,
         )
         team.output_dir = cfg.get("output_dir") or None
         return team
