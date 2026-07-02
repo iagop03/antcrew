@@ -727,6 +727,20 @@ def test_cmd(
         False, "--no-code",
         help="Skip code artifacts — run test files only (useful when the project already exists).",
     ),
+    feedback_rounds: int = typer.Option(
+        0, "--feedback-rounds", "-f",
+        help="If tests fail, run up to N fix rounds using BackendDevAgent before giving up. "
+             "Requires --model. Default 0 = no retries.",
+    ),
+    lint_cmd: Optional[str] = typer.Option(
+        None, "--lint-cmd",
+        help="Static check command run before tests each feedback round "
+             "(e.g. 'ruff check .' or 'mypy src/'). Only used when --feedback-rounds > 0.",
+    ),
+    model: str = typer.Option(
+        "claude", "--model", "-m",
+        help="Model for the fix agent when --feedback-rounds > 0 (default: claude).",
+    ),
 ) -> None:
     """Run test artifacts from a saved pipeline state.
 
@@ -830,7 +844,42 @@ def test_cmd(
                 border_style="dim",
             ))
 
-    if not result.success:
+    # Feedback loop — only when tests failed and the user requested retries.
+    if not result.success and feedback_rounds > 0:
+        from antcrew.core.feedback import run_test_feedback_loop
+        from antcrew.core.artifacts import coerce_list
+        from antcrew.agents.backend_dev import BackendDevAgent
+        from antcrew.cli._shared import _build_team  # noqa: F401 — build_llm only
+        from antcrew.config import build_llm
+
+        console.print(
+            f"\n[bold yellow]Tests failed — running up to {feedback_rounds} fix round(s)…[/]\n"
+        )
+
+        fix_agent = BackendDevAgent(build_llm(model))
+        state = dict(raw)
+        state["code_artifacts"] = [a.model_dump() for a in code_artifacts]
+        state["test_artifacts"] = [a.model_dump() for a in test_artifacts]
+
+        _lint = lint_cmd.split() if isinstance(lint_cmd, str) and " " in lint_cmd else lint_cmd
+        try:
+            state = run_test_feedback_loop(
+                state,
+                fix_agent,
+                active_runner,
+                max_rounds=feedback_rounds,
+                lint_cmd=_lint,
+            )
+        except Exception as exc:
+            console.print(f"[red]Feedback loop error:[/] {exc}")
+
+        if state.get("feedback_ok"):
+            console.print("[bold green]✓ All tests pass after fix round(s).[/]")
+        else:
+            used = state.get("feedback_rounds_used", "?")
+            console.print(f"[red]Tests still failing after {used} round(s).[/]")
+            raise typer.Exit(1)
+    elif not result.success:
         raise typer.Exit(1)
 
 
