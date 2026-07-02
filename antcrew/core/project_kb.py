@@ -154,19 +154,27 @@ class ProjectKB:
         if self.tech_stack:
             sections.append("Tech stack: " + ", ".join(self.tech_stack))
 
-        if self.dependencies and agent_name in ("backend_dev", "devops", "qa"):
+        if self.dependencies and agent_name in (
+            "backend_dev", "devops", "qa", "reviewer",
+        ):
             top = dict(list(self.dependencies.items())[:10])
             sections.append("Key dependencies: " + ", ".join(f"{k}=={v}" for k, v in top.items()))
 
-        if self.endpoints and agent_name in ("backend_dev", "frontend_dev", "qa"):
+        if self.endpoints and agent_name in (
+            "backend_dev", "frontend_dev", "qa", "reviewer", "pm", "doc_writer",
+        ):
             ep_lines = [f"  {e.method} {e.path}  [{e.handler}]" for e in self.endpoints[:15]]
             sections.append("Existing API endpoints:\n" + "\n".join(ep_lines))
 
-        if self.models and agent_name in ("backend_dev", "qa"):
+        if self.models and agent_name in (
+            "backend_dev", "qa", "reviewer", "pm", "doc_writer",
+        ):
             model_lines = [f"  {m.name}({', '.join(m.fields[:6])})" for m in self.models[:10]]
             sections.append("Data models:\n" + "\n".join(model_lines))
 
-        if self.services and agent_name in ("backend_dev", "frontend_dev"):
+        if self.services and agent_name in (
+            "backend_dev", "frontend_dev", "reviewer", "pm", "doc_writer",
+        ):
             svc_lines = [f"  {s.name}: {', '.join(s.methods[:4])}" for s in self.services[:8]]
             sections.append("Services:\n" + "\n".join(svc_lines))
 

@@ -159,3 +159,50 @@ class TestDepParsing:
         toml = "[tool.poetry.dependencies]\nfastapi = \"^0.111\"\npython = \"^3.12\"\n"
         _parse_toml_deps(toml, deps)
         assert "fastapi" in deps
+
+
+# ── context_for_agent role coverage ──────────────────────────────────────────
+
+class TestContextForAgentRoles:
+    def _kb_with_data(self) -> ProjectKB:
+        kb = ProjectKB()
+        kb.endpoints.append(EndpointRecord("/orders", "GET", "orders", "get_orders"))
+        kb.models.append(ModelRecord("Order", "models", ["id", "total", "status"]))
+        kb.services.append(ServiceRecord("PaymentService", "payment", ["charge", "refund"]))
+        kb.dependencies["fastapi"] = "0.111.0"
+        return kb
+
+    def test_reviewer_sees_endpoints_models_services_deps(self):
+        kb = self._kb_with_data()
+        ctx = kb.context_for_agent("reviewer")
+        assert "GET /orders" in ctx
+        assert "Order" in ctx
+        assert "PaymentService" in ctx
+        assert "fastapi" in ctx
+
+    def test_pm_sees_endpoints_models_services(self):
+        kb = self._kb_with_data()
+        ctx = kb.context_for_agent("pm")
+        assert "GET /orders" in ctx
+        assert "Order" in ctx
+        assert "PaymentService" in ctx
+
+    def test_doc_writer_sees_endpoints_models_services(self):
+        kb = self._kb_with_data()
+        ctx = kb.context_for_agent("doc_writer")
+        assert "GET /orders" in ctx
+        assert "Order" in ctx
+        assert "PaymentService" in ctx
+
+    def test_business_analyst_gets_only_tech_stack(self):
+        kb = self._kb_with_data()
+        kb.tech_stack = ["Python", "FastAPI"]
+        ctx = kb.context_for_agent("business_analyst")
+        # business_analyst should see tech_stack but not endpoints/models/services
+        assert "Python" in ctx
+        assert "GET /orders" not in ctx
+
+    def test_empty_kb_returns_empty_for_all_roles(self):
+        kb = ProjectKB()
+        for role in ("reviewer", "pm", "doc_writer", "qa", "backend_dev"):
+            assert kb.context_for_agent(role) == ""
