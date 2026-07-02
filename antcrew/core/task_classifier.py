@@ -63,6 +63,7 @@ _PIPELINE_FLOWS: dict[TaskType, list[tuple]] = {
     TaskType.FEATURE: [
         ("business_analyst", "pm"),
         ("pm", "backend_dev"),
+        ("backend_dev", "qa"),
     ],
     TaskType.TEST: [
         ("qa",),   # single-node pipeline (QAAgent only)
@@ -75,7 +76,7 @@ _PIPELINE_FLOWS: dict[TaskType, list[tuple]] = {
 _AGENTS_FOR_TYPE: dict[TaskType, list[str]] = {
     TaskType.FIX:      ["backend_dev", "qa"],
     TaskType.REFACTOR: ["backend_dev", "reviewer"],
-    TaskType.FEATURE:  ["business_analyst", "pm", "backend_dev"],
+    TaskType.FEATURE:  ["business_analyst", "pm", "backend_dev", "qa"],
     TaskType.TEST:     ["qa"],
     TaskType.DOCS:     ["doc_writer"],
 }
