@@ -72,7 +72,7 @@ def _build_team(
 
 
 def _print_state(state: dict, team: str) -> None:
-    if team in ("dev", "fullstack"):
+    if team in ("dev", "fullstack", "minimal"):
         if state.get("prd"):
             console.print(Panel(
                 f"[bold]{state['prd'].title}[/]\n{state['prd'].summary}",
@@ -154,6 +154,28 @@ def _print_state(state: dict, team: str) -> None:
                 title=f"[bold]{key}[/]",
                 border_style="cyan",
             ))
+
+    # ── v0.13.x pipeline metadata ─────────────────────────────────────────────
+    _meta_parts: list[str] = []
+    if state.get("_task_type"):
+        _meta_parts.append(f"task=[bold]{state['_task_type']}[/bold]")
+    if state.get("coherence_issues"):
+        n = len(state["coherence_issues"])
+        _meta_parts.append(f"coherence=[yellow]{n} file(s) corrected[/yellow]")
+    elif "coherence_issues" in state:
+        _meta_parts.append("coherence=[green]no issues[/green]")
+    if "lint_ok" in state:
+        _meta_parts.append(
+            "lint=[green]ok[/green]" if state["lint_ok"] else "lint=[red]failed[/red]"
+        )
+    if "feedback_ok" in state:
+        rounds = state.get("feedback_rounds_used", "?")
+        if state["feedback_ok"]:
+            _meta_parts.append(f"feedback=[green]ok[/green] ({rounds} round(s))")
+        else:
+            _meta_parts.append(f"feedback=[red]failed[/red] after {rounds} round(s)")
+    if _meta_parts:
+        console.print("  " + "  ".join(_meta_parts))
 
     if state.get("errors"):
         for err in state["errors"]:
