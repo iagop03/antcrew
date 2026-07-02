@@ -5,6 +5,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.4] — 2026-07-02
+
+### Fixed — Fourth gap pass: universal KB context, complete initial state, `minimal` in choices
+
+#### All pipeline agents now read `_kb_context` from state
+
+Previously only `BackendDevAgent` and `FrontendDevAgent` injected the ProjectKB context
+into their LLM prompts. The five remaining pipeline agents now do the same:
+
+| Agent | Injection point |
+|---|---|
+| `QAAgent` | prepended to `system_prompt` before repo search |
+| `ReviewerAgent` | prepended to `_SYSTEM` before memory + repo context |
+| `PMAgent` | prepended to `_SYSTEM` before recall context |
+| `DocWriterAgent` | prepended to `_SYSTEM` before `context_parts` join |
+| `DevOpsAgent` | prepended to `_SYSTEM` before `context` |
+
+Pattern: `kb_ctx = str(state.get("_kb_context") or "")` — empty string when no KB is
+configured, so existing pipelines without `ProjectKB` are unaffected.
+
+#### `_SingleAgentTeam` initial state mirrors `DevTeam._initial_state`
+
+Eight keys were missing from `_SingleAgentTeam.run()`'s initial state dict:
+`prd`, `tickets`, `test_results`, `review`, `devops_artifacts`, `doc_artifacts`,
+`research_document`, `content_piece`.
+
+`DocWriterAgent` and `DevOpsAgent` read these keys via `.get()` so no `KeyError` was
+raised, but middleware that checks `key in state` (rather than `state.get(key)`) would
+have silently skipped sections. All slots are now initialised to `None`, matching the
+full-pipeline DevTeam state shape.
+
+#### `'minimal'` added to `_TEAM_CHOICES`
+
+`antcrew run --team minimal` worked correctly but `minimal` was absent from
+`_TEAM_CHOICES`, so it was missing from `--help` output and error messages that list
+valid choices.
+
+---
+
 ## [0.13.3] — 2026-07-02
 
 ### Added — Third gap pass: CLI visibility, MinimalPipeline context, KB for all roles
