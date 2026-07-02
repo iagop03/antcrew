@@ -142,6 +142,9 @@ class SymbolIndex:
 
         *topics* can be function names, class names, or file basenames (without
         extension).  Only symbols that fuzzy-match a topic are included.
+
+        Each line is prefixed with the language detected from the file extension
+        so agents never confuse Python imports with TypeScript ESM imports.
         """
         lines: list[str] = []
         lower_topics = {t.lower() for t in topics}
@@ -149,15 +152,17 @@ class SymbolIndex:
         for name, syms in self._functions.items():
             if any(t in name.lower() or name.lower() in t for t in lower_topics):
                 for s in syms:
+                    lang = _ext_to_lang(s.file_path)
                     location = f"{s.file_path}:{s.line}"
-                    lines.append(f"  def {name}{s.signature}  # {location}")
+                    lines.append(f"  [{lang}] def {name}{s.signature}  # {location}")
 
         for name, syms in self._classes.items():
             if any(t in name.lower() or name.lower() in t for t in lower_topics):
                 for s in syms:
+                    lang = _ext_to_lang(s.file_path)
                     location = f"{s.file_path}:{s.line}"
                     methods = ", ".join(s.methods[:5])
-                    lines.append(f"  class {name}  # {location}  methods=[{methods}]")
+                    lines.append(f"  [{lang}] class {name}  # {location}  methods=[{methods}]")
 
         if not lines:
             return ""
@@ -238,6 +243,20 @@ class _Visitor(ast.NodeVisitor):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_EXT_LANG: dict[str, str] = {
+    ".py": "Python", ".pyw": "Python",
+    ".ts": "TypeScript", ".tsx": "TypeScript",
+    ".js": "JavaScript", ".jsx": "JavaScript",
+    ".mjs": "JavaScript", ".cjs": "JavaScript",
+    ".go": "Go", ".java": "Java", ".rs": "Rust",
+    ".rb": "Ruby", ".php": "PHP", ".cs": "C#",
+}
+
+
+def _ext_to_lang(file_path: str) -> str:
+    return _EXT_LANG.get(Path(file_path).suffix.lower(), "unknown")
+
 
 def _path_to_module(path: Path, root: Path) -> str:
     try:

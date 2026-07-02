@@ -153,6 +153,26 @@ class TestContextFor:
         ctx = idx.context_for(["func"], max_chars=200)
         assert len(ctx) <= 220  # small buffer for truncation suffix
 
+    def test_python_symbol_labeled_python(self, tmp_path):
+        _write(tmp_path, "auth.py", "def login(user): pass")
+        idx = SymbolIndex.build([tmp_path])
+        ctx = idx.context_for(["login"])
+        assert "[Python]" in ctx
+
+    def test_ts_symbol_labeled_typescript(self, tmp_path):
+        _write(tmp_path, "api.ts", "export function getUser(id: string) {}")
+        idx = SymbolIndex.build([tmp_path])
+        ctx = idx.context_for(["getUser"])
+        assert "[TypeScript]" in ctx
+
+    def test_mixed_project_both_labels_present(self, tmp_path):
+        _write(tmp_path, "auth.py", "def login(user): pass")
+        _write(tmp_path, "api.ts", "export function getUser(id: string) {}")
+        idx = SymbolIndex.build([tmp_path])
+        ctx = idx.context_for(["login", "getUser"])
+        assert "[Python]" in ctx
+        assert "[TypeScript]" in ctx
+
 
 # ── TypeScript/JavaScript indexing ────────────────────────────────────────────
 
