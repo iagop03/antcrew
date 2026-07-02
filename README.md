@@ -1117,9 +1117,11 @@ antcrew run "Refactor auth" --team fullstack --repo-index ./src
 
 ### AST Symbol Index
 
-`SymbolIndex` parses Python files via `ast` (no LLM, no network) and builds an
-exact index of every public function, method, and class — including signatures,
-argument names, return types, and source locations.
+`SymbolIndex` parses Python files via `ast` and TypeScript/JavaScript files via
+regex (no LLM, no network) and builds an exact index of every exported function,
+method, and class — including signatures, argument names, return types, and source
+locations.  Supported extensions: `.py`, `.pyw`, `.ts`, `.tsx`, `.js`, `.jsx`,
+`.mjs`, `.cjs`.
 
 ```python
 from antcrew.core.symbol_index import SymbolIndex
@@ -1182,6 +1184,10 @@ project_kb_path: ./.antcrew/kb.json
 - Broken imports (name doesn't exist in the referenced module)
 - Signature mismatches (caller args don't match definition)
 - Type inconsistencies across files
+
+**Language-aware**: when a project contains both Python and TypeScript/JavaScript files,
+the agent is instructed to apply each file's own language conventions and never mix
+import styles (Python `from module import name` vs. TS `import { name } from './module'`).
 
 ```python
 team = DevTeam(model=llm, enable_coherence=True)
@@ -1292,6 +1298,23 @@ use_llm_classifier: true # optional, default false
 
 `MinimalPipeline` accepts all `DevTeam` kwargs: `feedback_rounds`, `lint_cmd`,
 `enable_coherence`, `project_kb_path`, etc.
+
+**CLI flags** — use any combination without a YAML config file:
+
+```bash
+antcrew run "Fix the auth bug" \
+  --team dev \
+  --feedback-rounds 3 \
+  --lint-cmd "ruff check ." \
+  --coherence \
+  --kb .antcrew/kb.json
+```
+
+| Flag | Description |
+|---|---|
+| `--lint-cmd TEXT` | Static check command run before tests each feedback round |
+| `--coherence` | Run CoherenceAgent after code generation |
+| `--kb PATH` | Path to project knowledge base JSON (created if missing) |
 
 ---
 

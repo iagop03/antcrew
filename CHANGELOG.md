@@ -5,6 +5,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.1] — 2026-07-02
+
+### Added — Gap fixes: TS symbols, CLI flags, single-agent pipeline, language-aware coherence
+
+#### TypeScript/JavaScript symbol extraction (Gap 2)
+
+- `SymbolIndex.build()` now scans `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` via regex in
+  addition to Python (AST).  Extracted: exported functions (including arrow functions),
+  classes (with public methods), interfaces, and type aliases.
+- `QAAgent._extract_symbols_context()` calls `_ts_symbols()` for TS/JS files, so the agent
+  sees the actual exported names before generating Vitest/Jest tests.
+- `_ts_symbols(source)` public helper available in `antcrew.agents.qa`.
+- 6 new tests in `test_symbol_index.py` (`TestTypeScriptIndex`); 3 new tests in
+  `test_qa_agent.py` (`test_ts_file_*`).
+
+#### CLI flags: `--lint-cmd`, `--coherence`, `--kb` (Gap 3)
+
+- `antcrew run` now exposes three new flags without requiring a YAML config:
+  - `--lint-cmd TEXT` — static check pre-pass before tests each feedback round
+    (e.g. `antcrew run "..." --feedback-rounds 3 --lint-cmd "ruff check ."`)
+  - `--coherence` — enable CoherenceAgent post-generation pass
+  - `--kb PATH` / `--project-kb PATH` — path to project knowledge base JSON
+- All three are forwarded through `_build_team()` to `DevTeam` and `FullStackTeam`.
+
+#### MinimalPipeline: proper single-agent wrapper (Gap 4)
+
+- Replaced `_SingleNodeSupervisor` / `_SingleNodeApp` (fake LangGraph duck-types with a
+  broken `get_state()`) with `_SingleAgentTeam`.
+- `_SingleAgentTeam.run()` calls the agent directly, builds a proper initial state, merges
+  the result, and returns a real `RunResult` — no LangGraph involved for TEST or DOCS tasks.
+- KB injection and KB update/save are handled inside `_SingleAgentTeam` when a `ProjectKB`
+  is attached.
+
+#### Language-aware CoherenceAgent (Gap 5)
+
+- `CoherenceAgent` now explicitly tells the LLM which languages are present and enforces
+  language-boundary rules: Python uses `from module import name`; TypeScript/JavaScript uses
+  `import { name } from './module'` — they must never be mixed.
+- New `_lang_summary(artifacts)` helper produces a one-line header like
+  *"Languages present: 2 Python, 1 TypeScript — apply each language's own import conventions"*.
+- `_build_context()` now returns `(files_json, lang_summary)`; the language header is placed
+  before the file list so the LLM reads it first.
+- 4 new tests in `test_coherence_agent.py` (`TestBuildContext.test_lang_summary_*`).
+
+### Fixed
+
+- `CoherenceAgent` was silently misapplying Python import rules to TypeScript files in
+  mixed-language projects (now guarded by explicit per-language instructions).
+- `MinimalPipeline` TEST/DOCS branches would crash if `run_interactive()` was called on the
+  returned team (fake `get_state()` returned an empty struct-like object).
+
+### Tests
+
+- 2266 passing (up from 2255 in v0.13.0); 13 new tests for the 4 gap fixes.
+
+---
+
 ## [0.13.0] — 2026-06-30
 
 ### Added — Depth improvements: smarter code generation, richer feedback, structured memory
