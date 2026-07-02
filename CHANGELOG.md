@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.5] — 2026-07-02
+
+### Added — Fifth gap pass: complete universal KB coverage + KB injection tests
+
+#### `BusinessAnalystAgent` reads `_kb_context`
+
+The BA is the first node in the FEATURE pipeline (`business_analyst → pm → backend_dev → qa`).
+It was the last agent still ignoring the Project Knowledge Base. Now `kb_ctx` is prepended
+to `_SYSTEM + memory_ctx` so the BA sees existing endpoints/models before writing the PRD.
+
+#### `DevOpsAgent` uses `_search_repo` and `_recall`
+
+DevOps already received `_kb_context` in v0.13.4. Now it also queries the repo for existing
+infra files (`Dockerfile`, `docker-compose.yml`, `.github/`) before generating new ones,
+and recalls past deployment decisions from memory — same pattern as `BackendDevAgent`.
+
+#### `tests/test_kb_context_injection.py` — regression guard for KB injection
+
+7-test module that verifies every pipeline agent (BusinessAnalyst, PM, QA, Reviewer,
+DocWriter, DevOps, + regression guard for empty KB) injects `_kb_context` into the LLM
+system prompt. Each test uses a sentinel string and checks `llm.system.call_args_list`.
+A future refactor that silently drops `kb_ctx` from the prompt concatenation will fail.
+
+---
+
 ## [0.13.4] — 2026-07-02
 
 ### Fixed — Fourth gap pass: universal KB context, complete initial state, `minimal` in choices
