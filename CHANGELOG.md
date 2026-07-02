@@ -5,6 +5,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.2] — 2026-07-02
+
+### Added — Second gap pass: frontend context, FEATURE QA, feedback everywhere, labeled symbols
+
+#### FrontendDevAgent uses SymbolIndex and ProjectKB (Gap 1)
+
+- `FrontendDevAgent.run()` now reads `_kb_context` from state and calls
+  `self.symbol_index.context_for(topics)` if an index is attached, mirroring
+  `BackendDevAgent`.  Both are prepended to the prompts used for the planning and
+  file-generation phases.
+- In `FullStackTeam`, `DevTeam`, and `MinimalPipeline`, the symbol index is attached
+  to all agents — `FrontendDevAgent` now benefits from the same structural context
+  `BackendDevAgent` already had.
+
+#### MinimalPipeline FEATURE includes QA (Gap 2)
+
+- `_AGENTS_FOR_TYPE[FEATURE]` updated from `["business_analyst", "pm", "backend_dev"]`
+  to `["business_analyst", "pm", "backend_dev", "qa"]`.
+- `_PIPELINE_FLOWS[FEATURE]` gains a `("backend_dev", "qa")` edge.
+- FEATURE tasks now produce test artifacts.  Only single-agent tasks (TEST, DOCS)
+  skip QA.
+
+#### `_SingleAgentTeam` forwards `feedback_rounds` to the feedback loop (Gap 3)
+
+- `_SingleAgentTeam` now accepts `runner`, `feedback_rounds`, `lint_cmd`, `work_dir`,
+  and `max_error_chars` from `MinimalPipeline._team_kwargs`.
+- When `runner` is provided and `feedback_rounds > 0`, `run_test_feedback_loop()` runs
+  after the primary agent with a fresh `BackendDevAgent` as fixer.
+- If the feedback loop raises, it is caught and logged — never crashes the pipeline.
+
+#### `antcrew test` supports `--feedback-rounds` (Gap 4)
+
+- `antcrew test state.json --feedback-rounds 3` re-runs failed tests with a
+  `BackendDevAgent` fix cycle before giving up.
+- `--lint-cmd TEXT` adds a static check pre-pass each round.
+- `--model TEXT` selects the model for the fix agent (default: `claude`).
+- Exit code 0 when feedback loop succeeds; exit 1 when still failing.
+
+#### `SymbolIndex.context_for()` labels each symbol's language (Gap 5)
+
+- Every line in the context block now carries a `[Language]` prefix:
+  `[Python] def login(...)`, `[TypeScript] class AuthService`.
+- New `_ext_to_lang(file_path)` helper maps 13 extensions to display names.
+- Prevents agents from confusing Python `from module import name` with TypeScript
+  `import { name } from './module'` when reading codebase context.
+
+### Tests
+
+- 2269 passing (up from 2266); 16 new tests across 3 files.
+
+---
+
 ## [0.13.1] — 2026-07-02
 
 ### Added — Gap fixes: TS symbols, CLI flags, single-agent pipeline, language-aware coherence

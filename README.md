@@ -548,7 +548,7 @@ antcrew eval         Run evaluation cases and score results
 antcrew benchmark    Run a batch of requests and compare results across teams/models
 antcrew watch        Watch a directory and auto-run the pipeline on changes
 antcrew diff         Compare two saved state files side by side
-antcrew test         Run generated tests from a saved state
+antcrew test         Run generated tests from a saved state (--feedback-rounds to auto-fix)
 antcrew export       Export artifacts from a saved state to a directory
 antcrew graph        Render a pipeline flow as an ASCII graph or Mermaid diagram
 antcrew validate     Validate a saved state or config file
@@ -1078,6 +1078,14 @@ antcrew write-back run.json --dry-run  # review
 antcrew write-back run.json --yes       # apply
 ```
 
+Run the generated tests after applying, with automatic fix-and-retry on failure:
+
+```bash
+antcrew test run.json                            # one-shot: run and report
+antcrew test run.json --feedback-rounds 3        # retry up to 3 times using BackendDevAgent
+antcrew test run.json -f 3 --lint-cmd "ruff check ."  # lint pre-pass each round
+```
+
 ### Two-step workflow: scan once, run many times
 
 Scanning with an LLM is the most expensive part of a brownfield run. Save the result to a
@@ -1135,12 +1143,18 @@ hits = idx.query_function("hash_password")
 # → [FunctionSymbol(name="hash_password", signature="(plain: str) -> str", ...)]
 
 # Context snippet for injection into an agent prompt
+# Each line is prefixed with [Python] / [TypeScript] / [JavaScript] etc.
+# so agents never confuse Python imports with TypeScript ESM imports.
 print(idx.context_for(["auth", "User"]))
+# → Codebase symbols (AST-extracted):
+#     [Python] def login(user: str) -> bool  # src/auth.py:12
+#     [TypeScript] class AuthService  # src/auth.ts:5  methods=[login, logout]
 ```
 
 When `DevTeam(repo_path="./src")` is used, `SymbolIndex` is built automatically
-alongside `RepoIndex` and attached to all agents.  `BackendDevAgent` injects the
-symbol context before generating code, so it knows what names to import.
+alongside `RepoIndex` and attached to all agents.  `BackendDevAgent` and
+`FrontendDevAgent` both inject symbol context before generating code — the language
+labels prevent cross-language import confusion in mixed Python + TypeScript projects.
 
 ---
 
