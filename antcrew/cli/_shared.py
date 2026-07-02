@@ -26,6 +26,7 @@ def _build_team(
     lint_cmd: "list[str] | str | None" = None,
     enable_coherence: bool = False,
     project_kb_path: "str | None" = None,
+    task_type: "str | None" = None,
 ):
     from antcrew.config import build_llm
 
@@ -61,6 +62,26 @@ def _build_team(
     if team == "direct":
         from antcrew.agents.direct_agent import DirectAgent
         return DirectAgent(llm)
+
+    if team == "minimal":
+        from antcrew.core.task_classifier import MinimalPipeline, TaskType
+        forced_type = None
+        if task_type and task_type != "auto":
+            try:
+                forced_type = TaskType(task_type)
+            except ValueError:
+                valid = ", ".join(t.value for t in TaskType)
+                raise typer.BadParameter(
+                    f"Invalid --task-type {task_type!r}. Choose from: {valid}"
+                )
+        return MinimalPipeline(
+            model=llm,
+            task_type=forced_type,
+            lint_cmd=lint_cmd,
+            enable_coherence=enable_coherence,
+            project_kb_path=project_kb_path,
+            repo_path=repo_path,
+        )
 
     if team in ("auto", "routed", "custom"):
         raise typer.BadParameter(

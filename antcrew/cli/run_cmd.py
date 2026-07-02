@@ -156,6 +156,11 @@ def run(
              "Accumulates endpoints, models, and services across runs so agents "
              "know what already exists.",
     ),
+    task_type: Optional[str] = typer.Option(
+        None, "--task-type", "-T",
+        help="Force task type for '--team minimal' (fix|refactor|feature|test|docs). "
+             "Default: auto-classify from the request text.",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -242,6 +247,7 @@ def run(
                 project_dir=_pd, project_dirs=_pds, scan_context=_ctx,
                 repo_path=_repo_path, lint_cmd=_lint,
                 enable_coherence=enable_coherence, project_kb_path=_kb_str,
+                task_type=task_type,
             )
 
         # Resolve the request from file, argument, or interactive prompt.
