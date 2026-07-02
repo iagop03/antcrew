@@ -110,7 +110,12 @@ class FrontendDevAgent(BaseAgent):
             }
 
         query = " ".join(t.title for t in tickets[:5])
-        repo_ctx = self._search_repo(query) + self._recall(query)
+        kb_ctx = str(state.get("_kb_context") or "")
+        sym_ctx = ""
+        if self.symbol_index is not None:
+            topics = query.split() + [t.title for t in tickets[:3]]
+            sym_ctx = self.symbol_index.context_for(topics)
+        repo_ctx = kb_ctx + sym_ctx + self._search_repo(query) + self._recall(query)
         plan_prompt = _PLAN_SYSTEM + repo_ctx
         file_prompt = _FILE_SYSTEM + repo_ctx
 
