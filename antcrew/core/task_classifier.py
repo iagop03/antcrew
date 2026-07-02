@@ -216,9 +216,16 @@ class MinimalPipeline:
         if len(agents_needed) == 1:
             # Single-agent tasks (TEST, DOCS): bypass LangGraph entirely.
             # _SingleAgentTeam calls the agent directly and returns a RunResult.
+            kw = self._team_kwargs
             return _SingleAgentTeam(
                 list(agents.values())[0],
                 project_kb=getattr(self, "_project_kb_instance", None),
+                model=self._model,
+                runner=kw.get("runner"),
+                feedback_rounds=kw.get("feedback_rounds", 0),
+                lint_cmd=kw.get("lint_cmd"),
+                work_dir=kw.get("work_dir"),
+                max_error_chars=kw.get("max_error_chars", 2000),
             )
 
         from antcrew.teams.dev_team import DevTeam
@@ -235,11 +242,30 @@ class _SingleAgentTeam:
     """Runs exactly one agent and returns a :class:`RunResult`.
 
     Bypasses LangGraph and DevTeam entirely — no fake supervisor needed.
+    Supports feedback_rounds: if a runner is provided, runs the execute-validate-
+    retry loop using a BackendDevAgent as the fixer after the primary agent.
     """
 
-    def __init__(self, agent, *, project_kb=None) -> None:
+    def __init__(
+        self,
+        agent,
+        *,
+        project_kb=None,
+        model=None,
+        runner=None,
+        feedback_rounds: int = 0,
+        lint_cmd=None,
+        work_dir=None,
+        max_error_chars: int = 2000,
+    ) -> None:
         self._agent = agent
         self._project_kb = project_kb
+        self._model = model
+        self._runner = runner
+        self._feedback_rounds = feedback_rounds
+        self._lint_cmd = lint_cmd
+        self._work_dir = work_dir
+        self._max_error_chars = max_error_chars
 
     def run(self, request: str, *, thread_id: str = "default") -> "RunResult":
         from antcrew.core.run_result import RunResult
@@ -259,6 +285,25 @@ class _SingleAgentTeam:
             )
         result = self._agent.run(initial)
         state = {**initial, **result}
+
+        # Optional feedback loop — only runs if a sandbox runner was provided.
+        if self._runner is not None and self._feedback_rounds > 0:
+            try:
+                from antcrew.core.feedback import run_test_feedback_loop
+                from antcrew.agents.backend_dev import BackendDevAgent
+                fixer = BackendDevAgent(self._model)
+                state = run_test_feedback_loop(
+                    state,
+                    fixer,
+                    self._runner,
+                    max_rounds=self._feedback_rounds,
+                    max_error_chars=self._max_error_chars,
+                    lint_cmd=self._lint_cmd,
+                    work_dir=self._work_dir,
+                )
+            except Exception as exc:
+                log.warning("_SingleAgentTeam feedback loop failed: %s", exc)
+
         if self._project_kb:
             try:
                 self._project_kb.update_from_state(state)
