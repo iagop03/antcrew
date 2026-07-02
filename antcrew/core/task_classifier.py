@@ -283,8 +283,18 @@ class _SingleAgentTeam:
         initial: dict = {
             "request": request,
             "messages": [{"role": "user", "content": request}],
+            # Artifact slots — mirrors DevTeam._initial_state so single-agent
+            # pipelines never see KeyError when agents call state.get(key).
+            "prd": None,
+            "tickets": None,
             "code_artifacts": None,
             "test_artifacts": None,
+            "test_results": None,
+            "review": None,
+            "devops_artifacts": None,
+            "doc_artifacts": None,
+            "research_document": None,
+            "content_piece": None,
             "current_agent": "",
             "errors": [],
             "metadata": {},
