@@ -14,6 +14,7 @@ from antcrew.agents.qa import QAAgent
 from antcrew.agents.reviewer import ReviewerAgent
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
+from antcrew.core.events import bus, new_run_id
 from antcrew.core.run_result import RunResult
 from antcrew.core.supervisor import Supervisor
 from antcrew.core.state import TeamState
@@ -224,29 +225,38 @@ class FullStackTeam(InteractiveMixin):
         _llms = self._unique_llms()
         if self.llm.max_cost_usd is not None:
             self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]
-        _run_id: Optional[str] = None
+
+        _run_id = new_run_id()
+        _trace_run_id: Optional[str] = None
         if self._trace_log is not None:
-            _run_id = self._trace_log.begin_run(
+            _trace_run_id = self._trace_log.begin_run(
                 thread_id=thread_id, request=request, team=type(self).__name__,
             )
             for _llm in _llms:
                 _llm.trace = self._trace_log
-                _llm._trace_run_id = _run_id
+                _llm._trace_run_id = _trace_run_id
+
+        bus.emit("pipeline.start", {"team": type(self).__name__, "request": request},
+                 run_id=_run_id, thread_id=thread_id)
         try:
-            app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
+            app = self._supervisor.build(self._build_agent_map(), checkpointer=self._checkpointer)
             config = {"configurable": {"thread_id": thread_id}}
             initial = self._initial_state(request)
-            if self._project_kb:
-                initial["_kb_context"] = self._project_kb.context_for_agent("backend_dev")
+            initial["_run_id"] = _run_id
+            initial["_thread_id"] = thread_id
             state = app.invoke(initial, config=config)
             if self._project_kb:
                 try:
                     self._project_kb.update_from_state(state)
                     self._project_kb.save()
+                    bus.emit("kb.updated", {"team": type(self).__name__},
+                             run_id=_run_id, thread_id=thread_id)
                 except Exception as exc:
                     log.warning("ProjectKB update failed: %s", exc)
             if self._enable_coherence and "coherence" in self._agents and state.get("code_artifacts"):
                 try:
+                    bus.emit("coherence.run", {"team": type(self).__name__},
+                             run_id=_run_id, thread_id=thread_id)
                     coherence_result = self._agents["coherence"].run(state)
                     state.update(coherence_result)
                 except Exception as exc:
@@ -279,12 +289,24 @@ class FullStackTeam(InteractiveMixin):
                 (llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
                 for llm in _llms
             )
-            if self._trace_log is not None and _run_id is not None:
-                self._trace_log.end_run(_run_id, cost_usd=cost)
+            if self._trace_log is not None and _trace_run_id is not None:
+                self._trace_log.end_run(_trace_run_id, cost_usd=cost)
+            artifact_summary = {
+                k: bool(state.get(k))
+                for k in ("prd", "tickets", "code_artifacts", "test_artifacts",
+                          "devops_artifacts", "doc_artifacts")
+            }
+            bus.emit("pipeline.end",
+                     {"cost_usd": cost, "success": not state.get("errors"),
+                      "artifact_summary": artifact_summary},
+                     run_id=_run_id, thread_id=thread_id)
             return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
         except Exception:
-            if self._trace_log is not None and _run_id is not None:
-                self._trace_log.end_run(_run_id, cost_usd=0.0, status="error")
+            if self._trace_log is not None and _trace_run_id is not None:
+                self._trace_log.end_run(_trace_run_id, cost_usd=0.0, status="error")
+            bus.emit("pipeline.end",
+                     {"cost_usd": 0.0, "success": False, "artifact_summary": {}},
+                     run_id=_run_id, thread_id=thread_id)
             raise
         finally:
             if self._trace_log is not None:
