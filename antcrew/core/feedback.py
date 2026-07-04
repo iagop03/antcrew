@@ -48,6 +48,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Union
 
+from antcrew.core.events import bus
+
 log = logging.getLogger(__name__)
 
 
@@ -187,6 +189,12 @@ class FeedbackLoop:
             The final merged state dict.
         """
         state = dict(state)
+        _run_id = state.get("_run_id")
+        _thread_id = state.get("_thread_id")
+
+        bus.emit("feedback.start",
+                 {"max_rounds": self.max_rounds},
+                 run_id=_run_id, thread_id=_thread_id)
 
         for round_num in range(1, self.max_rounds + 1):
             state[_ROUND_KEY] = round_num
@@ -197,11 +205,19 @@ class FeedbackLoop:
 
             feedback = self._runner.run()
 
+            bus.emit("feedback.round",
+                     {"round": round_num, "max_rounds": self.max_rounds,
+                      "ok": feedback.ok, "returncode": feedback.returncode},
+                     run_id=_run_id, thread_id=_thread_id)
+
             if feedback.ok:
                 log.info("feedback_loop passed round=%d", round_num)
                 state["feedback_ok"] = True
                 state["feedback_rounds_used"] = round_num
                 state[_ERROR_KEY] = ""
+                bus.emit("feedback.end",
+                         {"rounds_used": round_num, "success": True},
+                         run_id=_run_id, thread_id=_thread_id)
                 return state
 
             log.warning(
@@ -212,6 +228,9 @@ class FeedbackLoop:
 
         state["feedback_ok"] = False
         state["feedback_rounds_used"] = self.max_rounds
+        bus.emit("feedback.end",
+                 {"rounds_used": self.max_rounds, "success": False},
+                 run_id=_run_id, thread_id=_thread_id)
         return state
 
 
@@ -264,6 +283,12 @@ def run_test_feedback_loop(
         work_dir:        Working directory for *lint_cmd*.
     """
     state = dict(state)
+    _run_id = state.get("_run_id")
+    _thread_id = state.get("_thread_id")
+
+    bus.emit("feedback.start",
+             {"max_rounds": max_rounds, "has_lint": bool(lint_cmd)},
+             run_id=_run_id, thread_id=_thread_id)
 
     for round_num in range(1, max_rounds + 1):
         log.info("test_feedback_loop round=%d/%d", round_num, max_rounds)
@@ -278,6 +303,10 @@ def run_test_feedback_loop(
                     "test_feedback_loop lint FAILED round=%d — feeding to backend_dev",
                     round_num,
                 )
+                bus.emit("feedback.round",
+                         {"round": round_num, "max_rounds": max_rounds,
+                          "ok": False, "type": "lint"},
+                         run_id=_run_id, thread_id=_thread_id)
                 state["lint_ok"] = False
                 state["_feedback_error"] = f"[LINT ERRORS]\n{snippet}"
                 patch = backend_agent.fix_test_failures(state)
@@ -307,6 +336,13 @@ def run_test_feedback_loop(
             state["feedback_ok"] = True
             state["feedback_rounds_used"] = round_num
             state["_feedback_error"] = ""
+            bus.emit("feedback.round",
+                     {"round": round_num, "max_rounds": max_rounds,
+                      "ok": True, "type": "test"},
+                     run_id=_run_id, thread_id=_thread_id)
+            bus.emit("feedback.end",
+                     {"rounds_used": round_num, "success": True},
+                     run_id=_run_id, thread_id=_thread_id)
             return state
 
         raw_output = getattr(test_results, "output", "") or ""
@@ -315,6 +351,10 @@ def run_test_feedback_loop(
             "test_feedback_loop tests FAILED round=%d/%d — feeding to backend_dev",
             round_num, max_rounds,
         )
+        bus.emit("feedback.round",
+                 {"round": round_num, "max_rounds": max_rounds,
+                  "ok": False, "type": "test"},
+                 run_id=_run_id, thread_id=_thread_id)
         state["_feedback_error"] = error_snippet
 
         patch = backend_agent.fix_test_failures(state)
@@ -326,4 +366,7 @@ def run_test_feedback_loop(
 
     state.setdefault("feedback_ok", False)
     state.setdefault("feedback_rounds_used", max_rounds)
+    bus.emit("feedback.end",
+             {"rounds_used": state["feedback_rounds_used"], "success": False},
+             run_id=_run_id, thread_id=_thread_id)
     return state
