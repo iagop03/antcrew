@@ -21,6 +21,7 @@ from antcrew.core.artifacts import (
     CodeReview, DevOpsArtifact, DocumentationArtifact,
     ResearchDocument, ContentPiece,
 )
+from antcrew.core.events import bus, new_run_id
 
 if TYPE_CHECKING:
     from antcrew.core.agent import BaseAgent
@@ -256,6 +257,7 @@ class InteractiveMixin:
         all_node_names = list(self._agents.keys())
         interrupt_nodes = approval_nodes or all_node_names[1:]
 
+        _run_id = new_run_id()
         app = self._supervisor.build(self._build_agent_map(), interrupt_before=interrupt_nodes)
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -282,8 +284,15 @@ class InteractiveMixin:
                 _llm.on_token = None
             progress.flush_current()
 
+        initial = self._initial_state(request)
+        initial["_run_id"] = _run_id
+        initial["_thread_id"] = thread_id
+        bus.emit("pipeline.start",
+                 {"team": type(self).__name__, "request": request, "interactive": True},
+                 run_id=_run_id, thread_id=thread_id)
+
         _rc.print(f"\n[bold green]AntCrew[/bold green] — [dim]{request[:80]}[/dim]\n")
-        _invoke(self._initial_state(request))
+        _invoke(initial)
 
         while True:
             snapshot = app.get_state(config)
@@ -372,11 +381,20 @@ class InteractiveMixin:
                         )
 
             if pipeline_stopped:
+                bus.emit("pipeline.end",
+                         {"team": type(self).__name__, "success": False,
+                          "interactive": True, "stopped_after": prev_agent_name},
+                         run_id=_run_id, thread_id=thread_id)
                 break
 
             _invoke(None)
 
-        return app.get_state(config).values
+        final_state = app.get_state(config).values
+        if not pipeline_stopped:
+            bus.emit("pipeline.end",
+                     {"team": type(self).__name__, "success": True, "interactive": True},
+                     run_id=_run_id, thread_id=thread_id)
+        return final_state
 
     def _apply_edit(self, app, config: dict, agent_name: str, edited_json: str) -> None:
         state_key, cls = AGENT_ARTIFACT.get(agent_name, ("", None))
