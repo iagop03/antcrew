@@ -65,6 +65,8 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, Optional
 
+from antcrew.core.events import bus, new_run_id
+
 if TYPE_CHECKING:
     from antcrew.models.base import BaseLLM
     from antcrew.core.run_result import RunResult
@@ -222,10 +224,11 @@ class Router:
         import time as _time
 
         t0 = _time.monotonic()
-        run_id: Optional[str] = None
+        _run_id = new_run_id()
+        _trace_run_id: Optional[str] = None
 
         if self._trace_log is not None:
-            run_id = self._trace_log.begin_run(
+            _trace_run_id = self._trace_log.begin_run(
                 thread_id=thread_id,
                 request=request,
                 team=type(self).__name__,
@@ -240,24 +243,26 @@ class Router:
                 handler = self._routes[self._default]
 
             log.info("router dispatching label=%s", label)
+            bus.emit("router.dispatch", {"label": label, "request": request},
+                     run_id=_run_id, thread_id=thread_id)
             result = handler.run(request)
             result.state["_route"] = label
 
-            if self._trace_log is not None and run_id:
+            if self._trace_log is not None and _trace_run_id:
                 duration_ms = (_time.monotonic() - t0) * 1000
                 self._trace_log.record_call(
-                    run_id=run_id,
+                    run_id=_trace_run_id,
                     agent_name="router",
                     duration_ms=duration_ms,
                     prompt_snippet=request[:200],
                     response_snippet=f"→ {label}",
                 )
                 cost = result.state.get("_cost_usd") or 0.0
-                self._trace_log.end_run(run_id, cost_usd=cost, status="done")
+                self._trace_log.end_run(_trace_run_id, cost_usd=cost, status="done")
 
             return result
 
         except Exception:
-            if self._trace_log is not None and run_id:
-                self._trace_log.end_run(run_id, status="error")
+            if self._trace_log is not None and _trace_run_id:
+                self._trace_log.end_run(_trace_run_id, status="error")
             raise

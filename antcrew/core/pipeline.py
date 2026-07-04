@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Optional
 
+from antcrew.core.events import bus, new_run_id
 from antcrew.core.run_result import RunResult
 
 if TYPE_CHECKING:
@@ -91,24 +92,39 @@ class Pipeline:
         ``RunResult.state`` is the output of the last team, enriched with
         artifacts produced by earlier teams.
         """
+        _run_id = new_run_id()
+        team_names = [type(t).__name__ for t in self.teams]
+        bus.emit("pipeline.start",
+                 {"team": "Pipeline", "steps": team_names, "request": request},
+                 run_id=_run_id, thread_id=thread_id)
+
         prev_state: Optional[dict] = None
         total_cost = 0.0
         final_state: dict = {}
 
-        for idx, team in enumerate(self.teams):
-            team_thread = f"{thread_id}-p{idx}"
-            log.debug("pipeline team=%s idx=%d thread=%s", type(team).__name__, idx, team_thread)
+        try:
+            for idx, team in enumerate(self.teams):
+                team_thread = f"{thread_id}-p{idx}"
+                log.debug("pipeline team=%s idx=%d thread=%s", type(team).__name__, idx, team_thread)
 
-            if prev_state is not None:
-                result = self._run_with_carry(team, request, prev_state, team_thread)
-            else:
-                result = team.run(request, thread_id=team_thread)
+                if prev_state is not None:
+                    result = self._run_with_carry(team, request, prev_state, team_thread)
+                else:
+                    result = team.run(request, thread_id=team_thread)
 
-            prev_state = dict(result.state)
-            total_cost += result.cost_usd
-            final_state = prev_state
+                prev_state = dict(result.state)
+                total_cost += result.cost_usd
+                final_state = prev_state
 
-        return RunResult(state=final_state, thread_id=thread_id, cost_usd=total_cost)
+            bus.emit("pipeline.end",
+                     {"team": "Pipeline", "cost_usd": total_cost, "success": True},
+                     run_id=_run_id, thread_id=thread_id)
+            return RunResult(state=final_state, thread_id=thread_id, cost_usd=total_cost)
+        except Exception:
+            bus.emit("pipeline.end",
+                     {"team": "Pipeline", "cost_usd": total_cost, "success": False},
+                     run_id=_run_id, thread_id=thread_id)
+            raise
 
     # ------------------------------------------------------------------
     # Internal
