@@ -339,16 +339,20 @@ def _make_agents(names: list[str], model: "BaseLLM") -> dict:
     from antcrew.agents.business import BusinessAnalystAgent
     from antcrew.agents.pm import PMAgent
     from antcrew.agents.backend_dev import BackendDevAgent
+    from antcrew.agents.frontend_dev import FrontendDevAgent
     from antcrew.agents.qa import QAAgent
     from antcrew.agents.reviewer import ReviewerAgent
     from antcrew.agents.doc_writer import DocWriterAgent
+    from antcrew.agents.devops import DevOpsAgent
 
     registry = {
         "business_analyst": lambda: BusinessAnalystAgent(model),
         "pm":               lambda: PMAgent(model),
         "backend_dev":      lambda: BackendDevAgent(model),
+        "frontend_dev":     lambda: FrontendDevAgent(model),
         "qa":               lambda: QAAgent(model),
         "reviewer":         lambda: ReviewerAgent(model),
         "doc_writer":       lambda: DocWriterAgent(model),
+        "devops":           lambda: DevOpsAgent(model),
     }
     return {name: registry[name]() for name in names if name in registry}
