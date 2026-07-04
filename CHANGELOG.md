@@ -5,6 +5,112 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.14.2] — 2026-07-04
+
+### Added — Event bus: full coverage of remaining run paths
+
+`run_interactive()`, `FeedbackLoop`, `run_test_feedback_loop`, `FeatureTeam`,
+`Pipeline`, and `Router` now emit events, completing event bus coverage across
+every public run path in the framework.
+
+**New event types:**
+
+| Event | Emitted by | Payload |
+|---|---|---|
+| `feedback.start` | `FeedbackLoop`, `run_test_feedback_loop` | `{max_rounds, has_lint?}` |
+| `feedback.round` | `FeedbackLoop`, `run_test_feedback_loop` | `{round, max_rounds, ok, type}` |
+| `feedback.end` | `FeedbackLoop`, `run_test_feedback_loop` | `{rounds_used, success}` |
+| `router.dispatch` | `Router` | `{label, request}` |
+
+**Updated behaviour:**
+
+- `run_interactive()` now emits `pipeline.start` / `pipeline.end` with
+  `interactive: True`. On user rejection, `pipeline.end` includes
+  `stopped_after: <agent_name>`.
+- `FeedbackTeam.run()` injects `_run_id` into state so `FeedbackLoop`
+  inherits and propagates the same run ID across all feedback events.
+- `Pipeline.run()` emits `pipeline.start` with a `steps` list and
+  `pipeline.end` as a meta-event above the individual team events.
+- `bus.emit()` now accepts a shorthand overload:
+  `bus.emit("type", {payload}, run_id=..., thread_id=...)` alongside the
+  original `bus.emit(Event(...))` API.
+
+**Complete event catalogue** (all carry `run_id` and `thread_id`):
+
+`pipeline.start`, `pipeline.end`, `agent.start`, `agent.end`,
+`kb.updated`, `coherence.run`, `router.dispatch`,
+`feedback.start`, `feedback.round`, `feedback.end`
+
+---
+
+## [0.14.1] — 2026-07-04
+
+### Fixed — `_trace_run_id` separation + event coverage for all teams
+
+All team `run()` methods now correctly separate the event bus correlation
+ID (`_run_id`, generated with `new_run_id()`) from the TraceLog run ID
+(`_trace_run_id`, returned by `trace_log.begin_run()`). Previously they
+shared the same variable, which caused TraceLog calls to fail when a
+`TraceLog` was active on teams other than `DevTeam`.
+
+Affected teams: `FullStackTeam`, `ResearchTeam`, `ContentTeam`,
+`CustomTeam`, `Router`.
+
+### Added — Event bus integration for all remaining teams
+
+- `FullStackTeam.run()` — `pipeline.start/end`, `kb.updated`, `coherence.run`
+- `ResearchTeam.run()` — `pipeline.start/end`
+- `ContentTeam.run()` — `pipeline.start/end`
+- `CustomTeam.run()` — `pipeline.start/end`, `agent.start/end` per sequential step
+- `Pipeline.run()` — `pipeline.start/end` with `steps` list
+- `Router.run()` — `router.dispatch` with route label
+
+### Fixed — `FullStackTeam._build_agent_map()` bypass
+
+`FullStackTeam.run()` was calling `self._supervisor.build(self._agents, ...)`
+directly, bypassing `_build_agent_map()` and the `_KBProxy` per-agent KB
+injection promoted to `InteractiveMixin` in v0.14.0. Fixed.
+
+---
+
+## [0.14.0] — 2026-07-04
+
+### Added — Platform readiness: JSON serialization + stable ticket IDs
+
+#### `RunResult.to_dict()` / `to_json()`
+
+Pipeline state contains Pydantic models (PRD, Ticket, CodeArtifact, …)
+that are not JSON-serializable. The platform layer needs to persist run
+history in a database.
+
+```python
+result = team.run("Build JWT auth")
+result.to_dict()            # JSON-safe dict; Pydantic models -> plain dicts
+result.to_json(indent=2)    # JSON string
+result.to_dict(include_private=True)  # includes _run_id, _kb_context, …
+```
+
+`_serialize()` is module-level and importable for custom use. Any
+unrecognized type falls back to `str(obj)` — serialization never raises.
+
+#### Deterministic ticket IDs
+
+`PMAgent` previously assigned `TICKET-001`, `TICKET-002`, … — sequential
+IDs that reset every run. The platform cannot upsert tickets when the same
+ticket title gets a different ID on each run.
+
+New: `_stable_ticket_id(prd_title, ticket_title, index)` computes
+`TICKET-<SHA-256[:8]>` — a 8-char uppercase hex digest of the three inputs.
+Same PRD + same ticket title always produces the same ID, across runs.
+
+#### `_build_agent_map` promoted to `InteractiveMixin`
+
+The `_KBProxy` logic that wraps agents with per-agent KB context was
+previously a `DevTeam`-only override. Moved to `InteractiveMixin` so
+`FullStackTeam` and all future teams inherit it automatically.
+
+---
+
 ## [0.13.7] — 2026-07-04
 
 ### Added — Pipeline event bus (`antcrew.core.events`)
