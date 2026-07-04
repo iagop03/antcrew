@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -79,16 +80,23 @@ class EventBus:
 
     Design constraints:
     - Handler exceptions are caught and logged — never allowed to break a pipeline.
-    - Dispatch is synchronous (simple; avoids threading issues in tests).
+    - Dispatch is synchronous: handlers run in the caller's thread.
     - Wildcard handlers (subscribed with type="*") receive every event.
-    - Thread-safe enough for the typical single-pipeline-thread use case.
-      For concurrent pipelines, each run can use an isolated bus instance or
-      the global bus with thread-safe handlers.
+    - Thread-safe: a ``threading.Lock`` guards all mutations and reads of the
+      handler registry so concurrent ``AsyncTeam*`` runs sharing the global bus
+      cannot corrupt each other's subscription lists.
+
+    Thread-safety model:
+        subscribe/unsubscribe/clear hold the lock for the full mutation.
+        emit copies the handler list under the lock and then releases before
+        calling handlers, so a handler that calls subscribe/unsubscribe
+        will not deadlock.
     """
 
     def __init__(self) -> None:
         self._handlers: dict[str, list[Handler]] = {}
         self._wildcard: list[Handler] = []
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Registration
@@ -96,32 +104,35 @@ class EventBus:
 
     def subscribe(self, event_type: str, handler: Handler) -> None:
         """Register *handler* for *event_type*. Use ``"*"`` for all events."""
-        if event_type == "*":
-            if handler not in self._wildcard:
-                self._wildcard.append(handler)
-        else:
-            bucket = self._handlers.setdefault(event_type, [])
-            if handler not in bucket:
-                bucket.append(handler)
+        with self._lock:
+            if event_type == "*":
+                if handler not in self._wildcard:
+                    self._wildcard.append(handler)
+            else:
+                bucket = self._handlers.setdefault(event_type, [])
+                if handler not in bucket:
+                    bucket.append(handler)
 
     def unsubscribe(self, event_type: str, handler: Handler) -> None:
         """Remove *handler* for *event_type*."""
-        if event_type == "*":
-            self._wildcard = [h for h in self._wildcard if h is not handler]
-        else:
-            self._handlers[event_type] = [
-                h for h in self._handlers.get(event_type, []) if h is not handler
-            ]
+        with self._lock:
+            if event_type == "*":
+                self._wildcard = [h for h in self._wildcard if h is not handler]
+            else:
+                self._handlers[event_type] = [
+                    h for h in self._handlers.get(event_type, []) if h is not handler
+                ]
 
     def clear(self, event_type: Optional[str] = None) -> None:
         """Remove all handlers, or only handlers for *event_type*."""
-        if event_type is None:
-            self._handlers.clear()
-            self._wildcard.clear()
-        elif event_type == "*":
-            self._wildcard.clear()
-        else:
-            self._handlers.pop(event_type, None)
+        with self._lock:
+            if event_type is None:
+                self._handlers.clear()
+                self._wildcard.clear()
+            elif event_type == "*":
+                self._wildcard.clear()
+            else:
+                self._handlers.pop(event_type, None)
 
     # ------------------------------------------------------------------
     # Dispatch
@@ -146,7 +157,9 @@ class EventBus:
             event = Event(event_or_type, payload or {}, run_id=run_id, thread_id=thread_id)
         else:
             event = event_or_type
-        targets = list(self._handlers.get(event.type, [])) + list(self._wildcard)
+        # Copy handler list under lock, then dispatch without holding it.
+        with self._lock:
+            targets = list(self._handlers.get(event.type, [])) + list(self._wildcard)
         for handler in targets:
             try:
                 handler(event)
@@ -160,9 +173,10 @@ class EventBus:
 
     def __contains__(self, event_type: str) -> bool:
         """``event_type in bus`` — True if at least one handler is registered."""
-        if event_type == "*":
-            return bool(self._wildcard)
-        return bool(self._handlers.get(event_type)) or bool(self._wildcard)
+        with self._lock:
+            if event_type == "*":
+                return bool(self._wildcard)
+            return bool(self._handlers.get(event_type)) or bool(self._wildcard)
 
 
 # ---------------------------------------------------------------------------
