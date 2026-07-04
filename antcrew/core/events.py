@@ -127,12 +127,25 @@ class EventBus:
     # Dispatch
     # ------------------------------------------------------------------
 
-    def emit(self, event: Event) -> None:
-        """Dispatch *event* to all matching handlers synchronously.
+    def emit(self, event_or_type, payload: dict | None = None, *,
+             run_id: str | None = None, thread_id: str | None = None) -> None:
+        """Dispatch an event to all matching handlers synchronously.
+
+        Two calling conventions are supported::
+
+            # Explicit Event object (original API)
+            bus.emit(Event("agent.start", {"agent_name": "pm"}))
+
+            # Convenience shorthand — type + payload + optional metadata
+            bus.emit("pipeline.start", {"request": req}, run_id=rid, thread_id=tid)
 
         Handler exceptions are caught and logged so a misbehaving subscriber
         can never abort a pipeline run.
         """
+        if isinstance(event_or_type, str):
+            event = Event(event_or_type, payload or {}, run_id=run_id, thread_id=thread_id)
+        else:
+            event = event_or_type
         targets = list(self._handlers.get(event.type, [])) + list(self._wildcard)
         for handler in targets:
             try:
