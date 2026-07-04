@@ -47,6 +47,7 @@ from antcrew.sandbox import RunResult as SandboxRunResult
 from antcrew.core.run_result import RunResult
 from antcrew.checkpointers import SqliteSaver
 from antcrew.core.exceptions import CostLimitExceeded
+from antcrew.core.events import bus, Event, EventBus, capture, new_run_id
 from antcrew.core.gates import (
     BaseGate, GateResult, GateError,
     NonEmptyGate, PythonSyntaxGate, JsonGate, SchemaGate,
@@ -232,5 +233,11 @@ __all__ = [
     "validate_agent_dag",
     # Testing
     "SequencedLLM",
+    # Events
+    "bus",
+    "Event",
+    "EventBus",
+    "capture",
+    "new_run_id",
 ]
-__version__ = "0.13.6"
+__version__ = "0.13.7"

@@ -291,6 +291,12 @@ class _SingleAgentTeam:
 
     def run(self, request: str, *, thread_id: str = "default") -> "RunResult":
         from antcrew.core.run_result import RunResult
+        from antcrew.core.events import bus, Event, new_run_id
+        import time
+
+        run_id = new_run_id()
+        agent_name = getattr(self._agent, "name", "agent")
+
         initial: dict = {
             "request": request,
             "messages": [{"role": "user", "content": request}],
@@ -310,12 +316,29 @@ class _SingleAgentTeam:
             "errors": [],
             "metadata": {},
             "_kb_context": "",
+            "_run_id": run_id,
+            "_thread_id": thread_id,
         }
         if self._project_kb:
-            initial["_kb_context"] = self._project_kb.context_for_agent(
-                getattr(self._agent, "name", "")
-            )
+            initial["_kb_context"] = self._project_kb.context_for_agent(agent_name)
+
+        bus.emit(Event(
+            "pipeline.start",
+            {"request": request, "team": "_SingleAgentTeam"},
+            run_id=run_id,
+            thread_id=thread_id,
+        ))
+        bus.emit(Event("agent.start", {"agent_name": agent_name}, run_id=run_id, thread_id=thread_id))
+        t0 = time.monotonic()
         result = self._agent.run(initial)
+        duration = round(time.monotonic() - t0, 3)
+        produced = [k for k, v in result.items() if v is not None and not k.startswith("_")]
+        bus.emit(Event(
+            "agent.end",
+            {"agent_name": agent_name, "duration_s": duration, "produced_keys": produced},
+            run_id=run_id,
+            thread_id=thread_id,
+        ))
         state = {**initial, **result}
 
         # Optional feedback loop — only runs if a sandbox runner was provided.
@@ -340,8 +363,20 @@ class _SingleAgentTeam:
             try:
                 self._project_kb.update_from_state(state)
                 self._project_kb.save()
+                bus.emit(Event("kb.updated", {"summary": self._project_kb.summary()}, run_id=run_id, thread_id=thread_id))
             except Exception:
                 pass
+
+        artifact_summary = {
+            k: len(v) for k in ("code_artifacts", "test_artifacts", "devops_artifacts", "doc_artifacts")
+            if (v := state.get(k))
+        }
+        bus.emit(Event(
+            "pipeline.end",
+            {"cost_usd": 0.0, "success": not state.get("errors"), "artifact_summary": artifact_summary},
+            run_id=run_id,
+            thread_id=thread_id,
+        ))
         return RunResult(state=state, thread_id=thread_id, cost_usd=0.0)
 
 
