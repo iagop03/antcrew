@@ -5,6 +5,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.14.3] — 2026-07-04
+
+### Fixed — Thread-safe EventBus
+
+`EventBus` now uses a `threading.Lock` to guard all mutations and reads
+of the handler registry. Previously, two concurrent `AsyncTeam*` runs in the
+same process could corrupt each other's subscription lists.
+
+The lock is released before handlers are called, so handlers that call
+`bus.subscribe()` / `bus.unsubscribe()` do not deadlock.
+
+### Added — CoherenceAgent `agent.start` / `agent.end`
+
+`CoherenceAgent` is called after `app.invoke()` finishes, outside the
+LangGraph supervisor, so `_make_evented_run()` never wrapped it. Both
+`DevTeam` and `FullStackTeam` now emit:
+
+```
+agent.start  {agent_name: "coherence"}
+agent.end    {agent_name: "coherence", duration_s, produced_keys: ["coherence_issues"]}
+coherence.run {files_corrected, team?}
+```
+
+The `coherence.run` event is retained as a richer semantic event;
+`agent.start/end` is the new observability pair consistent with all other agents.
+
+### Added — Tests: feedback events, CoherenceAgent, thread-safety
+
+18 new tests in `tests/test_events_v3.py`:
+
+- `FeedbackLoop`: `feedback.start/round/end` on pass, retry, exhaustion;
+  `run_id` propagated from state; `None` run_id still emits; event order.
+- `run_test_feedback_loop`: `feedback.start/round/end`; `type` field is
+  `"test"`; per-attempt round events.
+- `CoherenceAgent`: `agent.start/end` emitted outside the LangGraph supervisor
+  in `DevTeam`; `run_id` present on coherence agent events.
+- `EventBus` thread-safety: 10 concurrent threads × 50 events each; concurrent
+  `subscribe` + `unsubscribe`; no deadlock from handlers that call `subscribe`;
+  isolated bus instances share no state.
+
+---
+
 ## [0.14.2] — 2026-07-04
 
 ### Added — Event bus: full coverage of remaining run paths
