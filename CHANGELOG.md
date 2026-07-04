@@ -5,6 +5,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.6] — 2026-07-04
+
+### Fixed — Sixth gap pass: KB pipeline correctness
+
+#### `_KBProxy` — per-agent KB context in DevTeam pipelines
+
+DevTeam previously set `_kb_context` once in the initial state using
+`context_for_agent("backend_dev")` — a superset context shared by every node.
+All the role-specific filtering added in earlier passes (`reviewer`, `pm`,
+`doc_writer`, `business_analyst`) was never actually invoked in DevTeam.
+
+New `_KBProxy` class wraps each agent at graph-build time and overrides
+`_kb_context` in the state copy before delegating to `agent.run()`. Supervisor
+only accesses `.run` and `.approval_required` — both forwarded by the proxy.
+
+`DevTeam._build_agent_map()` builds the proxy map when a KB is configured;
+returns `self._agents` unchanged when no KB is set (zero cost to existing
+pipelines). `InteractiveMixin._build_agent_map()` provides the default
+(`self._agents`) so `run_interactive()` also benefits when DevTeam overrides it.
+
+#### `MinimalPipeline` now loads `ProjectKB` for single-agent task types
+
+`project_kb_path` was forwarded to `DevTeam` for multi-agent paths but never
+instantiated for `_SingleAgentTeam` (TEST, DOCS). The `--kb` flag was silently
+ignored for those task types. Fixed: in the single-agent branch of `_build_team`,
+`ProjectKB.load(project_kb_path)` is called and the live instance is passed to
+`_SingleAgentTeam`. Load errors are caught and logged.
+
+#### `_make_agents` registry now includes `DevOpsAgent` and `FrontendDevAgent`
+
+Both agents were absent, meaning any `_PIPELINE_FLOWS` / `_AGENTS_FOR_TYPE`
+extension using `"devops"` or `"frontend_dev"` would silently produce no agent
+for those nodes.
+
+---
+
 ## [0.13.5] — 2026-07-02
 
 ### Added — Fifth gap pass: complete universal KB coverage + KB injection tests
