@@ -99,7 +99,9 @@ def test_pm_creates_tickets_from_prd():
     result = agent.run(state)
 
     assert len(result["tickets"]) == 2
-    assert result["tickets"][0].id == "TICKET-001"
+    # IDs are now deterministic hashes (TICKET-<8 hex chars>) so they survive re-runs
+    assert result["tickets"][0].id.startswith("TICKET-")
+    assert len(result["tickets"][0].id) == len("TICKET-") + 8
     assert result["tickets"][0].priority == Priority.HIGH
     assert result["current_agent"] == "pm"
 

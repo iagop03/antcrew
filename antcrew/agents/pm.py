@@ -1,10 +1,24 @@
 ﻿from __future__ import annotations
 
+import hashlib
 import json
 
 from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import ArtifactContract, ContractError, PRD, Ticket, TicketStatus
 from antcrew.core.state import TeamState
+
+
+def _stable_ticket_id(prd_title: str, ticket_title: str, index: int) -> str:
+    """Return a deterministic ticket ID that survives re-runs of the same PRD.
+
+    The ID is a short hex digest of (prd_title, ticket_title) so that the
+    platform layer can upsert by ID without creating duplicate tickets when
+    the same pipeline runs twice.  ``index`` acts as a tie-breaker when two
+    tickets share an identical title within the same PRD.
+    """
+    key = f"{prd_title.strip().lower()}::{ticket_title.strip().lower()}::{index}"
+    digest = hashlib.sha256(key.encode()).hexdigest()[:8]
+    return f"TICKET-{digest.upper()}"
 
 _PRD_CONTRACT: ArtifactContract[PRD] = ArtifactContract("prd", PRD)
 
@@ -68,7 +82,7 @@ class PMAgent(BaseAgent):
         )
         tickets = [
             Ticket(
-                id=f"TICKET-{i + 1:03d}",
+                id=_stable_ticket_id(prd.title, t.get("title", ""), i),
                 status=TicketStatus.OPEN,
                 **{k: v for k, v in t.items() if k in Ticket.model_fields},
             )
