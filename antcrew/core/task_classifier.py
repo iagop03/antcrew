@@ -228,9 +228,20 @@ class MinimalPipeline:
                     agent.symbol_index = SymbolIndex.build([self._repo_path])
                 except Exception as exc:
                     log.warning("MinimalPipeline: SymbolIndex build failed — %s", exc)
+            # Load ProjectKB for single-agent paths. project_kb_path lives in
+            # _team_kwargs (it flows to DevTeam for multi-agent paths), but
+            # _SingleAgentTeam needs a live KB instance, not a path.
+            project_kb = None
+            kb_path = kw.get("project_kb_path")
+            if kb_path:
+                try:
+                    from antcrew.core.project_kb import ProjectKB
+                    project_kb = ProjectKB.load(kb_path)
+                except Exception as exc:
+                    log.warning("MinimalPipeline: ProjectKB load failed — %s", exc)
             return _SingleAgentTeam(
                 agent,
-                project_kb=getattr(self, "_project_kb_instance", None),
+                project_kb=project_kb,
                 model=self._model,
                 runner=kw.get("runner"),
                 feedback_rounds=kw.get("feedback_rounds", 0),
