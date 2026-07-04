@@ -207,10 +207,24 @@ class FeatureTeam:
             self._feedback_loop = FeedbackLoop(runner=runner, max_rounds=max_feedback_rounds)
 
     def run(self, request: str) -> RunResult:
-        state: dict = {"request": request}
-        if self._feedback_loop is not None:
-            state = self._feedback_loop.run(self._agent.run, state)
-        else:
-            result = self._agent.run(state)
-            state.update(result)
+        from antcrew.core.events import bus, new_run_id
+        _run_id = new_run_id()
+        bus.emit("pipeline.start", {"team": "FeatureTeam", "request": request},
+                 run_id=_run_id)
+        state: dict = {"request": request, "_run_id": _run_id}
+        try:
+            if self._feedback_loop is not None:
+                state = self._feedback_loop.run(self._agent.run, state)
+            else:
+                result = self._agent.run(state)
+                state.update(result)
+            bus.emit("pipeline.end",
+                     {"team": "FeatureTeam", "success": True,
+                      "feedback_ok": state.get("feedback_ok")},
+                     run_id=_run_id)
+        except Exception:
+            bus.emit("pipeline.end",
+                     {"team": "FeatureTeam", "success": False},
+                     run_id=_run_id)
+            raise
         return RunResult(state=state)
