@@ -73,6 +73,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.agents.template_agent import TemplateAgent
+from antcrew.core.events import bus, new_run_id
 from antcrew.core.operators import BaseOperator, _DELETE, build_operator
 from antcrew.core.run_result import RunResult
 
@@ -471,16 +472,23 @@ class CustomTeam:
             accumulated state, thread_id, and total LLM cost.
         """
         state: dict = self._initial_state(request)
-        _run_id: Optional[str] = None
+        _run_id = new_run_id()
+        _trace_run_id: Optional[str] = None
 
         if self._trace_log is not None:
-            _run_id = self._trace_log.begin_run(
+            _trace_run_id = self._trace_log.begin_run(
                 thread_id=thread_id,
                 request=request,
                 team=type(self).__name__,
             )
             self.llm.trace = self._trace_log
-            self.llm._trace_run_id = _run_id
+            self.llm._trace_run_id = _trace_run_id
+
+        state["_run_id"] = _run_id
+        state["_thread_id"] = thread_id
+
+        bus.emit("pipeline.start", {"team": type(self).__name__, "request": request},
+                 run_id=_run_id, thread_id=thread_id)
 
         def _notify(name: str, event: str) -> None:
             if self._on_step is not None:
@@ -498,8 +506,12 @@ class CustomTeam:
                         _notify(step.agent.name, "skip")
                         continue
                     _notify(step.agent.name, "start")
+                    bus.emit("agent.start", {"agent_name": step.agent.name},
+                             run_id=_run_id, thread_id=thread_id)
                     log.debug("custom_team step=%s", step.agent.name)
                     _apply_patch(state, _run_step(step, state))
+                    bus.emit("agent.end", {"agent_name": step.agent.name},
+                             run_id=_run_id, thread_id=thread_id)
                     _notify(step.agent.name, "done")
                 else:
                     # For parallel groups, filter to steps whose condition is met.
@@ -517,14 +529,20 @@ class CustomTeam:
 
             cost = self.llm.get_usage_summary().get("total_cost_usd", 0.0)
 
-            if self._trace_log is not None and _run_id:
-                self._trace_log.end_run(_run_id, cost_usd=cost, status="done")
+            if self._trace_log is not None and _trace_run_id:
+                self._trace_log.end_run(_trace_run_id, cost_usd=cost, status="done")
 
+            bus.emit("pipeline.end",
+                     {"cost_usd": cost, "success": True, "artifact_summary": {}},
+                     run_id=_run_id, thread_id=thread_id)
             return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
 
         except Exception:
-            if self._trace_log is not None and _run_id:
-                self._trace_log.end_run(_run_id, status="error")
+            if self._trace_log is not None and _trace_run_id:
+                self._trace_log.end_run(_trace_run_id, status="error")
+            bus.emit("pipeline.end",
+                     {"cost_usd": 0.0, "success": False, "artifact_summary": {}},
+                     run_id=_run_id, thread_id=thread_id)
             raise
 
     # ------------------------------------------------------------------
