@@ -241,9 +241,18 @@ class DevTeam(InteractiveMixin):
                     log.warning("ProjectKB update failed: %s", exc)
             if self._enable_coherence and "coherence" in self._agents and state.get("code_artifacts"):
                 try:
+                    import time as _time
+                    bus.emit(Event("agent.start", {"agent_name": "coherence"},
+                                  run_id=_run_id, thread_id=thread_id))
+                    _t0 = _time.monotonic()
                     coherence_result = self._agents["coherence"].run(state)
                     state.update(coherence_result)
+                    _dur = round(_time.monotonic() - _t0, 3)
                     files_corrected = len(state.get("coherence_issues") or [])
+                    bus.emit(Event("agent.end",
+                                  {"agent_name": "coherence", "duration_s": _dur,
+                                   "produced_keys": ["coherence_issues"]},
+                                  run_id=_run_id, thread_id=thread_id))
                     bus.emit(Event(
                         "coherence.run",
                         {"files_corrected": files_corrected},
