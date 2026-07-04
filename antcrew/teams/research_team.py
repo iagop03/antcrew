@@ -5,6 +5,7 @@ from typing import Optional
 
 from antcrew.agents.researcher import ResearcherAgent
 from antcrew.agents.copywriter import CopywriterAgent
+from antcrew.core.events import bus, new_run_id
 from antcrew.core.run_result import RunResult
 from antcrew.core.supervisor import Supervisor
 from antcrew.core.state import TeamState
@@ -106,30 +107,45 @@ class ResearchTeam(InteractiveMixin):
         _llms = self._unique_llms()
         if self.llm.max_cost_usd is not None:
             self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]
-        _run_id: Optional[str] = None
+
+        _run_id = new_run_id()
+        _trace_run_id: Optional[str] = None
         if self._trace_log is not None:
-            _run_id = self._trace_log.begin_run(
+            _trace_run_id = self._trace_log.begin_run(
                 thread_id=thread_id, request=request, team=type(self).__name__,
             )
             for _llm in _llms:
                 _llm.trace = self._trace_log
-                _llm._trace_run_id = _run_id
+                _llm._trace_run_id = _trace_run_id
+
+        bus.emit("pipeline.start", {"team": type(self).__name__, "request": request},
+                 run_id=_run_id, thread_id=thread_id)
         try:
-            app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
+            app = self._supervisor.build(self._build_agent_map(), checkpointer=self._checkpointer)
             config = {"configurable": {"thread_id": thread_id}}
-            state = app.invoke(self._initial_state(request), config=config)
+            initial = self._initial_state(request)
+            initial["_run_id"] = _run_id
+            initial["_thread_id"] = thread_id
+            state = app.invoke(initial, config=config)
             if self.memory:
                 self.memory.store_run(state)
             cost = sum(
                 (llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
                 for llm in _llms
             )
-            if self._trace_log is not None and _run_id is not None:
-                self._trace_log.end_run(_run_id, cost_usd=cost)
+            if self._trace_log is not None and _trace_run_id is not None:
+                self._trace_log.end_run(_trace_run_id, cost_usd=cost)
+            bus.emit("pipeline.end",
+                     {"cost_usd": cost, "success": not state.get("errors"),
+                      "artifact_summary": {"research_document": bool(state.get("research_document"))}},
+                     run_id=_run_id, thread_id=thread_id)
             return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
         except Exception:
-            if self._trace_log is not None and _run_id is not None:
-                self._trace_log.end_run(_run_id, cost_usd=0.0, status="error")
+            if self._trace_log is not None and _trace_run_id is not None:
+                self._trace_log.end_run(_trace_run_id, cost_usd=0.0, status="error")
+            bus.emit("pipeline.end",
+                     {"cost_usd": 0.0, "success": False, "artifact_summary": {}},
+                     run_id=_run_id, thread_id=thread_id)
             raise
         finally:
             if self._trace_log is not None:
