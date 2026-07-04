@@ -5,6 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.13.7] — 2026-07-04
+
+### Added — Pipeline event bus (`antcrew.core.events`)
+
+Zero-dependency, synchronous event bus for pipeline observability. Designed
+as the primary integration point for the `antcrew-platform` dashboard layer
+without coupling external code to pipeline internals.
+
+```python
+from antcrew import bus, Event, capture
+
+# Subscribe to specific events
+bus.subscribe("agent.end", lambda e: print(e.payload["agent_name"], e.payload["duration_s"]))
+
+# Or capture all events in tests / one-shot scripts
+with capture("pipeline.end") as events:
+    team.run("Build JWT auth")
+print(events[0].payload["artifact_summary"])
+```
+
+**Event catalogue**: `pipeline.start`, `pipeline.end`, `agent.start`, `agent.end`,
+`kb.updated`, `coherence.run` — all carrying `run_id` and `thread_id` for correlation.
+
+**Integration**: `Supervisor.build()` now wraps every agent node with `_make_evented_run()`
+so `agent.start/end` events are emitted automatically — no agent code changed.
+`DevTeam.run()` and `_SingleAgentTeam.run()` emit `pipeline.start/end`.
+Every run receives a unique `_run_id` (12-char hex) in the initial state.
+
+**Public API**: `from antcrew import bus, Event, EventBus, capture, new_run_id`
+
+29 tests in `tests/test_events.py`.
+
+---
+
 ## [0.13.6] — 2026-07-04
 
 ### Fixed — Sixth gap pass: KB pipeline correctness
