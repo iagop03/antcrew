@@ -184,11 +184,21 @@ class InteractiveMixin:
     def _build_agent_map(self) -> dict:
         """Return the agent dict to pass to Supervisor.build().
 
-        Override in subclasses (e.g., DevTeam) to inject per-agent state
-        transformations such as role-scoped KB context via _KBProxy.
-        Default: return self._agents unchanged.
+        When the team has a ``_project_kb`` attribute set, wraps each agent
+        in a ``_KBProxy`` so every pipeline node receives the KB context
+        tailored to its role instead of a shared generic context.
+
+        Any team subclass that sets ``self._project_kb`` (DevTeam,
+        FullStackTeam, …) benefits automatically with no override needed.
         """
-        return self._agents
+        project_kb = getattr(self, "_project_kb", None)
+        if not project_kb:
+            return self._agents
+        from antcrew.teams.dev_team import _KBProxy
+        return {
+            name: _KBProxy(agent, project_kb.context_for_agent(name))
+            for name, agent in self._agents.items()
+        }
 
     def _unique_llms(self) -> "list":
         """Return one instance per distinct LLM object used across all agents.

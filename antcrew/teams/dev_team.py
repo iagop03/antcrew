@@ -165,22 +165,6 @@ class DevTeam(InteractiveMixin):
     # Shared helpers
     # ------------------------------------------------------------------
 
-    def _build_agent_map(self) -> dict:
-        """Return the agent dict to pass to Supervisor.build().
-
-        When a ProjectKB is configured, wraps each agent in a _KBProxy so
-        each pipeline step receives the KB context tailored to its role
-        (reviewer sees endpoints+models+services, business_analyst sees only
-        tech_stack, etc.) rather than a single "backend_dev" context shared
-        by all nodes.
-        """
-        if not self._project_kb:
-            return self._agents
-        return {
-            name: _KBProxy(agent, self._project_kb.context_for_agent(name))
-            for name, agent in self._agents.items()
-        }
-
     def _initial_state(self, request: str) -> TeamState:
         return {
             "request": request,
