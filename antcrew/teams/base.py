@@ -181,6 +181,15 @@ class InteractiveMixin:
 
     _agents: dict[str, "BaseAgent"]
 
+    def _build_agent_map(self) -> dict:
+        """Return the agent dict to pass to Supervisor.build().
+
+        Override in subclasses (e.g., DevTeam) to inject per-agent state
+        transformations such as role-scoped KB context via _KBProxy.
+        Default: return self._agents unchanged.
+        """
+        return self._agents
+
     def _unique_llms(self) -> "list":
         """Return one instance per distinct LLM object used across all agents.
 
@@ -237,7 +246,7 @@ class InteractiveMixin:
         all_node_names = list(self._agents.keys())
         interrupt_nodes = approval_nodes or all_node_names[1:]
 
-        app = self._supervisor.build(self._agents, interrupt_before=interrupt_nodes)
+        app = self._supervisor.build(self._build_agent_map(), interrupt_before=interrupt_nodes)
         config = {"configurable": {"thread_id": thread_id}}
 
         _llms = self._unique_llms()

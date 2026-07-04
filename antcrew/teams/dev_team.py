@@ -17,6 +17,32 @@ from antcrew.models.anthropic_model import AnthropicModel
 from antcrew.models.base import BaseLLM
 from antcrew.teams.base import InteractiveMixin
 
+class _KBProxy:
+    """Injects a per-agent _kb_context into state before delegating to agent.run().
+
+    DevTeam builds one proxy per agent when a ProjectKB is configured. Each
+    proxy holds the context string appropriate for that agent's role so that
+    each pipeline step sees exactly the KB sections it needs — not a one-size
+    "backend_dev" context shared by all.
+
+    Exposes only the two attributes Supervisor.build() reads: ``run`` and
+    ``approval_required``.
+    """
+
+    __slots__ = ("_agent", "_kb_ctx")
+
+    def __init__(self, agent, kb_ctx: str) -> None:
+        self._agent = agent
+        self._kb_ctx = kb_ctx
+
+    @property
+    def approval_required(self) -> bool:
+        return bool(getattr(self._agent, "approval_required", False))
+
+    def run(self, state: "TeamState") -> dict:
+        return self._agent.run({**state, "_kb_context": self._kb_ctx})
+
+
 if TYPE_CHECKING:
     from antcrew.core.agent import BaseAgent
     from antcrew.integrations.telegram.integration import TelegramChannel
@@ -139,6 +165,22 @@ class DevTeam(InteractiveMixin):
     # Shared helpers
     # ------------------------------------------------------------------
 
+    def _build_agent_map(self) -> dict:
+        """Return the agent dict to pass to Supervisor.build().
+
+        When a ProjectKB is configured, wraps each agent in a _KBProxy so
+        each pipeline step receives the KB context tailored to its role
+        (reviewer sees endpoints+models+services, business_analyst sees only
+        tech_stack, etc.) rather than a single "backend_dev" context shared
+        by all nodes.
+        """
+        if not self._project_kb:
+            return self._agents
+        return {
+            name: _KBProxy(agent, self._project_kb.context_for_agent(name))
+            for name, agent in self._agents.items()
+        }
+
     def _initial_state(self, request: str) -> TeamState:
         return {
             "request": request,
@@ -187,11 +229,9 @@ class DevTeam(InteractiveMixin):
                 _llm.trace = self._trace_log
                 _llm._trace_run_id = _run_id
         try:
-            app = self._supervisor.build(self._agents, checkpointer=self._checkpointer)
+            app = self._supervisor.build(self._build_agent_map(), checkpointer=self._checkpointer)
             config = {"configurable": {"thread_id": thread_id}}
             initial = self._initial_state(request)
-            if self._project_kb:
-                initial["_kb_context"] = self._project_kb.context_for_agent("backend_dev")
             state = app.invoke(initial, config=config)
             if self._project_kb:
                 try:
