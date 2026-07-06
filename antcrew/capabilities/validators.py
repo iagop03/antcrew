@@ -127,6 +127,38 @@ class TestsPassValidator:
 
 
 # ---------------------------------------------------------------------------
+# Code review validator
+# ---------------------------------------------------------------------------
+
+class CodeReviewedValidator:
+    """Satisfied when review_report exists and verdict is 'approved'."""
+
+    condition_id        = ConditionId("code_reviewed")
+    global_scope        = False
+    relevant_artifacts  = frozenset([ArtifactId("review_report")])
+
+    def validate(self, store: ArtifactStore) -> ValidatorResult:
+        report = store.read(ArtifactId("review_report"))
+        if report is None:
+            return ValidatorResult(self.condition_id, satisfied=False,
+                                   observations={"review_report_exists": False})
+        content  = report.content if isinstance(report.content, dict) else {}
+        verdict  = content.get("verdict", "needs_changes")
+        approved = verdict == "approved"
+        findings = content.get("findings", [])
+        criticals = sum(1 for f in findings if f.get("severity") in ("critical", "error"))
+        return ValidatorResult(
+            condition_id = self.condition_id,
+            satisfied    = approved,
+            observations = {
+                "verdict":          verdict,
+                "total_findings":   len(findings),
+                "critical_findings": criticals,
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
 # Convenience factory: one validator per (artifact_id, condition_id) pair
 # ---------------------------------------------------------------------------
 
