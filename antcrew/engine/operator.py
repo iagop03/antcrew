@@ -25,6 +25,7 @@ from enum import Enum, auto
 
 from .artifact import ArtifactId
 from .capability import Executor, CapabilityResult
+from .selector import CapabilitySelector, CheapestFirst
 from .events import (
     EventLog, EngineStarted, EngineFinished, EngineError,
     StateObserved, CapabilityDispatched, CapabilityCompleted,
@@ -60,11 +61,13 @@ class Operator:
         event_log:      EventLog,
         *,
         max_iterations: int = 50,
+        selector:       CapabilitySelector | None = None,
     ) -> None:
         self._registry       = registry
         self._validators     = validators
         self._log            = event_log
         self._max_iterations = max_iterations
+        self._selector       = selector or CheapestFirst()
 
     # ------------------------------------------------------------------
     # inspect — pure observation
@@ -120,20 +123,18 @@ class Operator:
         state:      ProjectState,
         goal:       Goal,
     ) -> Executor | None:
-        """Select the best executor from candidates.
+        """Select the best executor from candidates via the configured CapabilitySelector.
 
-        Default policy: lowest cost.
-        Override this method to inject deterministic rules or LLM reasoning
-        without changing any other part of the engine.
+        Override this method to add deterministic rules or LLM reasoning before
+        or after delegating to the selector — without touching any other engine code.
         """
-        if not candidates:
-            return None
-        chosen = min(candidates, key=lambda ex: ex.descriptor.cost)
-        self._log.emit(OperatorDecision(
-            chosen     = chosen.descriptor.name,
-            candidates = tuple(ex.descriptor.name for ex in candidates),
-            reason     = "lowest_cost",
-        ))
+        chosen = self._selector.select(candidates, state, goal)
+        if chosen is not None:
+            self._log.emit(OperatorDecision(
+                chosen     = chosen.descriptor.name,
+                candidates = tuple(ex.descriptor.name for ex in candidates),
+                reason     = self._selector.name,
+            ))
         return chosen
 
     # ------------------------------------------------------------------

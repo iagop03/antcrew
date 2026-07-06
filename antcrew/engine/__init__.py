@@ -44,6 +44,9 @@ from .events import (
 from .goal import Condition, ConditionId, Constraints, DesiredProjectState, Goal
 from .operator import Operator, OperatorError
 from .registry import CapabilityRegistry
+from .selector import (
+    CapabilitySelector, CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
+)
 from .state import ProjectState
 from .store import ArtifactStore, MemoryStore, FilesystemStore
 from .validator import Validator, ValidatorResult
@@ -70,4 +73,6 @@ __all__ = [
     "ConditionSatisfied", "ConditionInvalidated", "OperatorDecision",
     # operator
     "Operator", "OperatorError",
+    # selector
+    "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
 ]

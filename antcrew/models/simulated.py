@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+from antcrew.models._engine_fixtures import REQUIREMENTS as _ENG_REQ, ARCHITECTURE as _ENG_ARCH, TASKS as _ENG_TASKS, FILE_PLAN as _ENG_FILE_PLAN, FILE_CONTENT as _ENG_FILE_CONTENT, TEST_CODE as _ENG_TEST, REVIEW as _ENG_REVIEW
 from antcrew.models.base import BaseLLM, Message
 
 # ---------------------------------------------------------------------------
@@ -241,6 +242,21 @@ _EDIT_FIXTURE = {
 def _pick_fixture(system: str) -> str:
     s = system.lower()
 
+    # engine capabilities -- unique phrases, checked before generic matchers
+    if 'software requirements analyst' in s:
+        return _ENG_REQ
+    if 'software architect' in s and 'architecture document' in s:
+        return _ENG_ARCH
+    if 'software project manager' in s:
+        return _ENG_TASKS
+    if 'list all files you need' in s:
+        return _ENG_FILE_PLAN
+    if 'generate the complete content for exactly one file' in s:
+        return _ENG_FILE_CONTENT
+    if 'writing pytest tests' in s and 'given a source file' in s:
+        return _ENG_TEST
+    if 'senior software engineer conducting a code review' in s:
+        return _ENG_REVIEW
     # LLM-as-judge prompts â€” checked first (contain unique score/reasoning format)
     if any(phrase in s for phrase in (
         "evaluating a product requirements document",

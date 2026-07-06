@@ -11,6 +11,7 @@ from .code_generator import CodeGenerator
 from .code_reviewer import CodeReviewer
 from .spec_extractor import SpecExtractor
 from .task_planner import TaskPlanner
+from .team_executor import TeamExecutor
 from .test_generator import TestGenerator
 from .test_runner import TestRunner
 
@@ -22,4 +23,5 @@ __all__ = [
     "TestGenerator",
     "TestRunner",
     "CodeReviewer",
+    "TeamExecutor",
 ]

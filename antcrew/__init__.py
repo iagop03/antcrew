@@ -82,6 +82,18 @@ from antcrew.core.operators import (
 )
 from antcrew.core.validation import validate_agent_dag
 from antcrew.testing import SequencedLLM
+from antcrew.engine import (
+    Artifact, ArtifactId, ArtifactKind, ArtifactDelta, EMPTY_DELTA,
+    ArtifactStore, MemoryStore, FilesystemStore,
+    Condition, ConditionId, DesiredProjectState, Constraints, Goal,
+    ProjectState,
+    CapabilityDescriptor, CapabilityResult, Executor,
+    ValidatorResult, Validator,
+    CapabilityRegistry,
+    EventLog,
+    Operator, OperatorError,
+    CapabilitySelector, CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
+)
 
 __all__ = [
     # Teams
@@ -233,6 +245,17 @@ __all__ = [
     "validate_agent_dag",
     # Testing
     "SequencedLLM",
+    # Engine
+    "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
+    "ArtifactStore", "MemoryStore", "FilesystemStore",
+    "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
+    "ProjectState",
+    "CapabilityDescriptor", "CapabilityResult", "Executor",
+    "ValidatorResult", "Validator",
+    "CapabilityRegistry",
+    "EventLog",
+    "Operator", "OperatorError",
+    "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
     # Events
     "bus",
     "Event",
@@ -246,4 +269,4 @@ __all__ = [
     "classify_task",
     "MinimalPipeline",
 ]
-__version__ = "0.14.3"
+__version__ = "0.15.0"
