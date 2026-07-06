@@ -9,14 +9,12 @@ LLM dependencies are optional extras in pyproject.toml:
 from .architect import Architect
 from .code_generator import CodeGenerator
 from .code_reviewer import CodeReviewer
-from .goal_decomposer import GoalDecomposer
 from .spec_extractor import SpecExtractor
 from .task_planner import TaskPlanner
 from .test_generator import TestGenerator
 from .test_runner import TestRunner
 
 __all__ = [
-    "GoalDecomposer",
     "SpecExtractor",
     "Architect",
     "TaskPlanner",
