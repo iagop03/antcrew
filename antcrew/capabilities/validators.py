@@ -55,6 +55,78 @@ class ArtifactNotEmptyValidator:
 
 
 # ---------------------------------------------------------------------------
+# Task-graph validators
+# ---------------------------------------------------------------------------
+
+class AllTasksCompletedValidator:
+    """Satisfied when the task_graph exists and every task has status='done'."""
+
+    condition_id        = ConditionId("implementation_exists")
+    global_scope        = False
+    relevant_artifacts  = frozenset([ArtifactId("task_graph")])
+
+    def validate(self, store: ArtifactStore) -> ValidatorResult:
+        tg = store.read(ArtifactId("task_graph"))
+        if tg is None:
+            return ValidatorResult(self.condition_id, satisfied=False,
+                                   observations={"task_graph_exists": False})
+        tasks     = tg.content.get("tasks", []) if isinstance(tg.content, dict) else []
+        done      = sum(1 for t in tasks if t.get("status") == "done")
+        total     = len(tasks)
+        satisfied = bool(total) and done == total
+        return ValidatorResult(
+            condition_id = self.condition_id,
+            satisfied    = satisfied,
+            observations = {"tasks_done": done, "tasks_total": total},
+            metrics      = {"completion_ratio": done / total if total else 0.0},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test validators
+# ---------------------------------------------------------------------------
+
+class TestsExistValidator:
+    """Satisfied when at least one TEST artifact is present in the store."""
+
+    condition_id        = ConditionId("tests_exist")
+    global_scope        = True   # depends on count of artifacts, not one specific id
+    relevant_artifacts  = frozenset()
+
+    def validate(self, store: ArtifactStore) -> ValidatorResult:
+        from antcrew.engine import ArtifactKind
+        tests     = store.list(ArtifactKind.TEST)
+        satisfied = bool(tests)
+        return ValidatorResult(
+            condition_id = self.condition_id,
+            satisfied    = satisfied,
+            observations = {"test_count": len(tests)},
+        )
+
+
+class TestsPassValidator:
+    """Satisfied when test_report artifact exists and reports passed=True."""
+
+    condition_id        = ConditionId("tests_pass")
+    global_scope        = False
+    relevant_artifacts  = frozenset([ArtifactId("test_report")])
+
+    def validate(self, store: ArtifactStore) -> ValidatorResult:
+        report = store.read(ArtifactId("test_report"))
+        if report is None:
+            return ValidatorResult(self.condition_id, satisfied=False,
+                                   observations={"test_report_exists": False})
+        content   = report.content if isinstance(report.content, dict) else {}
+        passed    = bool(content.get("passed"))
+        returncode = content.get("returncode", -1)
+        return ValidatorResult(
+            condition_id = self.condition_id,
+            satisfied    = passed,
+            observations = {"passed": passed, "returncode": returncode},
+        )
+
+
+# ---------------------------------------------------------------------------
 # Convenience factory: one validator per (artifact_id, condition_id) pair
 # ---------------------------------------------------------------------------
 
