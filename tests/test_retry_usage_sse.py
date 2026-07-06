@@ -301,13 +301,15 @@ def test_ollama_model_records_usage():
 
 
 # ===========================================================================
-# SSE server endpoint
+# SSE server endpoint — these tests require antcrew.server (removed in v0.15;
+# server functionality moved to antcrew-platform). Skipped automatically.
 # ===========================================================================
 
 def test_sse_endpoint_streams_tokens_and_done():
     """GET /run/{id}/stream yields token events then a done event."""
+    pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
     from fastapi.testclient import TestClient
-    from antcrew.server import app, _runs
+    from antcrew.server import app, _runs  # type: ignore[import]
 
     client = TestClient(app)
 
@@ -345,8 +347,9 @@ def test_sse_endpoint_streams_tokens_and_done():
 
 
 def test_sse_endpoint_404_for_unknown_run():
+    pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
     from fastapi.testclient import TestClient
-    from antcrew.server import app
+    from antcrew.server import app  # type: ignore[import]
 
     client = TestClient(app)
     resp = client.get("/run/does-not-exist/stream")
@@ -355,8 +358,9 @@ def test_sse_endpoint_404_for_unknown_run():
 
 def test_run_record_has_events_key():
     """POST /run creates a run record with an events list."""
+    pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
     from fastapi.testclient import TestClient
-    from antcrew.server import app, _runs
+    from antcrew.server import app, _runs  # type: ignore[import]
 
     client = TestClient(app)
     resp = client.post("/run", json={"request": "test", "team": "dev", "model": "simulated"})
@@ -372,8 +376,9 @@ def test_run_record_has_events_key():
 
 def test_get_run_includes_usage_when_done():
     """GET /run/{id} includes usage field when the run is done."""
+    pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
     from fastapi.testclient import TestClient
-    from antcrew.server import app, _runs
+    from antcrew.server import app, _runs  # type: ignore[import]
 
     client = TestClient(app)
     run_id = "test-usage-001"

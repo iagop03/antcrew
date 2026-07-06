@@ -4,12 +4,12 @@ import json
 import logging
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
-
-log = logging.getLogger(__name__)
 from antcrew.core.artifacts import (
     ArtifactContract, ContractError, CodeArtifact, CodeReview, Ticket, TicketStatus, coerce_list,
 )
 from antcrew.core.state import TeamState
+
+log = logging.getLogger(__name__)
 
 _REVIEW_CONTRACT: ArtifactContract[CodeReview] = ArtifactContract("review", CodeReview)
 

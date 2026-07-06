@@ -423,9 +423,21 @@ def _push_run_to_platform(
     if api_key:
         headers["X-Api-Key"] = api_key
 
+    def _json_default(obj: object) -> object:
+        # LangChain messages and other non-serializable objects → string fallback
+        try:
+            return obj.__dict__  # type: ignore[union-attr]
+        except AttributeError:
+            return str(obj)
+
     url = f"{platform_url.rstrip('/')}/runs/upload"
     try:
-        r = httpx.post(url, json=payload, headers=headers, timeout=20.0)
+        r = httpx.post(
+            url,
+            content=json.dumps(payload, default=_json_default).encode(),
+            headers=headers,
+            timeout=20.0,
+        )
         r.raise_for_status()
         run_id = r.json().get("run_id", "?")
         console.print(f"[dim]Run pushed to platform → run_id=[cyan]{run_id}[/] ({platform_url})[/dim]")
