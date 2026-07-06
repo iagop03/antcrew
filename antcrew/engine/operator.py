@@ -20,7 +20,7 @@ Escape conditions:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum, auto
 
 from .artifact import ArtifactId
@@ -96,7 +96,7 @@ class Operator:
             satisfied      = frozenset(satisfied),
             observations   = observations,
             metrics        = metrics,
-            timestamp      = datetime.utcnow(),
+            timestamp      = datetime.now(UTC),
             is_invalid     = is_invalid,
             invalid_reason = reason,
         )

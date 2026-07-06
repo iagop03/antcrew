@@ -8,7 +8,7 @@ The Operator reasons over ProjectState.  It never reads the Store directly.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any
 
 from .goal import ConditionId, DesiredProjectState
@@ -19,7 +19,7 @@ class ProjectState:
     satisfied:      frozenset[ConditionId]
     observations:   dict[str, Any]          # named observations from validators
     metrics:        dict[str, float]         # quantitative measurements
-    timestamp:      datetime = field(default_factory=datetime.utcnow)
+    timestamp:      datetime = field(default_factory=lambda: datetime.now(UTC))
     is_invalid:     bool = False
     invalid_reason: str | None = None
 

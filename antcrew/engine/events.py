@@ -14,7 +14,7 @@ For async delivery, wrap in an async adapter at the subscriber level.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Callable
 
 from .capability import CapabilityResult
@@ -25,7 +25,7 @@ from .state import ProjectState
 @dataclass(frozen=True)
 class Event:
     kind:      str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(frozen=True)
