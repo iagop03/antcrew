@@ -72,21 +72,30 @@ class Operator:
 
     def inspect(
         self,
-        store:   ArtifactStore,
-        touched: frozenset[ArtifactId] | None = None,
+        store:            ArtifactStore,
+        touched:          frozenset[ArtifactId] | None = None,
+        cached_satisfied: frozenset[ConditionId]       = frozenset(),
     ) -> ProjectState:
-        """Derive ProjectState by running Validators.  Never modifies anything."""
-        satisfied:    set[ConditionId] = set()
+        """Derive ProjectState by running Validators.  Never modifies anything.
+
+        Incremental: when *touched* is given, only validators whose
+        relevant_artifacts overlap with *touched* are re-run.  All others
+        carry forward their last known result from *cached_satisfied*.
+        On the first call (touched=None) every validator runs from scratch.
+        """
+        satisfied:    set[ConditionId] = set(cached_satisfied)
         observations: dict            = {}
         metrics:      dict            = {}
 
         for v in self._validators:
             if touched is not None and not v.global_scope:
                 if not (v.relevant_artifacts & touched):
-                    continue
+                    continue  # artifact unchanged — keep cached result
             result = v.validate(store)
             if result.satisfied:
                 satisfied.add(result.condition_id)
+            else:
+                satisfied.discard(result.condition_id)  # condition may have become false
             observations.update(result.observations)
             metrics.update(result.metrics)
 
@@ -135,12 +144,14 @@ class Operator:
         """Execute the observe → decide → dispatch loop until goal or error."""
         self._log.emit(EngineStarted(goal_description=goal.description))
 
-        prev_satisfied:  frozenset[ConditionId] = frozenset()
-        touched:         frozenset[ArtifactId] | None = None
-        no_progress_run: int = 0
+        prev_satisfied:   frozenset[ConditionId] = frozenset()
+        cached_satisfied: frozenset[ConditionId] = frozenset()
+        touched:          frozenset[ArtifactId] | None = None
+        no_progress_run:  int = 0
 
         for iteration in range(self._max_iterations):
-            state = self.inspect(store, touched)
+            state = self.inspect(store, touched, cached_satisfied)
+            cached_satisfied = state.satisfied
             self._log.emit(StateObserved(state=state, iteration=iteration))
 
             # -- emit newly satisfied conditions
