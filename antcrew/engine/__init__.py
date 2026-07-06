@@ -45,14 +45,14 @@ from .goal import Condition, ConditionId, Constraints, DesiredProjectState, Goal
 from .operator import Operator, OperatorError
 from .registry import CapabilityRegistry
 from .state import ProjectState
-from .store import ArtifactStore, MemoryStore
+from .store import ArtifactStore, MemoryStore, FilesystemStore
 from .validator import Validator, ValidatorResult
 
 __all__ = [
     # artifact
     "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
     # store
-    "ArtifactStore", "MemoryStore",
+    "ArtifactStore", "MemoryStore", "FilesystemStore",
     # goal
     "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
     # state

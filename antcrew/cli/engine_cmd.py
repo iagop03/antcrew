@@ -18,7 +18,7 @@ from antcrew.cli._app import app, console, _MODEL_HELP
 from antcrew.engine import (
     ArtifactId, ArtifactKind,
     CapabilityRegistry, Condition, ConditionId, Constraints,
-    DesiredProjectState, EventLog, Goal, MemoryStore, Operator,
+    DesiredProjectState, EventLog, FilesystemStore, Goal, MemoryStore, Operator,
 )
 from antcrew.capabilities import (
     Architect, CodeGenerator, CodeReviewer,
@@ -178,12 +178,12 @@ def engine_cmd(
 
     llm = build_llm(model)
 
-    goal      = _build_goal(goal_description, tuple(tech), condition, full)
-    store     = MemoryStore()
-    log       = EventLog()
-    registry  = _build_registry(llm)
+    goal       = _build_goal(goal_description, tuple(tech), condition, full)
+    store      = FilesystemStore(output) if output is not None else MemoryStore()
+    log        = EventLog()
+    registry   = _build_registry(llm)
     validators = _build_validators()
-    operator  = Operator(registry, validators, log, max_iterations=max_iter)
+    operator   = Operator(registry, validators, log, max_iterations=max_iter)
 
     console.print(Panel(
         f"[bold]{goal_description}[/]\n"
@@ -215,11 +215,19 @@ def engine_cmd(
         console.print(f"\n[red bold]Engine error:[/] {exc}")
         raise typer.Exit(code=1) from exc
 
+    # When using MemoryStore (no --output) write artifacts post-run.
+    # FilesystemStore already persisted everything incrementally.
     written: list[Path] = []
-    if output is not None:
+    if output is not None and isinstance(store, MemoryStore):
         output.mkdir(parents=True, exist_ok=True)
         written = _write_output(store, output)
         _write_reports(store, output)
+    elif output is not None:
+        written = [
+            output / (a.metadata.get("file_path") or str(a.id))
+            for kind in (ArtifactKind.SOURCE, ArtifactKind.TEST)
+            for a in store.list(kind)
+        ]
 
     _print_summary(store, output, written)
     console.print(f"\n[green bold]Done.[/] {len(final_state.satisfied)} condition(s) satisfied.")
