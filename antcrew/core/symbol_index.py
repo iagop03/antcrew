@@ -341,8 +341,6 @@ _TS_METHOD = re.compile(
 
 def _index_ts(source: str, module: str, file_path: str, idx: "SymbolIndex") -> None:
     """Regex-based extraction of exported symbols from TypeScript/JavaScript."""
-    current_class = ""
-
     # Exported functions
     for m in _TS_EXPORT_FN.finditer(source):
         name = m.group(1)

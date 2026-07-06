@@ -847,7 +847,6 @@ def test_cmd(
     # Feedback loop — only when tests failed and the user requested retries.
     if not result.success and feedback_rounds > 0:
         from antcrew.core.feedback import run_test_feedback_loop
-        from antcrew.core.artifacts import coerce_list
         from antcrew.agents.backend_dev import BackendDevAgent
         from antcrew.cli._shared import _build_team  # noqa: F401 — build_llm only
         from antcrew.config import build_llm

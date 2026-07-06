@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -38,7 +37,6 @@ def dag_cmd(
         console.print(f"[red]Config file not found:[/] {config}")
         raise typer.Exit(1)
 
-    from antcrew.config import _build_team_cfg
     try:
         import yaml as _yaml
         import json as _json

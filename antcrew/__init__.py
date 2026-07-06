@@ -239,5 +239,11 @@ __all__ = [
     "EventBus",
     "capture",
     "new_run_id",
+    # Advanced / task-level
+    "CoherenceAgent",
+    "ProjectKB",
+    "TaskType",
+    "classify_task",
+    "MinimalPipeline",
 ]
 __version__ = "0.14.3"

@@ -184,5 +184,5 @@ class PlatformChannel(BaseChannel):
                     log.debug("platform: poll error: %s", exc)
 
         log.warning("platform: HITL timeout (%.0fs) for review %s — auto-approving", self._timeout_s, review_id)
-        print(f"  [platform] Timeout — auto-approving")
+        print("  [platform] Timeout — auto-approving")
         return {"decision": "approve", "edited": None, "feedback": None}

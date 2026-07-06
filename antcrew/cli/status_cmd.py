@@ -64,7 +64,7 @@ def status(
         except ValueError:
             pid_status = "[yellow]invalid PID file[/yellow]"
 
-    console.print(f"\n[bold]antcrew platform status[/bold]")
+    console.print("\n[bold]antcrew platform status[/bold]")
     console.print(f"  URL    : [cyan]{platform_url}[/]")
     console.print(f"  Server : {pid_status}")
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
+
+log = logging.getLogger(__name__)
 from antcrew.core.artifacts import (
     ArtifactContract, ContractError, CodeArtifact, CodeReview, Ticket, TicketStatus, coerce_list,
 )

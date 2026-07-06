@@ -316,7 +316,8 @@ def eval_cmd(
 
     # ── Save to local SQLite history ─────────────────────────────────────────
     if save and reports:
-        import sqlite3, datetime as _dt
+        import sqlite3
+        import datetime as _dt
         save_path = Path(save).expanduser()
         save_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(save_path) as con:
@@ -355,7 +356,9 @@ def eval_cmd(
 
     # ── Push to platform ──────────────────────────────────────────────────────
     if push_to and reports:
-        import os, urllib.request, urllib.error
+        import os
+        import urllib.request
+        import urllib.error
         platform_key = os.environ.get("ANTCREW_PLATFORM_API_KEY", "") or os.environ.get("ANTCREW_PLATFORM_KEY", "")
         base = push_to.rstrip("/")
         pushed, errors = 0, 0
