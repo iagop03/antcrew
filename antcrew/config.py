@@ -122,8 +122,16 @@ def _build_channel(cfg: dict):
             app_token=cfg["app_token"],
             channel_id=cfg["channel_id"],
         )
+    if channel_type == "platform":
+        from antcrew.integrations.platform import PlatformChannel
+        return PlatformChannel(
+            url=cfg.get("url"),
+            api_key=cfg.get("api_key"),
+            timeout_s=float(cfg.get("timeout_s", 3600)),
+            poll_interval_s=float(cfg.get("poll_interval_s", 2.0)),
+        )
     raise ValueError(
-        f"Unknown channel type '{channel_type}'. Supported: telegram, console, slack."
+        f"Unknown channel type '{channel_type}'. Supported: telegram, console, slack, platform."
     )
 
 
@@ -155,6 +163,16 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
         integrations.append(_build_channel(ch_cfg))
     # Use first channel for per-agent channel assignment
     channel = integrations[0] if integrations else None
+
+    # Auto-inject PlatformChannel when ANTCREW_PLATFORM_URL is configured and no
+    # explicit channel is set. This makes `antcrew configure + antcrew serve` work
+    # end-to-end for HITL without any YAML changes.
+    if channel is None and os.environ.get("ANTCREW_PLATFORM_URL"):
+        try:
+            from antcrew.integrations.platform import PlatformChannel
+            channel = PlatformChannel()
+        except Exception:
+            pass
 
     # Supervisor: support `flow:` key for custom pipeline + optional `gates:`
     supervisor = None

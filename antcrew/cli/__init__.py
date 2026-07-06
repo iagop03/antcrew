@@ -36,6 +36,15 @@ from antcrew.cli import cost_cmd       # noqa: F401
 from antcrew.cli import sprint_cmd     # noqa: F401
 from antcrew.cli import doctor_cmd     # noqa: F401
 from antcrew.cli import dag_cmd        # noqa: F401
+from antcrew.cli import serve_cmd      # noqa: F401
+from antcrew.cli import status_cmd     # noqa: F401
+from antcrew.cli import review_cmd     # noqa: F401
+from antcrew.cli import configure_cmd  # noqa: F401
+from antcrew.cli import template_cmd   # noqa: F401
+
+# Auto-apply .antcrew/config.yaml settings to env before any command runs.
+from antcrew.cli.configure_cmd import apply_config_to_env as _apply_cfg
+_apply_cfg()
 
 if __name__ == "__main__":
     app()

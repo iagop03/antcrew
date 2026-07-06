@@ -157,6 +157,18 @@ def eval_cmd(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Print per-agent scores for every case"
     ),
+    push_to: Optional[str] = typer.Option(
+        None, "--push-to",
+        help=(
+            "Platform URL to publish results (e.g. http://localhost:8000). "
+            "Reads ANTCREW_PLATFORM_API_KEY env var for authentication."
+        ),
+        envvar="ANTCREW_PLATFORM_URL",
+    ),
+    save: Optional[Path] = typer.Option(
+        None, "--save", "-s",
+        help="Append results to a local SQLite history file (e.g. --save ~/.antcrew/evals.db).",
+    ),
 ) -> None:
     """Run evaluation cases from a JSON file and report structural + LLM-judge scores.
 
@@ -302,7 +314,144 @@ def eval_cmd(
         output.write_text(data, encoding="utf-8")
         console.print(f"[dim]Results saved → [cyan]{output}[/][/dim]\n")
 
+    # ── Save to local SQLite history ─────────────────────────────────────────
+    if save and reports:
+        import sqlite3, datetime as _dt
+        save_path = Path(save).expanduser()
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(save_path) as con:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS eval_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    team TEXT,
+                    request TEXT,
+                    passed INTEGER,
+                    overall_score REAL,
+                    judge_score REAL,
+                    cost_usd REAL,
+                    elapsed_ms REAL,
+                    report_json TEXT,
+                    created_at TEXT
+                )
+            """)
+            now = _dt.datetime.utcnow().isoformat()
+            for r in reports:
+                con.execute(
+                    "INSERT INTO eval_history (name,team,request,passed,overall_score,judge_score,cost_usd,elapsed_ms,report_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        r.case.name or r.case.request[:60],
+                        team, r.case.request,
+                        int(r.passed),
+                        r.overall_score,
+                        r.judge_score if r.judge_results else None,
+                        r.cost_usd,
+                        r.elapsed_ms,
+                        json.dumps(r.to_dict()) if hasattr(r, "to_dict") else "{}",
+                        now,
+                    ),
+                )
+        console.print(f"[dim]History saved → [cyan]{save_path}[/][/dim]\n")
+
+    # ── Push to platform ──────────────────────────────────────────────────────
+    if push_to and reports:
+        import os, urllib.request, urllib.error
+        platform_key = os.environ.get("ANTCREW_PLATFORM_API_KEY", "") or os.environ.get("ANTCREW_PLATFORM_KEY", "")
+        base = push_to.rstrip("/")
+        pushed, errors = 0, 0
+        console.print(f"[dim]Pushing {len(reports)} report(s) → [cyan]{base}[/][/dim]")
+        for r in reports:
+            payload = json.dumps({
+                "team": team,
+                "request": r.case.request,
+                "name": r.case.name or r.case.request[:60],
+                "report": r.to_dict(),
+                "elapsed_ms": round(r.elapsed_ms, 1),
+                "cost_usd": r.cost_usd,
+            }).encode()
+            req = urllib.request.Request(
+                f"{base}/evals/report",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    **({"X-Api-Key": platform_key} if platform_key else {}),
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=15):
+                    pushed += 1
+            except urllib.error.HTTPError as exc:
+                console.print(f"  [red]HTTP {exc.code}[/] {r.case.name or r.case.request[:30]}")
+                errors += 1
+            except Exception as exc:
+                console.print(f"  [red]Error:[/] {exc}")
+                errors += 1
+        if errors == 0:
+            console.print(f"[green]✓[/] {pushed} report(s) published to platform.\n")
+        else:
+            console.print(f"[yellow]{pushed} published, {errors} failed.[/]\n")
+
     if any_failed:
         raise typer.Exit(1)
 
+
+@app.command(name="eval-history")
+def eval_history(
+    db: Optional[Path] = typer.Option(
+        None, "--db", "-d",
+        help="Path to the SQLite history file (default: ~/.antcrew/evals.db).",
+    ),
+    limit: int = typer.Option(20, "--limit", "-n", help="Number of rows to show"),
+    team: Optional[str] = typer.Option(None, "--team", "-t", help="Filter by team name"),
+) -> None:
+    """Show local eval history saved with --save."""
+    from rich.table import Table
+
+    db_path = Path(db).expanduser() if db else Path.home() / ".antcrew" / "evals.db"
+    if not db_path.exists():
+        console.print(f"[yellow]No history file at {db_path}[/]\n"
+                      "[dim]Run evals with [cyan]--save[/] to start building history.[/dim]")
+        raise typer.Exit(0)
+
+    import sqlite3
+    with sqlite3.connect(db_path) as con:
+        con.row_factory = sqlite3.Row
+        q = "SELECT * FROM eval_history"
+        params: list = []
+        if team:
+            q += " WHERE team = ?"
+            params.append(team)
+        q += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        try:
+            rows = con.execute(q, params).fetchall()
+        except sqlite3.OperationalError as exc:
+            console.print(f"[red]DB error:[/] {exc}")
+            raise typer.Exit(1)
+
+    if not rows:
+        console.print("[dim]No history entries found.[/]")
+        raise typer.Exit(0)
+
+    table = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 1))
+    table.add_column("Name",     style="cyan", no_wrap=True, max_width=30)
+    table.add_column("Team",     no_wrap=True)
+    table.add_column("Pass",     justify="center")
+    table.add_column("Score",    justify="right")
+    table.add_column("Judge",    justify="right")
+    table.add_column("ms",       justify="right")
+    table.add_column("When",     style="dim", no_wrap=True)
+
+    for row in rows:
+        tick  = "[green]✓[/]" if row["passed"] else "[red]✗[/]"
+        score = f"{row['overall_score']:.2f}" if row["overall_score"] is not None else "—"
+        judge = f"{row['judge_score']:.2f}" if row["judge_score"] is not None else "—"
+        ms    = f"{row['elapsed_ms']:.0f}" if row["elapsed_ms"] is not None else "—"
+        when  = (row["created_at"] or "")[:16]
+        table.add_row(row["name"] or "—", row["team"] or "—", tick, score, judge, ms, when)
+
+    console.print(f"\n[bold]Eval history[/] — [dim]{db_path}[/dim]\n")
+    console.print(table)
+    console.print()
 

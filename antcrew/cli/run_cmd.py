@@ -10,7 +10,8 @@ import typer
 from antcrew.cli._app import app, console, _MODEL_HELP, _TEAM_CHOICES
 from antcrew.cli._shared import _build_team, _print_state, _print_usage
 from antcrew.cli._run_helpers import (
-    _print_dry_run, _run_with_stream, _save_outputs_to_dir, _run_repl,
+    _print_dry_run, _run_with_stream, _run_with_hitl, _save_outputs_to_dir, _run_repl,
+    _push_run_to_platform, SlackNotifyChannel,
 )
 
 
@@ -132,6 +133,45 @@ def run(
              "(fullstack team only). Enables semantic code search. "
              "Requires: pip install antcrew[memory]",
     ),
+    hitl: bool = typer.Option(
+        False, "--hitl/--no-hitl",
+        help="Enable Human-in-the-Loop review in the terminal. Pauses at each "
+             "approval_required agent (or all agents if none are marked) and prompts "
+             "for approve/reject/feedback via ConsoleChannel.",
+    ),
+    hitl_timeout: Optional[float] = typer.Option(
+        None, "--hitl-timeout",
+        help="Maximum seconds to wait for a HITL response before auto-aborting the pipeline. "
+             "Useful for unattended/CI runs with --hitl. Default: no timeout (wait forever).",
+    ),
+    hitl_slack: Optional[str] = typer.Option(
+        None, "--hitl-slack-webhook",
+        help="Slack incoming-webhook URL. Posts a notification each time an agent pauses for review, "
+             "then prompts for approval in the terminal (notification only — not interactive). "
+             "Example: --hitl --hitl-slack-webhook https://hooks.slack.com/services/T.../B.../...",
+        envvar="ANTCREW_HITL_SLACK_URL",
+        show_default=False,
+    ),
+    slack_bot_token: Optional[str] = typer.Option(
+        None, "--hitl-slack-bot-token",
+        help="Slack Bot Token (xoxb-…) for interactive HITL via Slack buttons (Socket Mode). "
+             "Requires --hitl-slack-app-token and --hitl-slack-channel. "
+             "Reviewers approve/reject directly in Slack — no terminal input needed.",
+        envvar="SLACK_BOT_TOKEN",
+        show_default=False,
+    ),
+    slack_app_token: Optional[str] = typer.Option(
+        None, "--hitl-slack-app-token",
+        help="Slack App-Level Token (xapp-…) for Socket Mode. Required with --hitl-slack-bot-token.",
+        envvar="SLACK_APP_TOKEN",
+        show_default=False,
+    ),
+    slack_channel: Optional[str] = typer.Option(
+        None, "--hitl-slack-channel",
+        help="Slack channel ID (C0XXXXXXXXX) for interactive HITL messages.",
+        envvar="SLACK_CHANNEL_ID",
+        show_default=False,
+    ),
     repl: bool = typer.Option(
         False, "--repl",
         help="Interactive REPL mode — run the pipeline repeatedly in a loop.",
@@ -160,6 +200,20 @@ def run(
         None, "--task-type", "-T",
         help="Force task type for '--team minimal' (fix|refactor|feature|test|docs). "
              "Default: auto-classify from the request text.",
+    ),
+    push_to: Optional[str] = typer.Option(
+        None, "--push-to",
+        help="Push run results to a running antcrew platform instance after completion. "
+             "Example: --push-to http://localhost:8000. "
+             "Also readable from the ANTCREW_PLATFORM_URL environment variable.",
+        envvar="ANTCREW_PLATFORM_URL",
+    ),
+    push_api_key: Optional[str] = typer.Option(
+        None, "--push-api-key",
+        help="API key for the target platform (when --push-to is set). "
+             "Also readable from ANTCREW_PLATFORM_API_KEY.",
+        envvar="ANTCREW_PLATFORM_API_KEY",
+        show_default=False,
     ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
@@ -332,6 +386,8 @@ def run(
             raise typer.Exit(0)
 
         # Run
+        import time as _time
+        _run_t0 = _time.monotonic()
         if _project_ref is not None:
             _p = _project_ref  # local alias so the lambda closes over it
 
@@ -347,12 +403,43 @@ def run(
                 f"[dim](run #{n_before + 1})[/dim]\n"
             )
             state = _run_with_stream(_ProjRunner(), actual_request, thread, stream, llm=_llm_ref)
+        elif hitl:
+            console.print(
+                f"\n[bold green]AntCrew[/] v0.4  —  team=[cyan]{team}[/]  model=[cyan]{model}[/]\n"
+            )
+            _hitl_channel = None
+            if slack_bot_token and slack_app_token and slack_channel:
+                # Full interactive Slack HITL — reviewer approves via Slack buttons
+                try:
+                    from antcrew.integrations.slack import SlackChannel as _SC
+                    console.print(
+                        f"[dim]HITL Slack (Socket Mode) → channel=[cyan]{slack_channel}[/][/dim]\n"
+                    )
+                    _hitl_channel = _SC(
+                        bot_token=slack_bot_token,
+                        app_token=slack_app_token,
+                        channel_id=slack_channel,
+                    )
+                except ImportError:
+                    console.print(
+                        "[yellow]Warning:[/] slack-sdk / slack-bolt not installed. "
+                        "Install with: pip install 'antcrew[slack]'\n"
+                        "[dim]Falling back to terminal review.[/dim]\n"
+                    )
+            elif hitl_slack:
+                console.print(f"[dim]HITL Slack webhook notification → {hitl_slack}[/dim]\n")
+                _hitl_channel = SlackNotifyChannel(hitl_slack)
+            state = _run_with_hitl(
+                active_team, actual_request, thread,
+                hitl_timeout=hitl_timeout, channel=_hitl_channel,
+            )
         else:
             console.print(
                 f"\n[bold green]AntCrew[/] v0.4  —  team=[cyan]{team}[/]  model=[cyan]{model}[/]\n"
             )
             state = _run_with_stream(active_team, actual_request, thread, stream, llm=_llm_ref)
 
+        _run_duration_s = _time.monotonic() - _run_t0
     except typer.Exit:
         raise
     except KeyboardInterrupt:
@@ -412,6 +499,12 @@ def run(
         console.print(
             f"[dim]thread=[cyan]{state.thread_id}[/cyan]{cost_str}[/dim]"
         )
+    elif isinstance(state, dict) and state.get("_run_id"):
+        # dict returned by run_interactive() — show run_id so it can be looked up
+        run_id_str = state["_run_id"]
+        cost_raw = state.get("_cost_usd") or 0.0
+        cost_str = f"  cost=[cyan]${cost_raw:.4f}[/cyan]" if cost_raw else ""
+        console.print(f"[dim]run=[cyan]{run_id_str}[/cyan]{cost_str}[/dim]")
 
     # Cache stats
     if _llm_ref is not None and hasattr(_llm_ref, "cache") and _llm_ref.cache is not None:
@@ -444,6 +537,13 @@ def run(
         from antcrew.utils.persistence import save_state
         save_state(state, save)
         console.print(f"\n[dim]State saved → [cyan]{save}[/][/dim]")
+
+    if push_to:
+        _push_run_to_platform(
+            push_to, push_api_key, state,
+            team=team, request=actual_request, thread=thread, llm=_llm_ref,
+            duration_s=_run_duration_s,
+        )
 
     _print_usage(_llm_ref)
     console.print("\n[bold green]Done![/]\n")

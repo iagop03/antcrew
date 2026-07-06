@@ -250,6 +250,192 @@ def _run_repl(
 
 
 # ---------------------------------------------------------------------------
+# HITL (Human-in-the-Loop) via ConsoleChannel
+# ---------------------------------------------------------------------------
+
+def _run_with_hitl(
+    team, request: str, thread: str,
+    *, hitl_timeout: Optional[float] = None, channel=None,
+):
+    """Run in HITL mode: blocks at each approval_required agent for terminal review.
+
+    Uses ConsoleChannel (or a custom *channel*) so the agent pauses and prompts the
+    user directly in the terminal.  Returns a RunResult wrapping the final state so
+    --save, --write-back, and --output-dir all work identically to non-HITL runs.
+
+    hitl_timeout: maximum seconds for the entire HITL run (all reviews combined).
+    When exceeded the pipeline is aborted with exit code 1.
+
+    channel: optional BaseChannel override (e.g. SlackNotifyChannel). Defaults to
+    ConsoleChannel when not provided.
+
+    No spinner is shown — the channel display IS the UX during HITL.
+    """
+    import concurrent.futures
+    from antcrew.core.run_result import RunResult
+
+    if channel is None:
+        try:
+            from antcrew.integrations.console import ConsoleChannel
+        except ImportError as exc:
+            console.print(f"[red]Error:[/] ConsoleChannel not available: {exc}")
+            raise SystemExit(1)
+        ch = ConsoleChannel()
+    else:
+        ch = channel
+    all_agents = list(getattr(team, "_agents", {}).values())
+    hitl_agents = [a for a in all_agents if getattr(a, "approval_required", False)]
+
+    if not hitl_agents:
+        for agent in all_agents:
+            agent.channel = ch
+            agent.approval_required = True
+        console.print("[dim]HITL (force): all agents will pause for review.[/dim]\n")
+    else:
+        for agent in hitl_agents:
+            if not getattr(agent, "channel", None):
+                agent.channel = ch
+        console.print(f"[dim]HITL: {len(hitl_agents)} agent(s) will pause for review.[/dim]\n")
+
+    if hitl_timeout is not None:
+        console.print(f"[dim]HITL timeout: {hitl_timeout:.0f}s — pipeline auto-aborts if no response.[/dim]\n")
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="antcrew-hitl")
+        future = ex.submit(team.run_interactive, request, thread_id=thread)
+        try:
+            state_dict: dict = future.result(timeout=hitl_timeout)
+        except concurrent.futures.TimeoutError:
+            console.print(
+                f"\n[yellow bold]HITL timeout ({hitl_timeout:.0f}s)[/] — "
+                "no response received. Pipeline aborted."
+            )
+            ex.shutdown(wait=False, cancel_futures=True)
+            raise SystemExit(1)
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
+    else:
+        state_dict = team.run_interactive(request, thread_id=thread)
+
+    return RunResult(
+        state=state_dict,
+        thread_id=thread,
+        cost_usd=state_dict.get("_cost_usd") or 0.0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SlackNotifyChannel — posts HITL notification to Slack, resolves via terminal
+# ---------------------------------------------------------------------------
+
+
+class SlackNotifyChannel:
+    """HITL channel that pings a Slack webhook then falls through to ConsoleChannel.
+
+    On ``send_for_review``:
+      1. POSTs a Slack message with the agent name and artifact summary.
+      2. Falls through to ConsoleChannel so the reviewer resolves in the terminal.
+
+    This is intentionally simple: Slack is used for notification, not interactive
+    resolution. Use PlatformChannel (antcrew-platform) when you want Slack-button
+    approval workflows.
+    """
+
+    def __init__(self, webhook_url: str, console_ch=None) -> None:
+        self._webhook_url = webhook_url
+        try:
+            from antcrew.integrations.console import ConsoleChannel as _CC
+            self._console = console_ch or _CC()
+        except ImportError:
+            self._console = console_ch
+
+    async def notify(self, message: str, **kwargs) -> None:
+        self._post({"text": message})
+        if self._console is not None:
+            await self._console.notify(message, **kwargs)
+
+    async def send_for_review(
+        self,
+        artifact,
+        agent_name: str,
+        session_id: str,
+        response_options=None,
+    ) -> dict:
+        text = f":eyes: *HITL review required* — agent: `{agent_name}`\nResolve in your terminal."
+        self._post({"text": text})
+        if self._console is None:
+            return {"decision": "approve"}
+        return await self._console.send_for_review(artifact, agent_name, session_id, response_options)
+
+    def _post(self, payload: dict) -> None:
+        import json as _json
+        import urllib.request as _req
+        try:
+            data = _json.dumps(payload).encode()
+            request = _req.Request(
+                self._webhook_url, data=data,
+                headers={"Content-Type": "application/json"},
+            )
+            _req.urlopen(request, timeout=5)
+        except Exception:
+            pass  # Slack notification failure is never fatal
+
+
+# ---------------------------------------------------------------------------
+# Platform push helper
+# ---------------------------------------------------------------------------
+
+
+def _push_run_to_platform(
+    platform_url: str,
+    api_key: Optional[str],
+    state: Any,
+    *,
+    team: str,
+    request: str,
+    thread: str,
+    llm: Any,
+    duration_s: Optional[float] = None,
+) -> None:
+    """POST the completed run to a running antcrew platform instance.
+
+    Called when `antcrew run --push-to <url>` is set. Failure is non-fatal:
+    a warning is printed but the CLI exits 0.
+    """
+    try:
+        import httpx
+    except ImportError:
+        console.print("[yellow]Warning:[/] --push-to requires httpx. Install with: pip install httpx")
+        return
+
+    state_dict = state.state if hasattr(state, "state") else (state if isinstance(state, dict) else {})
+    cost = float(getattr(state, "cost_usd", None) or state_dict.get("_cost_usd") or 0.0)
+
+    payload: dict = {
+        "team": team,
+        "request": request,
+        "thread_id": thread,
+        "cost_usd": cost,
+        "state": state_dict,
+    }
+    if duration_s is not None:
+        payload["duration_s"] = round(duration_s, 3)
+
+    headers: dict = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-Api-Key"] = api_key
+
+    url = f"{platform_url.rstrip('/')}/runs/upload"
+    try:
+        r = httpx.post(url, json=payload, headers=headers, timeout=20.0)
+        r.raise_for_status()
+        run_id = r.json().get("run_id", "?")
+        console.print(f"[dim]Run pushed to platform → run_id=[cyan]{run_id}[/] ({platform_url})[/dim]")
+    except httpx.HTTPStatusError as exc:
+        console.print(f"[yellow]Warning:[/] --push-to HTTP {exc.response.status_code}: {exc.response.text[:200]}")
+    except Exception as exc:
+        console.print(f"[yellow]Warning:[/] --push-to failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 

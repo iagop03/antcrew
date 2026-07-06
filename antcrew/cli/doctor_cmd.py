@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Optional
 
 import typer
 from rich.table import Table
@@ -34,6 +35,10 @@ def doctor(
     ping: bool = typer.Option(
         False, "--ping",
         help="Actually call each configured API to verify connectivity (uses tokens).",
+    ),
+    platform: Optional[str] = typer.Option(
+        None, "--platform",
+        help="Check if antcrew-platform is reachable at this URL (e.g. http://localhost:8000).",
     ),
 ) -> None:
     """Check API keys, optional dependencies, and (optionally) live API access.
@@ -127,6 +132,11 @@ def doctor(
         else:
             rows.append(_warn(pkg, f"not installed — {purpose} unavailable"))
 
+    # ── Platform health ──────────────────────────────────────────────────────
+    if platform:
+        rows.append(("", "", ""))
+        rows += _platform_check(platform.rstrip("/"))
+
     # ── Live ping (optional) ─────────────────────────────────────────────────
     if ping:
         rows.append(("", "", ""))   # spacer
@@ -155,6 +165,49 @@ def doctor(
         console.print(f"\n[yellow]{warns} warning(s).[/]  Everything should work; install optional deps as needed.")
     else:
         console.print("\n[green bold]All checks passed.[/]")
+
+
+def _platform_check(base_url: str) -> list[tuple[str, str, str]]:
+    """Check reachability and health of a running antcrew-platform instance."""
+    rows: list[tuple[str, str, str]] = []
+    try:
+        import urllib.request, urllib.error
+        from antcrew.cli.configure_cmd import get_platform_api_key as _get_key
+        req = urllib.request.Request(f"{base_url}/health", method="GET")
+        platform_key = _get_key()
+        if platform_key:
+            req.add_header("X-Api-Key", platform_key)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            import json as _json
+            data = _json.loads(resp.read())
+            db_ok = data.get("db", False)
+            version = data.get("version", "?")
+            rows.append(_check(
+                "Platform reachable",
+                True,
+                f"{base_url}  (v{version})",
+            ))
+            rows.append(_check(
+                "Platform DB",
+                db_ok,
+                "connected" if db_ok else "unreachable — check DATABASE_URL on the server",
+            ))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            rows.append(_check(
+                "Platform reachable",
+                False,
+                f"{base_url} — 401 Unauthorized (set ANTCREW_PLATFORM_API_KEY)",
+            ))
+        else:
+            rows.append(_check("Platform reachable", False, f"HTTP {exc.code}"))
+    except Exception as exc:
+        rows.append(_check(
+            "Platform reachable",
+            False,
+            f"{base_url} — {exc} (is antcrew serve running?)",
+        ))
+    return rows
 
 
 def _live_ping(
