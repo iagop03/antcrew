@@ -140,7 +140,7 @@ class TestContextWarnings:
             "--model", "simulated",
             "--no-stream",
             "--context", str(ctx),
-        ])
+        ], env={"ANTCREW_PLATFORM_URL": ""})
         assert result.exit_code == 0
         assert "Warning" not in result.output
 

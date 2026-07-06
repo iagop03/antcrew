@@ -184,6 +184,6 @@ class TestProjectDirWarning:
             "--model", "simulated",
             "--no-stream",
             "--project-dir", str(tmp_path),
-        ])
+        ], env={"ANTCREW_PLATFORM_URL": ""})
         assert result.exit_code == 0
         assert "Warning" not in result.output
