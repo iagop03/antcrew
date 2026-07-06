@@ -104,8 +104,17 @@ class EventLog:
         for handler in self._handlers:
             handler(event)
 
-    def subscribe(self, handler: Handler) -> None:
-        self._handlers.append(handler)
+    def subscribe(self, kind_or_handler, handler: Handler | None = None) -> None:
+        """Subscribe to events.
+
+        subscribe(handler)            -- called for every event
+        subscribe("event_kind", fn)   -- called only when event.kind matches
+        """
+        if handler is None:
+            self._handlers.append(kind_or_handler)
+        else:
+            kind = kind_or_handler
+            self._handlers.append(lambda e: handler(e) if e.kind == kind else None)
 
     def unsubscribe(self, handler: Handler) -> None:
         self._handlers.remove(handler)
