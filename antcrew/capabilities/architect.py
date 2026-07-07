@@ -8,7 +8,7 @@ from .base import BaseExecutor
 
 _SYSTEM = """\
 You are a software architect.
-Given a requirements document and optional constraints, produce a technical architecture document.
+Given a goal description and optional constraints, produce a technical architecture document.
 
 Output a markdown document with exactly these sections:
 
@@ -46,24 +46,26 @@ Rules:
 - Keep each section focused — no filler text
 """
 
-_REQUIREMENTS_MISSING = "# Requirements\n\n(No requirements artifact found in store.)"
-
-
 class Architect(BaseExecutor):
+    """Produces architecture from the goal directly — no SpecExtractor needed.
+
+    Writes a stub requirements artifact alongside architecture so the
+    requirements_exists condition is satisfied without a separate LLM call.
+    """
+
     descriptor = CapabilityDescriptor(
         name        = "architect",
-        description = "Produces a technical architecture document from requirements.",
-        needs       = frozenset([ConditionId("requirements_exists")]),
-        produces    = frozenset([ConditionId("architecture_exists")]),
-        consumes    = frozenset([ArtifactId("requirements")]),
-        emits       = frozenset(["architecture"]),
+        description = "Produces a technical architecture document from the goal description.",
+        needs       = frozenset(),
+        produces    = frozenset([
+            ConditionId("requirements_exists"),
+            ConditionId("architecture_exists"),
+        ]),
+        emits       = frozenset(["architecture", "requirements"]),
         cost        = 1.5,
     )
 
     def _run(self, store, goal) -> CapabilityResult:
-        req = store.read(ArtifactId("requirements"))
-        requirements_text = req.content if req else _REQUIREMENTS_MISSING
-
         constraints_lines = []
         if goal.constraints.tech_stack:
             constraints_lines.append(f"Tech stack: {', '.join(goal.constraints.tech_stack)}")
@@ -72,15 +74,33 @@ class Architect(BaseExecutor):
         for key, value in goal.constraints.custom.items():
             constraints_lines.append(f"{key}: {value}")
 
-        user = f"Requirements:\n\n{requirements_text}"
+        user = f"Goal: {goal.description}"
         if constraints_lines:
             user += "\n\nConstraints:\n" + "\n".join(constraints_lines)
 
-        content = self._call(_SYSTEM, user)
+        # Inject human review feedback from a previous HITL rejection
+        feedback_art = store.read(ArtifactId("architecture_feedback"))
+        if feedback_art and isinstance(feedback_art.content, dict):
+            feedback_text = feedback_art.content.get("feedback", "").strip()
+            if feedback_text:
+                user += f"\n\nHuman review feedback on the previous architecture:\n{feedback_text}"
 
-        artifact = Artifact(
-            id      = ArtifactId("architecture"),
-            kind    = ArtifactKind.ARCHITECTURE,
-            content = content,
-        )
-        return CapabilityResult(delta=ArtifactDelta(created=(artifact,)))
+        architecture = self._call(_SYSTEM, user)
+
+        # Stub requirements artifact so requirements_exists validator passes
+        req_body = f"# Requirements\n\n## Objective\n{goal.description}"
+        if constraints_lines:
+            req_body += "\n\n## Constraints\n" + "\n".join(constraints_lines)
+
+        return CapabilityResult(delta=ArtifactDelta(created=(
+            Artifact(
+                id      = ArtifactId("requirements"),
+                kind    = ArtifactKind.REQUIREMENTS,
+                content = req_body,
+            ),
+            Artifact(
+                id      = ArtifactId("architecture"),
+                kind    = ArtifactKind.ARCHITECTURE,
+                content = architecture,
+            ),
+        )))

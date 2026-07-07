@@ -57,7 +57,6 @@ class SpecExtractor(BaseExecutor):
         description = "Writes a structured requirements document from the goal and constraints.",
         needs       = frozenset(),
         produces    = frozenset([ConditionId("requirements_exists")]),
-        consumes    = frozenset(),
         emits       = frozenset(["requirements"]),
         cost        = 1.0,
     )

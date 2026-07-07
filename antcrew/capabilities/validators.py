@@ -159,6 +159,58 @@ class CodeReviewedValidator:
 
 
 # ---------------------------------------------------------------------------
+# Dependency validator
+# ---------------------------------------------------------------------------
+
+class DependenciesInstalledValidator:
+    """Satisfied when venv_config artifact exists and the venv is present on disk."""
+
+    condition_id        = ConditionId("dependencies_installed")
+    global_scope        = False
+    relevant_artifacts  = frozenset([ArtifactId("venv_config")])
+
+    def validate(self, store: ArtifactStore) -> ValidatorResult:
+        from pathlib import Path as _Path
+        config = store.read(ArtifactId("venv_config"))
+        if config is None:
+            return ValidatorResult(self.condition_id, satisfied=False,
+                                   observations={"venv_config_exists": False})
+        content   = config.content if isinstance(config.content, dict) else {}
+        venv_path = content.get("venv_path")
+        ok        = bool(venv_path) and _Path(venv_path).exists()
+        return ValidatorResult(
+            condition_id = self.condition_id,
+            satisfied    = ok,
+            observations = {
+                "venv_path":   venv_path,
+                "venv_exists": ok,
+                "install_ok":  content.get("install_ok", False),
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# Documentation validator
+# ---------------------------------------------------------------------------
+
+class DocumentationExistsValidator:
+    """Satisfied when the 'documentation' artifact exists and is non-empty."""
+
+    condition_id        = ConditionId("documentation_exists")
+    global_scope        = False
+    relevant_artifacts  = frozenset([ArtifactId("documentation")])
+
+    def validate(self, store: ArtifactStore) -> ValidatorResult:
+        doc = store.read(ArtifactId("documentation"))
+        satisfied = bool(doc and doc.content)
+        return ValidatorResult(
+            condition_id = self.condition_id,
+            satisfied    = satisfied,
+            observations = {"documentation_exists": satisfied},
+        )
+
+
+# ---------------------------------------------------------------------------
 # Convenience factory: one validator per (artifact_id, condition_id) pair
 # ---------------------------------------------------------------------------
 

@@ -5,7 +5,7 @@ from antcrew.engine import (
     CapabilityDescriptor, CapabilityResult, ConditionId,
 )
 from .base import BaseExecutor
-from ._utils import parse_json
+from ._utils import head as _head, parse_json
 
 _SYSTEM = """\
 You are a senior software engineer conducting a code review.
@@ -56,7 +56,6 @@ class CodeReviewer(BaseExecutor):
             ConditionId("tests_pass"),
         ]),
         produces    = frozenset([ConditionId("code_reviewed")]),
-        consumes    = frozenset(),
         emits       = frozenset(["report"]),
         cost        = 2.0,
     )
@@ -70,7 +69,7 @@ class CodeReviewer(BaseExecutor):
             return CapabilityResult(errors=["no source artifacts to review"])
 
         files_text = "\n\n".join(
-            f"--- {s.metadata.get('file_path', s.id)} ---\n{s.content}"
+            f"--- {s.metadata.get('file_path', s.id)} ---\n{_head(s.content, 300)}"
             for s in sources
         )
         arch_text = arch.content if arch else "No architecture document available."
@@ -86,7 +85,7 @@ class CodeReviewer(BaseExecutor):
             f"{test_text}"
         )
 
-        raw    = self._call(_SYSTEM, user)
+        raw    = self._call_json(_SYSTEM, user)
         review = _safe_parse_review(raw)
 
         artifact = Artifact(

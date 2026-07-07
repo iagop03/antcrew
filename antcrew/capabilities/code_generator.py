@@ -7,39 +7,29 @@ from antcrew.engine import (
     CapabilityDescriptor, CapabilityResult, ConditionId,
 )
 from .base import BaseExecutor
-from ._utils import parse_json
+from ._utils import parse_json, head as _head
 
-_PLAN_SYSTEM = """\
-You are a senior software developer.
-Given a development task and the project architecture, list ALL files you need
-to create or modify to complete this task — no content yet.
+_SYSTEM = """\
+You are a senior software developer implementing a development task.
+Given a task specification, project architecture, and any already-implemented files,
+produce ALL files needed to complete this task in a SINGLE response.
 
-Output ONLY a valid JSON array:
-[
-  {"file_path": "src/models.py", "description": "SQLModel entity classes"},
-  ...
-]
-
-Rules:
-- List ONLY files strictly required for this task
-- Paths relative to the project root
-- No test files
-"""
-
-_FILE_SYSTEM = """\
-You are a senior software developer.
-Generate the COMPLETE content for exactly ONE file.
-
-Output ONLY a valid JSON object:
+Output ONLY valid JSON — no markdown fences, no prose:
 {
-  "file_path": "src/models.py",
-  "content": "...complete file content..."
+  "files": [
+    {
+      "file_path": "src/models.py",
+      "content": "...complete file content..."
+    }
+  ]
 }
 
 Rules:
-- Full implementation — no TODOs, no placeholders
-- Clean, idiomatic, production-quality code
-- Respect the tech stack from the architecture
+- Output COMPLETE file contents — no TODOs, no placeholders, never truncate
+- Clean, idiomatic, production-quality code matching the tech stack in the architecture
+- Include ONLY files strictly required for this task (no test files, no docs)
+- Use import paths consistent with existing source files (see 'Existing source files' below)
+- If the task has no files to create, return {"files": []}
 """
 
 
@@ -52,7 +42,6 @@ class CodeGenerator(BaseExecutor):
             ConditionId("architecture_exists"),
         ]),
         produces    = frozenset([ConditionId("implementation_exists")]),
-        consumes    = frozenset([ArtifactId("task_graph"), ArtifactId("architecture")]),
         emits       = frozenset(["source"]),
         cost        = 2.0,
     )
@@ -73,31 +62,43 @@ class CodeGenerator(BaseExecutor):
         arch      = store.read(ArtifactId("architecture"))
         arch_text = arch.content if arch else ""
 
-        context = (
-            f"Task:\n{json.dumps(task, indent=2)}\n\n"
+        # Include already-implemented files so the LLM uses correct import paths.
+        # Truncated to first 60 lines each — enough for imports and public API signatures
+        # without sending entire implementations and blowing up the context window.
+        existing_sources = store.list(ArtifactKind.SOURCE)
+        existing_block = ""
+        if existing_sources:
+            existing_block = "\n\nExisting source files (first 60 lines — mirror import style):\n"
+            existing_block += "\n\n".join(
+                f"--- {art.metadata.get('file_path', str(art.id))} ---\n{_head(art.content)}"
+                for art in existing_sources
+            )
+
+        user = (
+            f"Goal: {goal.description}\n\n"
             f"Architecture:\n{arch_text}\n\n"
-            f"Goal: {goal.description}"
+            f"Task to implement:\n{json.dumps(task, indent=2)}"
+            + existing_block
         )
 
-        # Phase 1 — plan: list files to create
-        raw_plan  = self._call(_PLAN_SYSTEM, context)
-        file_specs = _safe_parse_list(raw_plan)
+        raw      = self._call_json(_SYSTEM, user)
+        parsed   = _safe_parse_response(raw)
+        file_specs = parsed.get("files", []) if isinstance(parsed, dict) else []
 
-        # Phase 2 — generate each file
         created: list[Artifact] = []
         for spec in file_specs:
-            file_ctx = f"{context}\n\nFile to generate:\n{json.dumps(spec, indent=2)}"
-            raw_file = self._call(_FILE_SYSTEM, file_ctx)
-            file_data = _safe_parse_obj(raw_file)
-            if file_data.get("content") and file_data.get("file_path"):
-                created.append(Artifact(
-                    id      = ArtifactId(f"src/{file_data['file_path']}"),
-                    kind    = ArtifactKind.SOURCE,
-                    content = file_data["content"],
-                    metadata= {"file_path": file_data["file_path"], "task_id": task["id"]},
-                ))
+            fp      = spec.get("file_path", "")
+            content = spec.get("content", "")
+            if not fp or not content:
+                continue
+            created.append(Artifact(
+                id       = ArtifactId(f"src/{fp}"),
+                kind     = ArtifactKind.SOURCE,
+                content  = content,
+                metadata = {"file_path": fp, "task_id": task["id"]},
+            ))
 
-        # Update task status → done
+        # Mark task done
         for t in tasks:
             if t["id"] == task["id"]:
                 t["status"] = "done"
@@ -126,21 +127,15 @@ def _next_pending(tasks: list[dict]) -> dict | None:
     return None
 
 
-def _safe_parse_list(raw: str) -> list[dict]:
-    try:
-        result = parse_json(raw)
-        return result if isinstance(result, list) else []
-    except Exception:
-        return []
-
-
-def _safe_parse_obj(raw: str) -> dict:
+def _safe_parse_response(raw: str) -> dict:
     try:
         result = parse_json(raw)
         if isinstance(result, dict):
             return result
-        if isinstance(result, list) and result:
-            return result[0]
+        if isinstance(result, list):
+            return {"files": result}
         return {}
     except Exception:
         return {}
+
+

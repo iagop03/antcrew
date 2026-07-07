@@ -12,3 +12,12 @@ def parse_json(raw: str) -> Any:
     raw = re.sub(r"^```(?:json)?\s*\n?", "", raw)
     raw = re.sub(r"\n?```\s*$", "", raw)
     return json.loads(raw.strip())
+
+
+def head(content: object, max_lines: int = 60) -> str:
+    """Return up to max_lines of a source file — imports + top-level signatures."""
+    text  = content if isinstance(content, str) else ""
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text
+    return "\n".join(lines[:max_lines]) + f"\n# ... ({len(lines) - max_lines} more lines)"
