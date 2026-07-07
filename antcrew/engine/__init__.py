@@ -50,6 +50,7 @@ from .selector import (
 from .state import ProjectState
 from .store import ArtifactStore, MemoryStore, FilesystemStore
 from .validator import Validator, ValidatorResult
+from .bus_bridge import EventBusBridge
 
 __all__ = [
     # artifact
@@ -75,4 +76,6 @@ __all__ = [
     "Operator", "OperatorError",
     # selector
     "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
+    # platform bridge
+    "EventBusBridge",
 ]

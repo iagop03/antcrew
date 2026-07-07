@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from .artifact import ArtifactDelta, ArtifactId, EMPTY_DELTA
+from .artifact import ArtifactDelta, EMPTY_DELTA
 from .goal import ConditionId
 
 if TYPE_CHECKING:
@@ -37,7 +37,6 @@ class CapabilityDescriptor:
     description: str
     needs:       frozenset[ConditionId]  # conditions that must be satisfied to run
     produces:    frozenset[ConditionId]  # conditions this capability can satisfy
-    consumes:    frozenset[ArtifactId]   # artifact ids read (for dependency tracking)
     emits:       frozenset[str]          # artifact kinds written (e.g. "source", "test")
     cost:        float = 1.0             # relative cost for operator prioritization
     tags:        frozenset[str] = field(default_factory=frozenset)
@@ -53,6 +52,7 @@ class CapabilityResult:
     warnings:       list[str]            = field(default_factory=list)
     errors:         list[str]            = field(default_factory=list)
     execution_time: float                = 0.0
+    cost_usd:       float                = 0.0  # LLM cost for this capability run
 
     @property
     def succeeded(self) -> bool:

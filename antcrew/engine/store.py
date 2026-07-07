@@ -26,6 +26,7 @@ class ArtifactStore(Protocol):
     def list(self, kind: ArtifactKind | None = None) -> list[Artifact]: ...
     def has(self, id: ArtifactId) -> bool: ...
     def apply(self, delta: ArtifactDelta) -> None: ...
+    def filesystem_path(self) -> "Path | None": ...
 
 
 class MemoryStore:
@@ -62,6 +63,9 @@ class MemoryStore:
             if old_id in self._data:
                 old = self._data.pop(old_id)
                 self._data[new_id] = dataclasses.replace(old, id=new_id)
+
+    def filesystem_path(self) -> Path | None:
+        return None
 
     def __len__(self) -> int:
         return len(self._data)
@@ -101,20 +105,29 @@ class FilesystemStore:
         self._manifest_path = self._root / _MANIFEST_REL
         self._root.mkdir(parents=True, exist_ok=True)
         self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        self._manifest_cache: dict[str, dict[str, Any]] | None = None  # write-through cache
+        self._content_cache:  dict[str, Artifact] = {}                 # read-through content cache
 
     # ------------------------------------------------------------------
     # Manifest helpers
     # ------------------------------------------------------------------
 
     def _load_manifest(self) -> dict[str, dict[str, Any]]:
+        if self._manifest_cache is not None:
+            return self._manifest_cache
         if not self._manifest_path.exists():
-            return {}
-        try:
-            return json.loads(self._manifest_path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+            self._manifest_cache = {}
+        else:
+            try:
+                self._manifest_cache = json.loads(
+                    self._manifest_path.read_text(encoding="utf-8")
+                )
+            except Exception:
+                self._manifest_cache = {}
+        return self._manifest_cache
 
     def _save_manifest(self, manifest: dict[str, dict[str, Any]]) -> None:
+        self._manifest_cache = manifest
         self._manifest_path.write_text(
             json.dumps(manifest, indent=2, default=str), encoding="utf-8"
         )
@@ -128,11 +141,14 @@ class FilesystemStore:
     # ------------------------------------------------------------------
 
     def read(self, id: ArtifactId) -> Artifact | None:
+        key = str(id)
+        if key in self._content_cache:
+            return self._content_cache[key]
         manifest = self._load_manifest()
-        entry = manifest.get(str(id))
+        entry = manifest.get(key)
         if entry is None:
             return None
-        path = self._file_path(str(id), entry)
+        path = self._file_path(key, entry)
         if not path.exists():
             return None
         raw = path.read_text(encoding="utf-8")
@@ -143,13 +159,15 @@ class FilesystemStore:
                 content = json.loads(raw)
             except Exception:
                 pass
-        return Artifact(
+        artifact = Artifact(
             id=id,
             kind=kind,
             content=content,
             location=path,
             metadata=entry.get("metadata", {}),
         )
+        self._content_cache[key] = artifact
+        return artifact
 
     def write(self, artifact: Artifact) -> None:
         manifest = self._load_manifest()
@@ -168,12 +186,15 @@ class FilesystemStore:
             "metadata":  dict(artifact.metadata),
         }
         self._save_manifest(manifest)
+        self._content_cache[str(artifact.id)] = dataclasses.replace(artifact, location=path)
 
     def delete(self, id: ArtifactId) -> None:
+        key = str(id)
+        self._content_cache.pop(key, None)
         manifest = self._load_manifest()
-        entry = manifest.pop(str(id), None)
+        entry = manifest.pop(key, None)
         if entry:
-            path = self._file_path(str(id), entry)
+            path = self._file_path(key, entry)
             if path.exists():
                 path.unlink(missing_ok=True)
             self._save_manifest(manifest)
@@ -204,6 +225,14 @@ class FilesystemStore:
             if old is not None:
                 self.write(dataclasses.replace(old, id=new_id, location=None))
             self.delete(old_id)
+
+    def filesystem_path(self) -> Path:
+        return self._root
+
+    @property
+    def root(self) -> Path:
+        """Alias kept for backwards compatibility. Prefer filesystem_path()."""
+        return self._root
 
     def __len__(self) -> int:
         return len(self._load_manifest())

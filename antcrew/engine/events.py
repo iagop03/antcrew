@@ -77,9 +77,10 @@ class EngineStarted(Event):
 
 @dataclass(frozen=True)
 class EngineFinished(Event):
-    iterations: int  = 0
-    success:    bool = False
-    kind:       str  = "engine_finished"
+    iterations:     int   = 0
+    success:        bool  = False
+    total_cost_usd: float = 0.0
+    kind:           str   = "engine_finished"
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,28 @@ class EngineError(Event):
     error_kind: str = ""
     message:    str = ""
     kind:       str = "engine_error"
+
+
+@dataclass(frozen=True)
+class CapabilityProgress(Event):
+    """Emitted for each streaming token chunk from an LLM-backed capability."""
+    capability_name: str = ""
+    chunk:           str = ""
+    kind:            str = "capability_progress"
+
+
+@dataclass(frozen=True)
+class HitlRequested(Event):
+    review_id:           str = ""
+    reviewed_capability: str = ""
+    kind:                str = "hitl_requested"
+
+
+@dataclass(frozen=True)
+class HitlResolved(Event):
+    review_id: str = ""
+    verdict:   str = ""
+    kind:      str = "hitl_resolved"
 
 
 Handler = Callable[[Event], None]
@@ -100,7 +123,10 @@ class EventLog:
         self._handlers: list[Handler] = []
 
     def emit(self, event: Event) -> None:
-        self._events.append(event)
+        # CapabilityProgress events are fire-and-forget: dispatched to subscribers
+        # but never stored in _events (prevents unbounded memory growth from streaming).
+        if event.kind != "capability_progress":
+            self._events.append(event)
         for handler in self._handlers:
             handler(event)
 
