@@ -73,7 +73,10 @@ class TestToTestPath:
         assert _to_test_path("src/models.py") == "tests/test_models.py"
 
     def test_nested_path(self):
-        assert _to_test_path("src/api/routes.py") == "tests/test_routes.py"
+        # Sub-directory structure is preserved to avoid name collisions
+        # (src/api/routes.py and src/auth/routes.py must produce different test paths)
+        result = _to_test_path("src/api/routes.py")
+        assert result.replace("\\", "/") == "tests/api/test_routes.py"
 
     def test_root_file(self):
         assert _to_test_path("main.py") == "tests/test_main.py"

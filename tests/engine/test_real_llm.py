@@ -156,7 +156,10 @@ class TestCapabilitySelectors:
 
     def test_most_productive_runs(self, llm):
         order = self._run_and_get_order(llm, MostProductive())
-        assert set(order) == {"spec_extractor", "architect", "task_planner"}
+        # Architect now produces 2 conditions (requirements_exists + architecture_exists),
+        # so MostProductive may skip SpecExtractor entirely — both core caps must run.
+        assert "architect" in order
+        assert "task_planner" in order
 
     def test_priority_selector_respects_priorities(self, llm):
         """PrioritySelector dispatches highest-priority executor when multiple candidates exist."""
@@ -277,7 +280,6 @@ class TestTeamExecutorIntegration:
             description="Fake team stub.",
             needs=frozenset(),
             produces=frozenset([ConditionId("requirements_exists")]),
-            consumes=frozenset(),
             emits=frozenset(),
             cost=1.0,
         )
@@ -305,7 +307,7 @@ class TestTeamExecutorIntegration:
 
         descriptor = CapabilityDescriptor(
             name="fake", description="x", needs=frozenset(),
-            produces=frozenset(), consumes=frozenset(), emits=frozenset(), cost=0.0,
+            produces=frozenset(), emits=frozenset(), cost=0.0,
         )
         store  = MemoryStore()
         goal   = Goal(description="test", desired_state=DesiredProjectState(frozenset()))

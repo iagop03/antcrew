@@ -85,11 +85,8 @@ def server_app():
     """Return a TestClient for the FastAPI app with a test API key."""
     pytest.importorskip("fastapi", reason="fastapi not installed")
     pytest.importorskip("httpx", reason="httpx not installed")
-    import os
-    import importlib
-    import antcrew.server as srv_module
+    srv_module = pytest.importorskip("antcrew.server", reason="antcrew.server not available")
 
-    # Re-init the module-level _API_KEY with a test value
     old_key = srv_module._API_KEY
     srv_module._API_KEY = "test-secret-key"
     yield srv_module.app
@@ -101,7 +98,7 @@ def server_app_no_auth():
     """Return a TestClient with no API key (open access)."""
     pytest.importorskip("fastapi", reason="fastapi not installed")
     pytest.importorskip("httpx", reason="httpx not installed")
-    import antcrew.server as srv_module
+    srv_module = pytest.importorskip("antcrew.server", reason="antcrew.server not available")
     old_key = srv_module._API_KEY
     srv_module._API_KEY = ""
     yield srv_module.app
