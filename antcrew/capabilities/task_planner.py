@@ -7,7 +7,7 @@ from antcrew.engine import (
 from .base import BaseExecutor
 from ._utils import parse_json
 
-_SYSTEM = """\
+_SYSTEM_TEMPLATE = """\
 You are a software project manager.
 Given a technical architecture document, decompose the implementation into
 a prioritized list of development tasks.
@@ -15,13 +15,13 @@ a prioritized list of development tasks.
 Output ONLY a valid JSON array — no markdown fences, no prose.
 
 Each task object must have exactly these fields:
-{
+{{
   "id": "task_001",
   "title": "short title (max 60 chars)",
   "description": "one paragraph — concrete and actionable",
   "files": ["src/path/file.py"],
   "depends_on": []
-}
+}}
 
 Rules:
 - id: zero-padded 3-digit sequential number ("task_001", "task_002", ...)
@@ -29,7 +29,7 @@ Rules:
 - Each task is one logical unit: one module, one endpoint group, one model
 - Include a setup task (pyproject.toml, config) first if relevant
 - No test tasks — tests are handled separately
-- Maximum 12 tasks total
+- Maximum {max_tasks} tasks total
 """
 
 _ARCHITECTURE_MISSING = "No architecture document available."
@@ -45,6 +45,10 @@ class TaskPlanner(BaseExecutor):
         cost        = 1.0,
     )
 
+    def __init__(self, *args, max_tasks: int = 12, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._max_tasks = max_tasks
+
     def _run(self, store, goal) -> CapabilityResult:
         arch = store.read(ArtifactId("architecture"))
         architecture_text = arch.content if arch else _ARCHITECTURE_MISSING
@@ -53,7 +57,8 @@ class TaskPlanner(BaseExecutor):
         if goal.constraints.tech_stack:
             user += f"\n\nTech stack: {', '.join(goal.constraints.tech_stack)}"
 
-        raw    = self._call_json(_SYSTEM, user)
+        system = _SYSTEM_TEMPLATE.format(max_tasks=self._max_tasks)
+        raw    = self._call_json(system, user)
         tasks  = _safe_parse_tasks(raw)
 
         content = {"tasks": [dict(t, status="pending") for t in tasks]}

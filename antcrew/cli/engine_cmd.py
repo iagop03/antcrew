@@ -75,6 +75,7 @@ def _build_registry(
     llm,
     *,
     capability_models: "dict[str, str] | None" = None,
+    max_tasks: int = 12,
 ) -> CapabilityRegistry:
     """Build the capability registry.
 
@@ -104,7 +105,7 @@ def _build_registry(
 
     registry = CapabilityRegistry()
     registry.register(Architect(llm=_llm("architect")))
-    registry.register(TaskPlanner(llm=_llm("task_planner")))
+    registry.register(TaskPlanner(llm=_llm("task_planner"), max_tasks=max_tasks))
     registry.register(CodeGenerator(llm=_llm("code_generator")))
     registry.register(DependencyInstaller(llm=_llm("dependency_installer")))
     registry.register(TestGenerator(llm=_llm("test_generator")))
@@ -414,6 +415,8 @@ def engine_cmd(
                                             help="Max HITL rejections before the engine gives up."),
     max_cost: Optional[float] = typer.Option(None, "--max-cost",
                                              help="Hard USD budget limit. Engine stops if exceeded."),
+    max_tasks: int = typer.Option(12, "--max-tasks",
+                                  help="Max tasks TaskPlanner may generate (default 12)."),
 ) -> None:
     """Run the capability-driven engine to build a software project from a goal.
 
@@ -460,7 +463,7 @@ def engine_cmd(
     goal       = _build_goal(goal_description, tuple(tech), condition, full)
     store      = FilesystemStore(output) if output is not None else MemoryStore()
     log        = EventLog()
-    registry   = _build_registry(llm, capability_models=capability_models)
+    registry   = _build_registry(llm, capability_models=capability_models, max_tasks=max_tasks)
     validators = _build_validators()
 
     # Task mode: seed store from existing codebase
