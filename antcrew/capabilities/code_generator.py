@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import json
+import concurrent.futures as _cf
 
 from antcrew.engine import (
     Artifact, ArtifactDelta, ArtifactId, ArtifactKind,
@@ -32,11 +34,13 @@ Rules:
 - If the task has no files to create, return {"files": []}
 """
 
+_MAX_PARALLEL = 5
+
 
 class CodeGenerator(BaseExecutor):
     descriptor = CapabilityDescriptor(
         name        = "code_generator",
-        description = "Implements the next pending task from the task graph.",
+        description = "Implements all pending tasks from the task graph (parallel when multiple are ready).",
         needs       = frozenset([
             ConditionId("task_graph_exists"),
             ConditionId("architecture_exists"),
@@ -47,24 +51,28 @@ class CodeGenerator(BaseExecutor):
     )
 
     def _run(self, store, goal) -> CapabilityResult:
-        import copy
         tg_artifact = store.read(ArtifactId("task_graph"))
         if not tg_artifact:
             return CapabilityResult(errors=["task_graph artifact not found"])
 
         task_graph = dict(tg_artifact.content)
         tasks      = copy.deepcopy(task_graph.get("tasks", []))
-        task       = _next_pending(tasks)
 
-        if task is None:
+        done_ids = {t["id"] for t in tasks if t.get("status") == "done"}
+        pending  = [
+            t for t in tasks
+            if t.get("status") == "pending"
+            and all(dep in done_ids for dep in t.get("depends_on", []))
+        ]
+
+        if not pending:
             return CapabilityResult(errors=["no pending tasks in task_graph"])
 
         arch      = store.read(ArtifactId("architecture"))
         arch_text = arch.content if arch else ""
 
         # Include already-implemented files so the LLM uses correct import paths.
-        # Truncated to first 60 lines each — enough for imports and public API signatures
-        # without sending entire implementations and blowing up the context window.
+        # Truncated to first 60 lines each — enough for imports and public API signatures.
         existing_sources = store.list(ArtifactKind.SOURCE)
         existing_block = ""
         if existing_sources:
@@ -74,41 +82,22 @@ class CodeGenerator(BaseExecutor):
                 for art in existing_sources
             )
 
-        user = (
-            f"Goal: {goal.description}\n\n"
-            f"Architecture:\n{arch_text}\n\n"
-            f"Task to implement:\n{json.dumps(task, indent=2)}"
-            + existing_block
-        )
+        if len(pending) == 1:
+            created, completed_ids = self._implement_tasks(pending, arch_text, existing_block, goal)
+        else:
+            created, completed_ids = self._implement_tasks_parallel(
+                pending, arch_text, existing_block, goal
+            )
 
-        raw      = self._call_json(_SYSTEM, user)
-        parsed   = _safe_parse_response(raw)
-        file_specs = parsed.get("files", []) if isinstance(parsed, dict) else []
-
-        created: list[Artifact] = []
-        for spec in file_specs:
-            fp      = spec.get("file_path", "")
-            content = spec.get("content", "")
-            if not fp or not content:
-                continue
-            created.append(Artifact(
-                id       = ArtifactId(f"src/{fp}"),
-                kind     = ArtifactKind.SOURCE,
-                content  = content,
-                metadata = {"file_path": fp, "task_id": task["id"]},
-            ))
-
-        # Mark task done
         for t in tasks:
-            if t["id"] == task["id"]:
+            if t["id"] in completed_ids:
                 t["status"] = "done"
-                break
+
         updated_tg = Artifact(
             id      = ArtifactId("task_graph"),
             kind    = ArtifactKind.TASK_GRAPH,
             content = {"tasks": tasks},
         )
-
         return CapabilityResult(
             delta=ArtifactDelta(
                 created  = tuple(created),
@@ -116,15 +105,68 @@ class CodeGenerator(BaseExecutor):
             )
         )
 
+    def _implement_task(self, task: dict, arch_text: str, existing_block: str, goal) -> tuple[list[Artifact], str | None]:
+        """Call LLM to implement a single task. Returns (artifacts, task_id) on success."""
+        user = (
+            f"Goal: {goal.description}\n\n"
+            f"Architecture:\n{arch_text}\n\n"
+            f"Task to implement:\n{json.dumps(task, indent=2)}"
+            + existing_block
+        )
+        try:
+            raw        = self._call_json(_SYSTEM, user)
+            parsed     = _safe_parse_response(raw)
+            file_specs = parsed.get("files", []) if isinstance(parsed, dict) else []
+            artifacts  = [
+                Artifact(
+                    id       = ArtifactId(f"src/{spec['file_path']}"),
+                    kind     = ArtifactKind.SOURCE,
+                    content  = spec.get("content", ""),
+                    metadata = {"file_path": spec["file_path"], "task_id": task["id"]},
+                )
+                for spec in file_specs
+                if spec.get("file_path") and spec.get("content")
+            ]
+            return artifacts, task["id"]
+        except Exception:
+            return [], None
 
-def _next_pending(tasks: list[dict]) -> dict | None:
-    done_ids = {t["id"] for t in tasks if t.get("status") == "done"}
-    for task in tasks:
-        if task.get("status") != "pending":
-            continue
-        if all(dep in done_ids for dep in task.get("depends_on", [])):
-            return task
-    return None
+    def _implement_tasks(
+        self,
+        pending: list[dict],
+        arch_text: str,
+        existing_block: str,
+        goal,
+    ) -> tuple[list[Artifact], set[str]]:
+        """Serial implementation — used when only one task is ready."""
+        arts, tid = self._implement_task(pending[0], arch_text, existing_block, goal)
+        return arts, {tid} if tid else set()
+
+    def _implement_tasks_parallel(
+        self,
+        pending: list[dict],
+        arch_text: str,
+        existing_block: str,
+        goal,
+    ) -> tuple[list[Artifact], set[str]]:
+        """Parallel implementation — runs all ready tasks concurrently.
+
+        Each worker gets a shallow copy of this executor so that per-token
+        streaming state (on_token callback) is not shared across threads.
+        Streaming is disabled for workers to avoid LLM instance contention.
+        """
+        def _worker(task: dict) -> tuple[list[Artifact], str | None]:
+            worker = copy.copy(self)
+            worker._event_log = None  # disable streaming in worker threads
+            return worker._implement_task(task, arch_text, existing_block, goal)
+
+        workers = min(len(pending), _MAX_PARALLEL)
+        with _cf.ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(_worker, pending))
+
+        all_artifacts = [art for arts, _ in results for art in arts]
+        completed_ids = {tid for _, tid in results if tid}
+        return all_artifacts, completed_ids
 
 
 def _safe_parse_response(raw: str) -> dict:
@@ -137,5 +179,3 @@ def _safe_parse_response(raw: str) -> dict:
         return {}
     except Exception:
         return {}
-
-
