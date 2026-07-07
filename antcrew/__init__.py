@@ -278,4 +278,4 @@ __all__ = [
     "classify_task",
     "MinimalPipeline",
 ]
-__version__ = "0.28.0"
+__version__ = "0.30.0"

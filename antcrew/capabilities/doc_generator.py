@@ -32,8 +32,11 @@ Rules:
 class DocGenerator(BaseExecutor):
     descriptor = CapabilityDescriptor(
         name        = "doc_generator",
-        description = "Generates README.md documentation from source files and architecture.",
-        needs       = frozenset([ConditionId("implementation_exists")]),
+        description = "Generates README.md documentation from reviewed source files.",
+        needs       = frozenset([
+            ConditionId("implementation_exists"),
+            ConditionId("code_reviewed"),
+        ]),
         produces    = frozenset([ConditionId("documentation_exists")]),
         emits       = frozenset(["documentation"]),
         cost        = 1.5,
