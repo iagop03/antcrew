@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 from enum import Enum
 from typing import Generic, Literal, Optional, TypeVar
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -84,7 +84,7 @@ Severity = Literal["info", "warning", "error", "critical"]
 
 class ReviewFinding(BaseModel):
     severity: Severity = "warning"
-    file_path: str
+    file_path: str = ""
     message: str
     suggestion: Optional[str] = None
     line: Optional[int] = None
@@ -94,6 +94,15 @@ class CodeReview(BaseModel):
     verdict: Literal["approve", "request_changes", "reject"] = "approve"
     summary: str
     findings: list[ReviewFinding] = Field(default_factory=list)
+
+    @field_validator("verdict", mode="before")
+    @classmethod
+    def _normalise_verdict(cls, v: object) -> object:
+        _MAP = {"approved": "approve", "rejected": "reject", "reject": "reject",
+                "needs_changes": "request_changes", "request_change": "request_changes"}
+        if isinstance(v, str):
+            return _MAP.get(v.lower().strip(), v)
+        return v
 
 
 # ── Research artifacts ────────────────────────────────────────────────────────

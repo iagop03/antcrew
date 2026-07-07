@@ -93,7 +93,9 @@ from antcrew.engine import (
     EventLog,
     Operator, OperatorError,
     CapabilitySelector, CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
+    EventBusBridge,
 )
+from antcrew.capabilities import BugFixer, CodeRegenerator, DependencyInstaller, DocGenerator, HitlReviewer, ReviewFixer
 
 __all__ = [
     # Teams
@@ -246,6 +248,12 @@ __all__ = [
     # Testing
     "SequencedLLM",
     # Engine
+    "BugFixer",
+    "CodeRegenerator",
+    "DependencyInstaller",
+    "DocGenerator",
+    "HitlReviewer",
+    "ReviewFixer",
     "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
     "ArtifactStore", "MemoryStore", "FilesystemStore",
     "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
@@ -256,6 +264,7 @@ __all__ = [
     "EventLog",
     "Operator", "OperatorError",
     "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
+    "EventBusBridge",
     # Events
     "bus",
     "Event",
@@ -269,4 +278,4 @@ __all__ = [
     "classify_task",
     "MinimalPipeline",
 ]
-__version__ = "0.15.0"
+__version__ = "0.28.0"
