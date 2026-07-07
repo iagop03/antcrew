@@ -41,7 +41,6 @@ class TaskPlanner(BaseExecutor):
         description = "Decomposes architecture into an ordered task graph.",
         needs       = frozenset([ConditionId("architecture_exists")]),
         produces    = frozenset([ConditionId("task_graph_exists")]),
-        consumes    = frozenset([ArtifactId("architecture")]),
         emits       = frozenset(["task_graph"]),
         cost        = 1.0,
     )
@@ -54,7 +53,7 @@ class TaskPlanner(BaseExecutor):
         if goal.constraints.tech_stack:
             user += f"\n\nTech stack: {', '.join(goal.constraints.tech_stack)}"
 
-        raw    = self._call(_SYSTEM, user)
+        raw    = self._call_json(_SYSTEM, user)
         tasks  = _safe_parse_tasks(raw)
 
         content = {"tasks": [dict(t, status="pending") for t in tasks]}
