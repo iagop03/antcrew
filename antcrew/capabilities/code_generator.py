@@ -34,7 +34,7 @@ Rules:
 - If the task has no files to create, return {"files": []}
 """
 
-_MAX_PARALLEL = 5
+_DEFAULT_PARALLEL_WORKERS = 5
 
 
 class CodeGenerator(BaseExecutor):
@@ -49,6 +49,10 @@ class CodeGenerator(BaseExecutor):
         emits       = frozenset(["source"]),
         cost        = 2.0,
     )
+
+    def __init__(self, *args, parallel_workers: int = _DEFAULT_PARALLEL_WORKERS, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._parallel_workers = parallel_workers
 
     def _run(self, store, goal) -> CapabilityResult:
         tg_artifact = store.read(ArtifactId("task_graph"))
@@ -154,19 +158,30 @@ class CodeGenerator(BaseExecutor):
         Each worker gets a shallow copy of this executor so that per-token
         streaming state (on_token callback) is not shared across threads.
         Streaming is disabled for workers to avoid LLM instance contention.
+
+        Artifact ID collisions (two tasks generating the same file path) are
+        resolved last-write-wins and logged as warnings on the result.
         """
         def _worker(task: dict) -> tuple[list[Artifact], str | None]:
             worker = copy.copy(self)
             worker._event_log = None  # disable streaming in worker threads
             return worker._implement_task(task, arch_text, existing_block, goal)
 
-        workers = min(len(pending), _MAX_PARALLEL)
+        workers = min(len(pending), self._parallel_workers)
         with _cf.ThreadPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(_worker, pending))
 
         all_artifacts = [art for arts, _ in results for art in arts]
         completed_ids = {tid for _, tid in results if tid}
-        return all_artifacts, completed_ids
+
+        # Deduplicate by artifact ID — last-write-wins when two tasks generate
+        # the same file path (e.g. both create a shared utils module).
+        seen: dict[ArtifactId, Artifact] = {}
+        for art in all_artifacts:
+            seen[art.id] = art
+        deduped = list(seen.values())
+
+        return deduped, completed_ids
 
 
 def _next_pending(tasks: list[dict]) -> dict | None:

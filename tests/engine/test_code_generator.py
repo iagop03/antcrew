@@ -10,6 +10,7 @@ from antcrew.engine import (
 from antcrew.capabilities.code_generator import CodeGenerator, _next_pending
 from antcrew.capabilities.validators import AllTasksCompletedValidator
 from antcrew.models.simulated import SimulatedLLM
+from antcrew.testing import SequencedLLM
 
 
 # ---------------------------------------------------------------------------
@@ -157,3 +158,85 @@ class TestCodeGeneratorMultipleRuns:
 
         r2 = gen.execute(store, goal); store.apply(r2.delta)
         assert v.validate(store).satisfied
+
+
+# ---------------------------------------------------------------------------
+# Parallel: two independent tasks dispatched in a single _run call
+# ---------------------------------------------------------------------------
+
+_TWO_INDEPENDENT = [
+    {"id": "t1", "title": "A", "description": "Impl A",
+     "files": ["src/a.py"], "depends_on": [], "status": "pending"},
+    {"id": "t2", "title": "B", "description": "Impl B",
+     "files": ["src/b.py"], "depends_on": [], "status": "pending"},
+]
+
+
+class TestCodeGeneratorParallel:
+    def test_two_independent_tasks_both_marked_done(self, goal):
+        store = _make_store(_TWO_INDEPENDENT)
+        llm   = SequencedLLM([
+            json.dumps({"files": [{"file_path": "src/a.py", "content": "# a\n"}]}),
+            json.dumps({"files": [{"file_path": "src/b.py", "content": "# b\n"}]}),
+        ])
+        result = CodeGenerator(llm=llm).execute(store, goal)
+        assert result.succeeded
+        tg_tasks = result.delta.modified[0].content["tasks"]
+        assert all(t["status"] == "done" for t in tg_tasks)
+
+    def test_parallel_creates_two_source_artifacts(self, goal):
+        store = _make_store(_TWO_INDEPENDENT)
+        llm   = SequencedLLM([
+            json.dumps({"files": [{"file_path": "src/a.py", "content": "# a\n"}]}),
+            json.dumps({"files": [{"file_path": "src/b.py", "content": "# b\n"}]}),
+        ])
+        result  = CodeGenerator(llm=llm).execute(store, goal)
+        sources = [a for a in result.delta.created if a.kind == ArtifactKind.SOURCE]
+        assert len(sources) == 2
+
+    def test_parallel_uses_two_llm_calls(self, goal):
+        store = _make_store(_TWO_INDEPENDENT)
+        llm   = SequencedLLM([
+            json.dumps({"files": [{"file_path": "src/a.py", "content": "# a\n"}]}),
+            json.dumps({"files": [{"file_path": "src/b.py", "content": "# b\n"}]}),
+        ])
+        CodeGenerator(llm=llm).execute(store, goal)
+        assert llm.call_count == 2
+
+    def test_artifact_id_collision_deduped_last_wins(self, goal):
+        """When two parallel workers generate the same file path, last-write-wins."""
+        store = _make_store(_TWO_INDEPENDENT)
+        llm   = SequencedLLM([
+            json.dumps({"files": [{"file_path": "src/utils.py", "content": "# v1\n"}]}),
+            json.dumps({"files": [{"file_path": "src/utils.py", "content": "# v2\n"}]}),
+        ])
+        result    = CodeGenerator(llm=llm).execute(store, goal)
+        utils_arts = [a for a in result.delta.created if "utils.py" in str(a.id)]
+        assert len(utils_arts) == 1  # deduplicated
+
+    def test_dependent_task_not_dispatched_in_parallel(self, goal):
+        """task_002 depends on task_001 — only task_001 should run in the first batch."""
+        store  = _make_store()  # TWO_TASKS: task_002 depends on task_001
+        llm    = SequencedLLM([
+            json.dumps({"files": [{"file_path": "src/models.py", "content": "# m\n"}]}),
+        ])
+        result = CodeGenerator(llm=llm).execute(store, goal)
+        assert result.succeeded
+        # Only 1 LLM call — task_002 was blocked by dependency
+        assert llm.call_count == 1
+        tg_tasks = result.delta.modified[0].content["tasks"]
+        assert tg_tasks[0]["status"] == "done"
+        assert tg_tasks[1]["status"] == "pending"
+
+    def test_parallel_workers_param_respected(self, goal):
+        """parallel_workers=1 forces serial execution even with 2 independent tasks."""
+        store = _make_store(_TWO_INDEPENDENT)
+        llm   = SequencedLLM([
+            json.dumps({"files": [{"file_path": "src/a.py", "content": "# a\n"}]}),
+            json.dumps({"files": [{"file_path": "src/b.py", "content": "# b\n"}]}),
+        ])
+        # parallel_workers=1 limits pool to 1 thread; both tasks still dispatched
+        # (pool.map with 1 worker runs them sequentially)
+        result = CodeGenerator(llm=llm, parallel_workers=1).execute(store, goal)
+        assert result.succeeded
+        assert llm.call_count == 2
