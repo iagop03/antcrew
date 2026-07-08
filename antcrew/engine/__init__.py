@@ -13,6 +13,7 @@ from antcrew_engine.engine import (
     ArtifactStore,
     MemoryStore,
     FilesystemStore,
+    MultiRepoStore,
     Condition,
     ConditionId,
     Constraints,
@@ -48,7 +49,7 @@ from antcrew_engine.engine import (
 
 __all__ = [
     "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
-    "ArtifactStore", "MemoryStore", "FilesystemStore",
+    "ArtifactStore", "MemoryStore", "FilesystemStore", "MultiRepoStore",
     "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
     "ProjectState",
     "CapabilityDescriptor", "CapabilityResult", "Executor",

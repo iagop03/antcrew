@@ -84,7 +84,7 @@ from antcrew.core.validation import validate_agent_dag
 from antcrew.testing import SequencedLLM
 from antcrew.engine import (
     Artifact, ArtifactId, ArtifactKind, ArtifactDelta, EMPTY_DELTA,
-    ArtifactStore, MemoryStore, FilesystemStore,
+    ArtifactStore, MemoryStore, FilesystemStore, MultiRepoStore,
     Condition, ConditionId, DesiredProjectState, Constraints, Goal,
     ProjectState,
     CapabilityDescriptor, CapabilityResult, Executor,
@@ -255,7 +255,7 @@ __all__ = [
     "HitlReviewer",
     "ReviewFixer",
     "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
-    "ArtifactStore", "MemoryStore", "FilesystemStore",
+    "ArtifactStore", "MemoryStore", "FilesystemStore", "MultiRepoStore",
     "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
     "ProjectState",
     "CapabilityDescriptor", "CapabilityResult", "Executor",
