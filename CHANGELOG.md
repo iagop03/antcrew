@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.32.0] — 2026-07-08 (engine)
+
+### Engine — Layer 2 extracted to `antcrew-engine`; arch_text system-prompt caching
+
+#### Layer separation
+
+- **New package `antcrew-engine`** (`antcrew_engine.*`) — engine/, capabilities/, models/,
+  testing/ and a standalone CLI (`antcrew-engine run / status`) extracted into their own
+  installable package with no LangGraph dependency.
+- **`antcrew.*` shims** — `antcrew.engine`, `antcrew.capabilities`, `antcrew.models` are now
+  one-line re-exports from `antcrew_engine`; all existing import paths continue to work.
+- **`antcrew.config.build_llm` delegates to `antcrew_engine.config.build_llm`** — antcrew no
+  longer duplicates the LLM factory logic.
+- **`EventBusBridge` DI** — accepts optional `on_event` callable; no runtime import of
+  `antcrew.core.events` unless the fallback path is needed (backward-compatible).
+- **`antcrew-platform` updated** — `engine_runner.py` imports directly from `antcrew_engine.*`
+  instead of going through antcrew shims; `pyproject.toml` declares `antcrew-engine>=0.1.0`.
+
+#### arch_text caching
+
+- **System-prompt injection** — every capability moves architecture text from the user message
+  into the system message (`## Project Architecture` section). Anthropic's `cache_control:
+  ephemeral` now caches the architecture document across parallel CodeGenerator workers and
+  BugFixer retries, eliminating redundant input token billing.
+- **Truncation for peripheral capabilities** — `doc_generator`, `dependency_installer`,
+  `review_fixer`, `test_generator` send only the first 100 lines of the architecture document;
+  core capabilities (`code_generator`, `bug_fixer`, `code_regenerator`, `code_reviewer`,
+  `task_planner`) receive the full document.
+
+---
+
 ## [0.31.0] — 2026-07-08 (engine)
 
 ### Engine — HITL gate, token optimisation, context truncation, per-capability model routing
