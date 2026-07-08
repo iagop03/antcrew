@@ -23,6 +23,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from enum import Enum, auto
+from typing import Callable
 
 from .artifact import ArtifactId
 from .capability import Executor, CapabilityResult
@@ -70,6 +71,7 @@ class Operator:
         total_limits:   dict[str, int] | None = None,
         stop_event:     threading.Event | None = None,
         max_cost_usd:   float | None = None,
+        pre_dispatch:   "Callable[[Executor, ArtifactStore], bool] | None" = None,
     ) -> None:
         self._registry       = registry
         self._validators     = validators
@@ -83,6 +85,7 @@ class Operator:
         self._total_cost_usd: float = 0.0
         self._stop_event     = stop_event
         self._max_cost_usd   = max_cost_usd
+        self._pre_dispatch   = pre_dispatch
 
     # ------------------------------------------------------------------
     # inspect — pure observation
@@ -266,6 +269,22 @@ class Operator:
                 capability_name=name,
                 gap=frozenset(gap),
             ))
+
+            # Pre-dispatch gate — caller can inspect the executor and store,
+            # then return False to abort the run cleanly (e.g. user prompt).
+            if self._pre_dispatch is not None and not self._pre_dispatch(executor, store):
+                err = OperatorError(
+                    OperatorError.Kind.CANCELLED,
+                    f"run cancelled before dispatching {name}",
+                )
+                self._log.emit(EngineError(error_kind="CANCELLED", message=str(err)))
+                self._log.emit(EngineFinished(
+                    iterations=iteration,
+                    success=False,
+                    total_cost_usd=round(self._total_cost_usd, 6),
+                ))
+                raise err
+
             # Inject event_log for streaming (BaseExecutor reads _event_log in _call())
             if hasattr(executor, "_event_log"):
                 executor._event_log = self._log

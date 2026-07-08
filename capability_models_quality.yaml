@@ -1,0 +1,28 @@
+# antcrew engine capability model routing — quality tier
+# Usage: antcrew engine "..." --config capability_models_quality.yaml
+# Maximum output quality: Opus for the hardest creative/reasoning tasks.
+#
+# Opus ($15/$75 per 1M) for code gen, review, and bug fixing.
+# Sonnet ($3/$15 per 1M) for planning and secondary tasks.
+# Haiku ($0.25/$1.25 per 1M) for cheap utility steps.
+capabilities:
+  architect:
+    model: claude-sonnet-4-6
+  task_planner:
+    model: claude-sonnet-4-6
+  dependency_installer:
+    model: claude-haiku-4-5-20251001
+  doc_generator:
+    model: claude-haiku-4-5-20251001
+  code_generator:
+    model: claude-opus-4-8
+  test_generator:
+    model: claude-sonnet-4-6
+  code_reviewer:
+    model: claude-opus-4-8
+  bug_fixer:
+    model: claude-opus-4-8
+  review_fixer:
+    model: claude-sonnet-4-6
+  code_regenerator:
+    model: claude-opus-4-8

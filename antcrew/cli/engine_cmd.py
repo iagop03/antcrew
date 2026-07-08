@@ -176,6 +176,64 @@ def _load_existing_codebase(store, source_dir: Path, goal_description: str) -> i
     return loaded
 
 
+def _edit_content(content, console) -> "dict | str | None":
+    """Open content in $EDITOR (or notepad on Windows). Returns parsed result or None on error."""
+    import os
+    import sys
+    import json as _json
+    import subprocess
+    import tempfile
+
+    is_dict = isinstance(content, dict)
+    text = _json.dumps(content, indent=2) if is_dict else str(content)
+    editor = os.environ.get("EDITOR", "notepad" if sys.platform == "win32" else "nano")
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(text)
+        tmp_path = f.name
+
+    try:
+        subprocess.run([editor, tmp_path], check=True)
+        edited = Path(tmp_path).read_text(encoding="utf-8")
+        return _json.loads(edited) if is_dict else edited
+    except Exception as exc:
+        console.print(f"[red]Edit failed:[/] {exc}")
+        return None
+    finally:
+        try:
+            Path(tmp_path).unlink()
+        except OSError:
+            pass
+
+
+def _make_pre_dispatch(min_cost: float, console):
+    """Return a pre_dispatch hook that prompts the user before expensive capabilities."""
+    def pre_dispatch(executor, store) -> bool:
+        desc = executor.descriptor
+        if desc.cost < min_cost:
+            return True
+        console.print(
+            f"\n[yellow bold]About to dispatch:[/] [cyan]{desc.name}[/] "
+            f"[dim](cost weight: {desc.cost})[/]"
+        )
+        if desc.name == "code_generator":
+            tg = store.read(ArtifactId("task_graph"))
+            if tg and isinstance(tg.content, dict):
+                pending = [t for t in tg.content.get("tasks", []) if t.get("status") == "pending"]
+                if pending:
+                    console.print(f"  [dim]Pending tasks ({len(pending)}):[/]")
+                    for t in pending[:5]:
+                        label = t.get("title") or t.get("description", "")[:60]
+                        console.print(f"    [dim]- {t.get('id')}: {label}[/]")
+                    if len(pending) > 5:
+                        console.print(f"    [dim]... and {len(pending) - 5} more[/]")
+        answer = typer.prompt("Proceed?", default="y", prompt_suffix=" (y/n): ").strip().lower()
+        return answer in ("y", "yes", "")
+    return pre_dispatch
+
+
 def _wire_hitl(registry: CapabilityRegistry, llm, hitl_after: list[str],
                validators: list, event_log,
                hitl_max_rejections: int = 5) -> dict[str, int]:
@@ -184,6 +242,9 @@ def _wire_hitl(registry: CapabilityRegistry, llm, hitl_after: list[str],
     from antcrew.capabilities import HitlReviewer
 
     def _make_console_callback(cap_name: str):
+        editable = cap_name == "task_planner"
+        options  = "(approve/reject/edit)" if editable else "(approve/reject)"
+
         def request_review(content) -> dict:
             console.print(
                 f"\n[yellow bold]HITL review required:[/] [cyan]{cap_name}[/]\n"
@@ -193,10 +254,18 @@ def _wire_hitl(registry: CapabilityRegistry, llm, hitl_after: list[str],
             decision = typer.prompt(
                 "Decision",
                 default="approve",
-                prompt_suffix=" (approve/reject): ",
+                prompt_suffix=f" {options}: ",
             ).strip().lower()
+
+            if decision == "edit" and editable:
+                new_content = _edit_content(content, console)
+                if new_content is not None:
+                    return {"verdict": "edit", "new_content": new_content}
+                # editor failed → treat as approve
+                return {"verdict": "approve"}
+
             feedback = ""
-            if decision != "approve":
+            if decision not in ("approve", "edit"):
                 feedback = typer.prompt("Feedback for the re-run", default="").strip()
             return {"verdict": "approve" if decision == "approve" else "reject",
                     "feedback": feedback}
@@ -441,6 +510,10 @@ def engine_cmd(
                                   help="Max tasks TaskPlanner may generate (default 12)."),
     parallel_workers: int = typer.Option(5, "--parallel-workers",
                                          help="Max concurrent CodeGenerator LLM calls (default 5)."),
+    no_cache: bool = typer.Option(False, "--no-cache",
+                                  help="Disable Anthropic prompt caching (default: enabled)."),
+    confirm_before: Optional[float] = typer.Option(None, "--confirm-before",
+                                                   help="Prompt before capabilities with cost >= N."),
 ) -> None:
     """Run the capability-driven engine to build a software project from a goal.
 
@@ -482,7 +555,7 @@ def engine_cmd(
         raise typer.Exit(code=1)
 
     # ---- build ---------------------------------------------------------------
-    llm              = build_llm(model)
+    llm              = build_llm(model, prompt_caching=not no_cache)
     capability_models = _load_capability_models(config_file)
     goal       = _build_goal(goal_description, tuple(tech), condition, full)
     store      = FilesystemStore(output) if output is not None else MemoryStore()
@@ -502,12 +575,14 @@ def engine_cmd(
             registry, llm, list(hitl_after), validators, log, hitl_max_rejections,
         )
 
+    pre_dispatch_fn = _make_pre_dispatch(confirm_before, console) if confirm_before is not None else None
     operator   = Operator(
         registry, validators, log,
         max_iterations=max_iter,
         retry_limits={"test_runner": 1, "bug_fixer": fix_attempts, "code_reviewer": 2},
         total_limits={"code_regenerator": 2, "review_fixer": 3, **hitl_total_limits},
         max_cost_usd=max_cost,
+        pre_dispatch=pre_dispatch_fn,
     )
 
     # ---- display header ------------------------------------------------------

@@ -1,0 +1,27 @@
+# antcrew engine capability model routing — balanced tier
+# Usage: antcrew engine "..." --config capability_models.yaml
+# Estimated cost vs all-Sonnet: ~60% reduction
+#
+# Haiku ($0.25/$1.25 per 1M) for fast, cheap planning steps.
+# Sonnet ($3/$15 per 1M) for code generation and review.
+capabilities:
+  architect:
+    model: claude-haiku-4-5-20251001
+  task_planner:
+    model: claude-haiku-4-5-20251001
+  dependency_installer:
+    model: claude-haiku-4-5-20251001
+  doc_generator:
+    model: claude-haiku-4-5-20251001
+  code_generator:
+    model: claude-sonnet-4-6
+  test_generator:
+    model: claude-sonnet-4-6
+  code_reviewer:
+    model: claude-sonnet-4-6
+  bug_fixer:
+    model: claude-sonnet-4-6
+  review_fixer:
+    model: claude-sonnet-4-6
+  code_regenerator:
+    model: claude-sonnet-4-6

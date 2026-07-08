@@ -108,6 +108,35 @@ class HitlReviewer(BaseExecutor):
             )
             return CapabilityResult(delta=ArtifactDelta(created=(approval,)))
 
+        if verdict == "edit":
+            new_content = verdict_data.get("new_content")
+            if new_content is not None and artifact is not None:
+                edited = Artifact(
+                    id=artifact.id,
+                    kind=artifact.kind,
+                    content=new_content,
+                    metadata=artifact.metadata,
+                )
+                approval = Artifact(
+                    id=self._approval_art_id,
+                    kind=ArtifactKind.CONFIG,
+                    content={
+                        "approved":            True,
+                        "edited":              True,
+                        "reviewed_capability": str(self._reviewed_art_id),
+                    },
+                    metadata={"file_path": f".antcrew/{self._reviewed_art_id}_approval.json"},
+                )
+                return CapabilityResult(delta=ArtifactDelta(modified=(edited,), created=(approval,)))
+            # edit with no content → fall through to approve
+            approval = Artifact(
+                id=self._approval_art_id,
+                kind=ArtifactKind.CONFIG,
+                content={"approved": True, "reviewed_capability": str(self._reviewed_art_id)},
+                metadata={"file_path": f".antcrew/{self._reviewed_art_id}_approval.json"},
+            )
+            return CapabilityResult(delta=ArtifactDelta(created=(approval,)))
+
         # reject or timeout: delete the artifact so the upstream capability re-runs
         created: list[Artifact] = []
         if feedback or verdict == "reject":

@@ -60,7 +60,7 @@ class BugFixer(BaseExecutor):
         if report.get("passed"):
             return CapabilityResult(errors=["tests already pass — nothing to fix"])
 
-        test_output = report.get("output", "")[-3_000:]
+        test_output = _compress_test_output(report.get("output", ""))
         sources = store.list(ArtifactKind.SOURCE)
         if not sources:
             return CapabilityResult(errors=["no source artifacts found in store"])
@@ -85,8 +85,17 @@ class BugFixer(BaseExecutor):
         else:
             relevant = path_to_art
 
+        file_linenos = _extract_file_linenos(test_output)
+
+        def _get_lineno(fp: str) -> "int | None":
+            from pathlib import Path as _Path
+            for k, n in file_linenos.items():
+                if fp in k or k.endswith(fp) or _Path(k).name == _Path(fp).name:
+                    return n
+            return None
+
         files_block = "\n\n".join(
-            f"### {fp}\n```\n{art.content}\n```"
+            f"### {fp}\n```\n{_extract_context(art.content, _get_lineno(fp))}\n```"
             for fp, art in relevant.items()
         )
 
@@ -128,6 +137,48 @@ class BugFixer(BaseExecutor):
             return CapabilityResult(errors=["no valid file fixes could be parsed from LLM output"])
 
         return CapabilityResult(delta=ArtifactDelta(modified=tuple(modified)))
+
+
+def _compress_test_output(raw: str, max_chars: int = 2_000) -> str:
+    """Extract high-signal lines from pytest output; fall back to tail if nothing matches."""
+    lines = raw.splitlines()
+    keep  = []
+    for line in lines:
+        s = line.strip()
+        if (s.startswith("FAILED ") or s.startswith("ERROR ")
+                or re.match(r"E\s+\w", s)
+                or re.match(r'File ".+\.py", line \d+', s)
+                or re.match(r"\w[^\s:]+\.py:\d+:", s)):
+            keep.append(line)
+    compressed = "\n".join(keep)
+    if len(compressed) > max_chars:
+        compressed = compressed[:max_chars]
+    return compressed if compressed.strip() else raw[-max_chars:]
+
+
+def _extract_file_linenos(test_output: str) -> "dict[str, int]":
+    """Parse traceback-style lines and return {file_path: line_number} mappings."""
+    result: dict[str, int] = {}
+    for m in re.finditer(r'File\s+"([^"]+\.py)",\s+line\s+(\d+)', test_output):
+        result[m.group(1)] = int(m.group(2))
+    for m in re.finditer(r"^(\S[^\s:]+\.py):(\d+):", test_output, re.MULTILINE):
+        fp = m.group(1)
+        if "/" in fp or "\\" in fp:
+            result[fp] = int(m.group(2))
+    return result
+
+
+def _extract_context(content: str, lineno: "int | None", context: int = 40) -> str:
+    """Return ±context lines around lineno; fall back to first 80 lines."""
+    lines = content.splitlines() if isinstance(content, str) else []
+    if not lineno or lineno < 1:
+        return "\n".join(lines[:80])
+    start  = max(0, lineno - 1 - context)
+    end    = min(len(lines), lineno - 1 + context)
+    chunk  = lines[start:end]
+    prefix = f"# ... ({start} lines before)\n" if start > 0 else ""
+    suffix = f"\n# ... ({len(lines) - end} lines after)" if end < len(lines) else ""
+    return prefix + "\n".join(chunk) + suffix
 
 
 def _safe_parse_list(raw: str) -> list[dict]:
