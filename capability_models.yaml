@@ -3,25 +3,37 @@
 # Estimated cost vs all-Sonnet: ~60% reduction
 #
 # Haiku ($0.25/$1.25 per 1M) for fast, cheap planning steps.
+#   prompt_caching: false — Haiku calls are cheap; the 300ms warmup is not worth it.
 # Sonnet ($3/$15 per 1M) for code generation and review.
+#   prompt_caching: true  — Sonnet system prompts are larger; cache hits save real money.
 capabilities:
   architect:
     model: claude-haiku-4-5-20251001
+    prompt_caching: false
   task_planner:
     model: claude-haiku-4-5-20251001
+    prompt_caching: false
   dependency_installer:
     model: claude-haiku-4-5-20251001
+    prompt_caching: false
   doc_generator:
     model: claude-haiku-4-5-20251001
+    prompt_caching: false
   code_generator:
     model: claude-sonnet-4-6
+    prompt_caching: true
   test_generator:
     model: claude-sonnet-4-6
+    prompt_caching: true
   code_reviewer:
     model: claude-sonnet-4-6
+    prompt_caching: true
   bug_fixer:
     model: claude-sonnet-4-6
+    prompt_caching: true
   review_fixer:
     model: claude-sonnet-4-6
+    prompt_caching: true
   code_regenerator:
     model: claude-sonnet-4-6
+    prompt_caching: true

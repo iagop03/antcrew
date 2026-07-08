@@ -8,6 +8,7 @@ from antcrew.engine import (
     CapabilityDescriptor, CapabilityResult, ConditionId,
 )
 from .base import BaseExecutor
+from ._utils import head as _head
 
 _SYSTEM = """\
 You are a senior software developer writing pytest tests.
@@ -77,7 +78,7 @@ class TestGenerator(BaseExecutor):
                 + f"File to test: {file_path}\n"
                 + f"Import this module as: `from {import_path} import ...` "
                 + "(PYTHONPATH is set to the project root)\n\n"
-                + src.content
+                + _head(src.content, 150)
             )
             test_content = self._call(_SYSTEM, user)
 

@@ -57,6 +57,13 @@ class TaskPlanner(BaseExecutor):
         if goal.constraints.tech_stack:
             user += f"\n\nTech stack: {', '.join(goal.constraints.tech_stack)}"
 
+        # Inject HITL rejection feedback so the planner can revise the task graph
+        feedback_art = store.read(ArtifactId("task_planner_feedback"))
+        if feedback_art and isinstance(feedback_art.content, dict):
+            feedback_text = feedback_art.content.get("feedback", "").strip()
+            if feedback_text:
+                user += f"\n\nHuman review feedback on the previous task graph:\n{feedback_text}"
+
         system = _SYSTEM_TEMPLATE.format(max_tasks=self._max_tasks)
         raw    = self._call_json(system, user)
         tasks  = _safe_parse_tasks(raw)

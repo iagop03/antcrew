@@ -37,26 +37,23 @@ _GOAL_META_REL = Path(".antcrew") / "goal.json"
 # Registry / validators
 # ---------------------------------------------------------------------------
 
-def _load_capability_models(config_file: "Optional[Path]") -> "dict[str, str]":
-    """Parse the ``capabilities:`` block from an engine YAML config file.
-
-    Returns a mapping of capability_name → model_string.
-    Returns an empty dict when no config file is given or when the file has
-    no ``capabilities:`` block.
+def _parse_capability_config(
+    config_file: "Optional[Path]",
+) -> "tuple[dict[str, str], dict[str, bool]]":
+    """Parse ``capabilities:`` block from YAML. Returns (model_overrides, caching_overrides).
 
     Example YAML::
 
-        model: claude-sonnet-4-6          # default (can also be set via --model)
         capabilities:
-          spec_extractor:
+          architect:
             model: claude-haiku-4-5-20251001
-          bug_fixer:
-            model: claude-opus-4-8
-          code_regenerator:
-            model: claude-opus-4-8
+            prompt_caching: false   # disable cache warmup for cheap/fast models
+          code_generator:
+            model: claude-sonnet-4-6
+            # prompt_caching: true  # (default — inherits global setting)
     """
     if config_file is None:
-        return {}
+        return {}, {}
     try:
         import yaml as _yaml
         raw = _yaml.safe_load(config_file.read_text(encoding="utf-8"))
@@ -64,45 +61,54 @@ def _load_capability_models(config_file: "Optional[Path]") -> "dict[str, str]":
         import json as _json
         raw = _json.loads(config_file.read_text(encoding="utf-8"))
     caps = raw.get("capabilities", {}) if isinstance(raw, dict) else {}
-    return {
-        name: str(cfg["model"])
-        for name, cfg in caps.items()
-        if isinstance(cfg, dict) and "model" in cfg
-    }
+    models: dict[str, str] = {}
+    caching: dict[str, bool] = {}
+    for name, cfg in caps.items():
+        if not isinstance(cfg, dict) or "model" not in cfg:
+            continue
+        models[name] = str(cfg["model"])
+        if "prompt_caching" in cfg:
+            caching[name] = bool(cfg["prompt_caching"])
+    return models, caching
+
+
+def _load_capability_models(config_file: "Optional[Path]") -> "dict[str, str]":
+    """Backward-compat wrapper — returns only model overrides."""
+    return _parse_capability_config(config_file)[0]
 
 
 def _build_registry(
     llm,
+    model_str: str = "claude",
     *,
     capability_models: "dict[str, str] | None" = None,
+    capability_caching: "dict[str, bool] | None" = None,
+    default_prompt_caching: bool = True,
     max_tasks: int = 12,
     parallel_workers: int = 5,
 ) -> CapabilityRegistry:
     """Build the capability registry.
 
-    *llm* is the default model for all capabilities.
-    *capability_models* is an optional mapping of capability_name → model_string
-    that overrides the default for specific capabilities. Any capability not listed
-    uses *llm*. Model strings follow the same syntax as --model / build_llm():
-    'claude', 'claude-haiku-4-5-20251001', 'gpt-4o', 'ollama:llama3', etc.
-
-    Example via YAML (loaded with --config):
-        capabilities:
-          spec_extractor:
-            model: claude-haiku-4-5-20251001
-          bug_fixer:
-            model: claude-opus-4-8
+    *llm* is the pre-built default model for all capabilities.
+    *model_str* is the string used to build *llm* — needed to rebuild with a
+    different prompt_caching setting when a per-capability override is present.
+    *capability_models* overrides the model per capability.
+    *capability_caching* overrides prompt_caching per capability
+    (e.g. {architect: False} disables caching for Haiku even when global caching is on).
+    *default_prompt_caching* is the global caching default (typically =not no_cache).
     """
     from antcrew.config import build_llm as _build_llm
 
-    # Pre-resolve per-capability LLMs once (avoids repeated build_llm calls).
-    _overrides: dict[str, object] = {
-        name: _build_llm(model_str)
-        for name, model_str in (capability_models or {}).items()
-    }
+    cap_models  = capability_models  or {}
+    cap_caching = capability_caching or {}
 
     def _llm(cap_name: str):
-        return _overrides.get(cap_name, llm)
+        cap_model = cap_models.get(cap_name, model_str)
+        cap_pc    = cap_caching.get(cap_name, default_prompt_caching)
+        if cap_model != model_str or cap_name in cap_caching:
+            # Rebuild only when there's a model or caching override for this capability
+            return _build_llm(cap_model, prompt_caching=cap_pc)
+        return llm
 
     registry = CapabilityRegistry()
     registry.register(Architect(llm=_llm("architect")))
@@ -555,12 +561,20 @@ def engine_cmd(
         raise typer.Exit(code=1)
 
     # ---- build ---------------------------------------------------------------
-    llm              = build_llm(model, prompt_caching=not no_cache)
-    capability_models = _load_capability_models(config_file)
+    prompt_caching    = not no_cache
+    llm               = build_llm(model, prompt_caching=prompt_caching)
+    cap_models, cap_caching = _parse_capability_config(config_file)
     goal       = _build_goal(goal_description, tuple(tech), condition, full)
     store      = FilesystemStore(output) if output is not None else MemoryStore()
     log        = EventLog()
-    registry   = _build_registry(llm, capability_models=capability_models, max_tasks=max_tasks, parallel_workers=parallel_workers)
+    registry   = _build_registry(
+        llm, model,
+        capability_models=cap_models,
+        capability_caching=cap_caching,
+        default_prompt_caching=prompt_caching,
+        max_tasks=max_tasks,
+        parallel_workers=parallel_workers,
+    )
     validators = _build_validators()
 
     # Task mode: seed store from existing codebase

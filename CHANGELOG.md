@@ -5,6 +5,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.31.0] — 2026-07-08 (engine)
+
+### Engine — HITL gate, token optimisation, context truncation, per-capability model routing
+
+All changes in this release target the capability-driven engine (Layer 2: `antcrew engine`).
+
+#### HITL before expensive operations
+
+- **`Operator.pre_dispatch` hook** — caller-supplied `Callable[[Executor, ArtifactStore], bool]`
+  executed between `decide()` and `execute()`; returning `False` raises `OperatorError(CANCELLED)`.
+- **`--confirm-before <cost>`** CLI flag — prompts before any capability with cost weight ≥ threshold;
+  shows the pending task list when `code_generator` is about to run.
+- **Edit mode for `task_planner` HITL** — console prompt offers `(approve/reject/edit)`; edit opens
+  `$EDITOR` (or `notepad` on Windows); the saved JSON is written back via `HitlReviewer` without an
+  LLM re-run (new `edit` verdict with `new_content`).
+- **Platform: `resolve_engine_review` accepts `new_content`** — `reviews.py` parses `body.edited`
+  as JSON and forwards it so web UI edits unblock the engine with the modified artifact.
+- **`TaskPlanner` reads rejection feedback** — reads `task_planner_feedback` artifact and prepends
+  "Human review feedback:" to the LLM prompt on re-run (mirrors existing Architect behaviour).
+
+#### Token optimisation
+
+- **Prompt caching on by default** — CLI and engine runner both call `build_llm(model, prompt_caching=True)`;
+  `--no-cache` disables globally.
+- **Per-capability caching via YAML** — `prompt_caching: false` in a capability block overrides the
+  global setting; `capability_models.yaml` template disables caching for Haiku capabilities
+  (cheap model, 300 ms warmup not worth it) and enables it for Sonnet/Opus.
+- **`_build_registry` propagates caching to per-capability LLMs** — previously, capabilities with a
+  model override did not pass `prompt_caching` to `build_llm`; now always explicit.
+- **BugFixer output compression** — `_compress_test_output()` extracts FAILED/ERROR/traceback lines
+  instead of raw tail; `_extract_file_linenos()` + `_extract_context()` send ±40 lines around the
+  failing line instead of the full file.
+- **TestGenerator truncation** — source content capped at 150 lines; public interface is sufficient
+  for test generation.
+
+#### Capability model templates
+
+- **`capability_models.yaml`** — balanced tier: Haiku (caching off) for planning, Sonnet (caching on)
+  for code. ~60% cost reduction vs all-Sonnet.
+- **`capability_models_quality.yaml`** — quality tier: Opus for code/review/bugfix, Sonnet for planning.
+
+---
+
 ## [0.14.3] — 2026-07-04
 
 ### Fixed — Thread-safe EventBus
