@@ -467,6 +467,103 @@ antcrew dag agentteam.yaml --no-strict   # print violations but exit 0
 
 ---
 
+## Capability-driven engine (`antcrew engine`)
+
+AntCrew has two independent modes:
+
+| Mode | Command | Architecture | Best for |
+|---|---|---|---|
+| **Teams** (Layer 1) | `antcrew run` | LangGraph supervised multi-agent pipeline | Collaborative pipelines with human-in-the-loop at each agent |
+| **Engine** (Layer 2) | `antcrew engine` | Autonomous Operator loop with capability registry | Fully automated code generation from a one-line goal |
+
+The engine is a self-driving loop: it observes the project state, selects the cheapest capability that closes the gap toward the goal, dispatches it, and repeats until the goal is met or it runs out of budget/iterations. No LangGraph, no supervisor — pure condition-driven dispatch.
+
+### Pipeline
+
+```
+Architect → TaskPlanner → CodeGenerator → DependencyInstaller
+  → TestGenerator → TestRunner → BugFixer → CodeReviewer
+  → ReviewFixer → DocGenerator
+```
+
+Each capability is gated by preconditions (`needs`) and produces conditions (`produces`). The Operator selects the cheapest eligible capability each iteration.
+
+### Quick start
+
+```bash
+# Plan only — stop after architecture + task graph
+antcrew engine "Build a REST API for user authentication" --plan-only
+
+# Full pipeline — generate, test, review, document
+antcrew engine "Build a REST API" --tech Python --tech FastAPI --output ./my-api --full
+
+# Resume from where it left off
+antcrew engine --resume --output ./my-api
+
+# Inspect what was built
+antcrew engine-status ./my-api
+```
+
+### Key flags
+
+```bash
+# Human-in-the-loop: pause for approval after specific capabilities
+antcrew engine "..." --hitl-after architect --hitl-after task_planner
+
+# Prompt before dispatching any capability costing >= N (weight units)
+antcrew engine "..." --confirm-before 1.5
+
+# Hard USD budget cap
+antcrew engine "..." --max-cost 2.00
+
+# Parallel code generation (default 5 workers)
+antcrew engine "..." --parallel-workers 8
+
+# Per-capability model routing (Haiku for planning, Sonnet for code)
+antcrew engine "..." --config capability_models.yaml
+
+# Disable Anthropic prompt caching (enabled by default)
+antcrew engine "..." --no-cache
+```
+
+### Per-capability model routing
+
+Create a YAML config to route different capabilities to different models:
+
+```yaml
+# capability_models.yaml  — balanced tier (~60% cost reduction vs all-Sonnet)
+capabilities:
+  architect:
+    model: claude-haiku-4-5-20251001
+    prompt_caching: false    # Haiku is cheap; skip the 300ms cache warmup
+  task_planner:
+    model: claude-haiku-4-5-20251001
+    prompt_caching: false
+  code_generator:
+    model: claude-sonnet-4-6
+    prompt_caching: true     # Sonnet benefits from system-prompt caching
+  bug_fixer:
+    model: claude-sonnet-4-6
+    prompt_caching: true
+```
+
+Pre-built templates are included: `capability_models.yaml` (balanced) and
+`capability_models_quality.yaml` (Opus for hardest tasks).
+
+### HITL edit mode
+
+When `--hitl-after task_planner` is set, the prompt offers `(approve/reject/edit)`.
+Choosing **edit** opens the task graph JSON in `$EDITOR` (or `notepad` on Windows).
+The saved JSON is applied directly — no LLM re-run needed.
+
+### Resuming and persistence
+
+With `--output ./my-project`, the engine writes a `FilesystemStore` — all artifacts
+are persisted as JSON files under `.antcrew/`. A `--resume` run picks up from the
+last known state, skipping already-satisfied conditions.
+
+---
+
 ## Models
 
 | Model string (YAML / CLI) | Python class | Notes |
