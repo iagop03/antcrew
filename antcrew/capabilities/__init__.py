@@ -1,25 +1,25 @@
-"""antcrew.capabilities — concrete capability executors for the engine.
+"""antcrew.capabilities — re-exports from antcrew_engine.capabilities (backward compatibility).
 
-These import from antcrew.engine (interfaces) and never the reverse.
-LLM dependencies are optional extras in pyproject.toml:
-    pip install antcrew            # engine only, no LLM deps
-    pip install antcrew[anthropic] # + Anthropic SDK
-    pip install antcrew[openai]    # + OpenAI SDK
+The canonical implementation lives in the ``antcrew-engine`` package.
+This shim ensures that existing code which imports from ``antcrew.capabilities``
+continues to work without modification.
 """
-from .architect import Architect
-from .bug_fixer import BugFixer
-from .code_generator import CodeGenerator
-from .code_regenerator import CodeRegenerator
-from .code_reviewer import CodeReviewer
-from .dependency_installer import DependencyInstaller
-from .doc_generator import DocGenerator
-from .hitl_reviewer import HitlReviewer
-from .review_fixer import ReviewFixer
-from .spec_extractor import SpecExtractor
-from .task_planner import TaskPlanner
-from .team_executor import TeamExecutor
-from .test_generator import TestGenerator
-from .test_runner import TestRunner
+from antcrew_engine.capabilities import (
+    Architect,
+    BugFixer,
+    CodeGenerator,
+    CodeRegenerator,
+    CodeReviewer,
+    DependencyInstaller,
+    DocGenerator,
+    HitlReviewer,
+    ReviewFixer,
+    SpecExtractor,
+    TaskPlanner,
+    TeamExecutor,
+    TestGenerator,
+    TestRunner,
+)
 
 __all__ = [
     "SpecExtractor",

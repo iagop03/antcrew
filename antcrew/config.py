@@ -56,52 +56,8 @@ def _expand_env(value: Any) -> Any:
 
 def build_llm(model_str: str, *, prompt_caching: bool = False) -> BaseLLM:
     """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'simulated'."""
-    s = model_str.strip().lower()
-
-    if s == "simulated":
-        from antcrew.models.simulated import SimulatedLLM
-        return SimulatedLLM()
-
-    if s.startswith("ollama:"):
-        from antcrew.models.ollama_model import OllamaModel
-        return OllamaModel(s.split(":", 1)[1])
-
-    if s.startswith("groq:"):
-        from antcrew.models.groq_model import GroqModel
-        return GroqModel(s.split(":", 1)[1])
-
-    if s.startswith("azure:"):
-        from antcrew.models.azure_openai_model import AzureOpenAIModel
-        return AzureOpenAIModel(deployment=s.split(":", 1)[1])
-
-    if s.startswith("openai:"):
-        from antcrew.models.openai_model import OpenAIModel
-        return OpenAIModel(s.split(":", 1)[1])
-
-    if s.startswith("gpt") or s.startswith("o1") or s.startswith("o3"):
-        from antcrew.models.openai_model import OpenAIModel
-        return OpenAIModel(s)
-
-    if s.startswith("gemini"):
-        from antcrew.models.gemini_model import GeminiModel
-        return GeminiModel(s)
-
-    if s in ("gemini",):
-        from antcrew.models.gemini_model import GeminiModel
-        return GeminiModel()
-
-    if s in ("claude", "anthropic") or s.startswith("claude-"):
-        from antcrew.models.anthropic_model import AnthropicModel
-        model_id = None if s in ("claude", "anthropic") else s
-        return AnthropicModel(
-            **({"model": model_id} if model_id else {}),
-            prompt_caching=prompt_caching,
-        )
-
-    raise ValueError(
-        f"Unknown model '{model_str}'. "
-        "Expected: claude, gpt-4o, gemini, ollama:<name>, groq:<name>, simulated."
-    )
+    from antcrew_engine.config import build_llm as _build_llm
+    return _build_llm(model_str, prompt_caching=prompt_caching)
 
 
 def _build_channel(cfg: dict):

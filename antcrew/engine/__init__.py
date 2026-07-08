@@ -1,81 +1,64 @@
-"""antcrew.engine — capability-driven project execution engine.
+"""antcrew.engine — re-exports from antcrew_engine.engine (backward compatibility).
 
-The engine builds software by iterating over a goal until the project
-reaches a desired state.  It never assumes a fixed pipeline of agents
-or roles — it discovers what to do next from the artifact state.
-
-Public API
-----------
-Types:
-    Artifact, ArtifactId, ArtifactKind, ArtifactDelta, EMPTY_DELTA
-    ArtifactStore, MemoryStore
-    Condition, ConditionId, DesiredProjectState, Constraints, Goal
-    ProjectState
-    CapabilityDescriptor, CapabilityResult, Executor
-    ValidatorResult, Validator
-    CapabilityRegistry
-    Event, EventLog  (+ all Event subclasses)
-    Operator, OperatorError
-
-Entry point:
-    Operator.run(store, goal) → ProjectState
+The canonical implementation lives in the ``antcrew-engine`` package
+(``antcrew_engine.engine``).  This shim ensures that existing code which
+imports from ``antcrew.engine`` continues to work without modification.
 """
-from .artifact import (
+from antcrew_engine.engine import (
     Artifact,
     ArtifactDelta,
     ArtifactId,
     ArtifactKind,
     EMPTY_DELTA,
-)
-from .capability import CapabilityDescriptor, CapabilityResult, Executor
-from .events import (
-    CapabilityCompleted,
-    CapabilityDispatched,
-    ConditionInvalidated,
-    ConditionSatisfied,
-    EngineError,
-    EngineFinished,
-    EngineStarted,
+    ArtifactStore,
+    MemoryStore,
+    FilesystemStore,
+    Condition,
+    ConditionId,
+    Constraints,
+    DesiredProjectState,
+    Goal,
+    ProjectState,
+    CapabilityDescriptor,
+    CapabilityResult,
+    Executor,
+    Validator,
+    ValidatorResult,
+    CapabilityRegistry,
     Event,
     EventLog,
-    OperatorDecision,
+    EngineStarted,
+    EngineFinished,
+    EngineError,
     StateObserved,
+    CapabilityDispatched,
+    CapabilityCompleted,
+    ConditionSatisfied,
+    ConditionInvalidated,
+    OperatorDecision,
+    Operator,
+    OperatorError,
+    CapabilitySelector,
+    CheapestFirst,
+    FirstMatch,
+    MostProductive,
+    PrioritySelector,
+    EventBusBridge,
 )
-from .goal import Condition, ConditionId, Constraints, DesiredProjectState, Goal
-from .operator import Operator, OperatorError
-from .registry import CapabilityRegistry
-from .selector import (
-    CapabilitySelector, CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
-)
-from .state import ProjectState
-from .store import ArtifactStore, MemoryStore, FilesystemStore
-from .validator import Validator, ValidatorResult
-from .bus_bridge import EventBusBridge
 
 __all__ = [
-    # artifact
     "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
-    # store
     "ArtifactStore", "MemoryStore", "FilesystemStore",
-    # goal
     "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
-    # state
     "ProjectState",
-    # capability
     "CapabilityDescriptor", "CapabilityResult", "Executor",
-    # validator
     "Validator", "ValidatorResult",
-    # registry
     "CapabilityRegistry",
-    # events
     "Event", "EventLog",
     "EngineStarted", "EngineFinished", "EngineError",
     "StateObserved", "CapabilityDispatched", "CapabilityCompleted",
     "ConditionSatisfied", "ConditionInvalidated", "OperatorDecision",
-    # operator
     "Operator", "OperatorError",
-    # selector
     "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
-    # platform bridge
     "EventBusBridge",
 ]
