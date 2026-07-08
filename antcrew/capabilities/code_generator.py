@@ -169,6 +169,17 @@ class CodeGenerator(BaseExecutor):
         return all_artifacts, completed_ids
 
 
+def _next_pending(tasks: list[dict]) -> dict | None:
+    """Return the first pending task whose dependencies are all done."""
+    done_ids = {t["id"] for t in tasks if t.get("status") == "done"}
+    for task in tasks:
+        if task.get("status") != "pending":
+            continue
+        if all(dep in done_ids for dep in task.get("depends_on", [])):
+            return task
+    return None
+
+
 def _safe_parse_response(raw: str) -> dict:
     try:
         result = parse_json(raw)
