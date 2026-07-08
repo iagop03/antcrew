@@ -4,12 +4,18 @@ Usage in engine_runner.py / CLI:
     reviewer = HitlReviewer(
         reviewed_capability="architect",
         request_review=_make_review_callback(run_id, "architect", event_log),
+        artifact_id="architecture",          # actual artifact ID written by Architect
+        triggers_condition="architecture_exists",  # condition that gates the reviewer
     )
     registry.register(reviewer)
 
 On approval  → writes '<cap>_approval' CONFIG artifact → satisfies '<cap>_approved' condition.
 On rejection → deletes the reviewed artifact + writes '<cap>_feedback' CONFIG artifact
                → upstream capability re-runs and reads the feedback on its next attempt.
+
+artifact_id and triggers_condition default to reviewed_capability and
+f"{reviewed_capability}_exists" respectively for cases where the capability name
+matches its artifact/condition names exactly.
 """
 from __future__ import annotations
 
@@ -32,6 +38,21 @@ class HitlReviewer(BaseExecutor):
 
     request_review(content: Any) -> {"verdict": "approve"|"reject"|"timeout",
                                      "feedback": str | None}
+
+    Parameters
+    ----------
+    reviewed_capability:
+        Short name used for naming the approval/feedback artifacts and conditions
+        (e.g. "architect" → writes "architect_approval", produces "architect_approved").
+    artifact_id:
+        The ArtifactId to read for display and to delete on rejection.
+        Defaults to *reviewed_capability* but must be set explicitly when the
+        upstream capability writes under a different name (e.g. Architect writes
+        "architecture", not "architect").
+    triggers_condition:
+        The ConditionId whose satisfaction gates this reviewer.
+        Defaults to f"{reviewed_capability}_exists" but must match the actual
+        condition the upstream capability produces (e.g. "architecture_exists").
     """
 
     def __init__(
@@ -39,15 +60,17 @@ class HitlReviewer(BaseExecutor):
         *,
         reviewed_capability: str,
         request_review: Callable[[Any], dict],
+        artifact_id: str | None = None,
+        triggers_condition: str | None = None,
         timeout: int = _DEFAULT_TIMEOUT,
     ) -> None:
         super().__init__(llm=None)
-        self._reviewed_art_id = ArtifactId(reviewed_capability)
+        self._reviewed_art_id = ArtifactId(artifact_id or reviewed_capability)
         self._approval_art_id = ArtifactId(f"{reviewed_capability}_approval")
         self._feedback_art_id = ArtifactId(f"{reviewed_capability}_feedback")
         self._request_review  = request_review
 
-        exists_cond   = ConditionId(f"{reviewed_capability}_exists")
+        exists_cond   = ConditionId(triggers_condition or f"{reviewed_capability}_exists")
         approved_cond = ConditionId(f"{reviewed_capability}_approved")
 
         # Instance attribute — shadows any class-level descriptor (OK for the Protocol)

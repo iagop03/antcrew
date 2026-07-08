@@ -39,6 +39,65 @@ def _make_store(with_artifact: bool = True):
 
 
 # ---------------------------------------------------------------------------
+# Wiring — artifact_id / triggers_condition overrides
+# ---------------------------------------------------------------------------
+
+class TestHitlReviewerWiring:
+    def test_custom_artifact_id_is_read(self, goal):
+        """When artifact_id differs from reviewed_capability, the right artifact is read."""
+        store = MemoryStore()
+        store.write(Artifact(
+            id=ArtifactId("architecture"), kind=ArtifactKind.ARCHITECTURE,
+            content="the architecture",
+        ))
+        # Architect writes "architecture", not "architect"
+        reviewer = HitlReviewer(
+            reviewed_capability="architect",
+            request_review=lambda _: {"verdict": "approve"},
+            artifact_id="architecture",
+            triggers_condition="architecture_exists",
+        )
+        result = reviewer.execute(store, goal)
+        assert result.succeeded
+        # Approval artifact uses reviewed_capability name
+        assert result.delta.created[0].id == ArtifactId("architect_approval")
+
+    def test_custom_triggers_condition_in_descriptor(self):
+        reviewer = HitlReviewer(
+            reviewed_capability="architect",
+            request_review=lambda _: {"verdict": "approve"},
+            artifact_id="architecture",
+            triggers_condition="architecture_exists",
+        )
+        assert ConditionId("architecture_exists") in reviewer.descriptor.needs
+        assert ConditionId("architect_approved")  in reviewer.descriptor.produces
+
+    def test_reject_deletes_custom_artifact(self, goal):
+        """On rejection, the artifact_id target is deleted, not reviewed_capability."""
+        store = MemoryStore()
+        store.write(Artifact(
+            id=ArtifactId("architecture"), kind=ArtifactKind.ARCHITECTURE,
+            content="the architecture",
+        ))
+        reviewer = HitlReviewer(
+            reviewed_capability="architect",
+            request_review=lambda _: {"verdict": "reject", "feedback": "Too abstract"},
+            artifact_id="architecture",
+            triggers_condition="architecture_exists",
+        )
+        result = reviewer.execute(store, goal)
+        assert ArtifactId("architecture") in result.delta.deleted
+
+    def test_defaults_when_no_overrides(self):
+        """Without overrides, defaults match reviewed_capability name."""
+        r = HitlReviewer(
+            reviewed_capability="some_cap",
+            request_review=lambda _: {"verdict": "approve"},
+        )
+        assert ConditionId("some_cap_exists") in r.descriptor.needs
+
+
+# ---------------------------------------------------------------------------
 # Descriptor
 # ---------------------------------------------------------------------------
 

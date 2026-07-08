@@ -203,13 +203,34 @@ def _wire_hitl(registry: CapabilityRegistry, llm, hitl_after: list[str],
 
     hitl_total_limits: dict[str, int] = {}
     for cap_name in hitl_after:
+        # Detect the actual artifact ID and triggering condition from the registry.
+        # Upstream capability may write under a different name than cap_name
+        # (e.g. Architect writes ArtifactId("architecture") and produces
+        # ConditionId("architecture_exists"), not "architect" / "architect_exists").
+        source_exec = next((e for e in registry.all() if e.descriptor.name == cap_name), None)
+        triggers_condition: str | None = None
+        artifact_id:        str | None = None
+        if source_exec:
+            exists_conds = [
+                str(c) for c in source_exec.descriptor.produces
+                if str(c).endswith("_exists")
+            ]
+            if exists_conds:
+                triggers_condition = exists_conds[0]
+                artifact_id        = triggers_condition[: -len("_exists")]
+
         callback = _make_console_callback(cap_name)
-        reviewer = HitlReviewer(reviewed_capability=cap_name, request_review=callback)
+        reviewer = HitlReviewer(
+            reviewed_capability=cap_name,
+            request_review=callback,
+            artifact_id=artifact_id,
+            triggers_condition=triggers_condition,
+        )
         registry.register(reviewer)
         validators += artifact_validators((f"{cap_name}_approval", f"{cap_name}_approved"))
         hitl_total_limits[f"hitl_{cap_name}"] = hitl_max_rejections
 
-        old_cond  = ConditionId(f"{cap_name}_exists")
+        old_cond  = ConditionId(triggers_condition or f"{cap_name}_exists")
         new_cond  = ConditionId(f"{cap_name}_approved")
         hitl_name = f"hitl_{cap_name}"
         for executor in registry.all():
