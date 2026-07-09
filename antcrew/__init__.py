@@ -95,7 +95,11 @@ from antcrew.engine import (
     CapabilitySelector, CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
     EventBusBridge,
 )
-from antcrew.capabilities import BugFixer, CodeRegenerator, DependencyInstaller, DocGenerator, HitlReviewer, ReviewFixer
+from antcrew.capabilities import (
+    Architect, BugFixer, CodeGenerator, CodeRegenerator, CodeReviewer,
+    DependencyInstaller, DocGenerator, HitlReviewer, ReviewFixer,
+    SpecExtractor, TaskPlanner, TeamExecutor, TestGenerator, TestRunner,
+)
 
 __all__ = [
     # Teams
@@ -247,13 +251,21 @@ __all__ = [
     "validate_agent_dag",
     # Testing
     "SequencedLLM",
-    # Engine
+    # Engine capabilities
+    "Architect",
     "BugFixer",
+    "CodeGenerator",
     "CodeRegenerator",
+    "CodeReviewer",
     "DependencyInstaller",
     "DocGenerator",
     "HitlReviewer",
     "ReviewFixer",
+    "SpecExtractor",
+    "TaskPlanner",
+    "TeamExecutor",
+    "TestGenerator",
+    "TestRunner",
     "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
     "ArtifactStore", "MemoryStore", "FilesystemStore", "MultiRepoStore",
     "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
