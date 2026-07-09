@@ -28,7 +28,7 @@ def test_is_reasoning_model_false(model):
 # ===========================================================================
 
 def _make_llm(model: str = "gpt-4o") -> OpenAIModel:
-    with patch("antcrew.models.openai_model.OpenAI"):
+    with patch("antcrew_engine.models.openai_model.OpenAI"):
         llm = OpenAIModel(model, api_key="sk-test")
     return llm
 
@@ -224,7 +224,7 @@ def test_gpt4o_mini_cost_estimation():
 
 def test_build_llm_gpt4o():
     from antcrew.config import build_llm
-    with patch("antcrew.models.openai_model.OpenAI"):
+    with patch("antcrew_engine.models.openai_model.OpenAI"):
         llm = build_llm("gpt-4o")
     assert isinstance(llm, OpenAIModel)
     assert llm._model == "gpt-4o"
@@ -232,7 +232,7 @@ def test_build_llm_gpt4o():
 
 def test_build_llm_o3_mini():
     from antcrew.config import build_llm
-    with patch("antcrew.models.openai_model.OpenAI"):
+    with patch("antcrew_engine.models.openai_model.OpenAI"):
         llm = build_llm("o3-mini")
     assert isinstance(llm, OpenAIModel)
     assert llm._is_reasoning
@@ -240,7 +240,7 @@ def test_build_llm_o3_mini():
 
 def test_build_llm_o1():
     from antcrew.config import build_llm
-    with patch("antcrew.models.openai_model.OpenAI"):
+    with patch("antcrew_engine.models.openai_model.OpenAI"):
         llm = build_llm("o1")
     assert isinstance(llm, OpenAIModel)
     assert llm._is_reasoning
@@ -248,7 +248,7 @@ def test_build_llm_o1():
 
 def test_build_llm_openai_prefix():
     from antcrew.config import build_llm
-    with patch("antcrew.models.openai_model.OpenAI"):
+    with patch("antcrew_engine.models.openai_model.OpenAI"):
         llm = build_llm("openai:gpt-4o-mini")
     assert isinstance(llm, OpenAIModel)
     assert llm._model == "gpt-4o-mini"

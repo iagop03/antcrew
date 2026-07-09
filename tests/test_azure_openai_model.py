@@ -14,7 +14,7 @@ _KEY = "az-test-key"
 
 
 def _make_llm(deployment: str = "gpt-4o", **kwargs) -> AzureOpenAIModel:
-    with patch("antcrew.models.azure_openai_model.AzureOpenAI"):
+    with patch("antcrew_engine.models.azure_openai_model.AzureOpenAI"):
         llm = AzureOpenAIModel(
             deployment,
             azure_endpoint=_ENDPOINT,
@@ -88,7 +88,7 @@ def test_constructor_non_reasoning_model():
 
 
 def test_constructor_raises_without_endpoint():
-    with patch("antcrew.models.azure_openai_model.AzureOpenAI"):
+    with patch("antcrew_engine.models.azure_openai_model.AzureOpenAI"):
         with pytest.raises(EnvironmentError, match="endpoint"):
             AzureOpenAIModel("gpt-4o", api_key=_KEY)
 
@@ -96,14 +96,14 @@ def test_constructor_raises_without_endpoint():
 def test_constructor_reads_endpoint_from_env(monkeypatch):
     monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", _ENDPOINT)
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", _KEY)
-    with patch("antcrew.models.azure_openai_model.AzureOpenAI"):
+    with patch("antcrew_engine.models.azure_openai_model.AzureOpenAI"):
         llm = AzureOpenAIModel("gpt-4o")
     assert llm._azure_endpoint == _ENDPOINT
 
 
 def test_constructor_reads_api_key_from_env(monkeypatch):
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "env-key")
-    with patch("antcrew.models.azure_openai_model.AzureOpenAI") as mock_cls:
+    with patch("antcrew_engine.models.azure_openai_model.AzureOpenAI") as mock_cls:
         AzureOpenAIModel("gpt-4o", azure_endpoint=_ENDPOINT)
     call_kwargs = mock_cls.call_args[1]
     assert call_kwargs["api_key"] == "env-key"
@@ -116,7 +116,7 @@ def test_constructor_reads_api_version_from_env(monkeypatch):
 
 
 def test_constructor_passes_azure_client_kwargs():
-    with patch("antcrew.models.azure_openai_model.AzureOpenAI") as mock_cls:
+    with patch("antcrew_engine.models.azure_openai_model.AzureOpenAI") as mock_cls:
         AzureOpenAIModel(
             "gpt-4o",
             azure_endpoint=_ENDPOINT,
@@ -194,7 +194,7 @@ def test_build_llm_azure_prefix(monkeypatch):
     monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", _ENDPOINT)
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", _KEY)
     from antcrew.config import build_llm
-    with patch("antcrew.models.azure_openai_model.AzureOpenAI"):
+    with patch("antcrew_engine.models.azure_openai_model.AzureOpenAI"):
         llm = build_llm("azure:gpt-4o-deployment")
     assert isinstance(llm, AzureOpenAIModel)
     assert llm._model == "gpt-4o-deployment"

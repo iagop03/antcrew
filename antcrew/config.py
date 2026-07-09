@@ -54,9 +54,21 @@ def _expand_env(value: Any) -> Any:
     return value
 
 
+_KNOWN_MODEL_PREFIXES = (
+    "claude", "anthropic", "gpt", "o1", "o3",
+    "openai:", "ollama:", "groq:", "azure:", "gemini", "simulated",
+)
+
+
 def build_llm(model_str: str, *, prompt_caching: bool = False) -> BaseLLM:
     """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'simulated'."""
     from antcrew_engine.config import build_llm as _build_llm
+    s = model_str.strip().lower()
+    if not any(s.startswith(p) for p in _KNOWN_MODEL_PREFIXES):
+        raise ValueError(
+            f"Unknown model: {model_str!r}. "
+            "Supported prefixes: claude, gpt, o1, o3, openai:, ollama:, groq:, azure:, gemini, simulated."
+        )
     return _build_llm(model_str, prompt_caching=prompt_caching)
 
 

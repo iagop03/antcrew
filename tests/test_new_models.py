@@ -80,7 +80,7 @@ def test_simulated_llm_content_pipeline():
 # ---------------------------------------------------------------------------
 
 def test_openai_model_instantiation():
-    with patch("antcrew.models.openai_model.OpenAI") as mock_openai:
+    with patch("antcrew_engine.models.openai_model.OpenAI") as mock_openai:
         from antcrew.models.openai_model import OpenAIModel
 
         llm = OpenAIModel(api_key="sk-fake")
@@ -89,7 +89,7 @@ def test_openai_model_instantiation():
 
 
 def test_openai_model_custom_model():
-    with patch("antcrew.models.openai_model.OpenAI"):
+    with patch("antcrew_engine.models.openai_model.OpenAI"):
         from antcrew.models.openai_model import OpenAIModel
 
         llm = OpenAIModel("gpt-4o-mini", api_key="sk-fake")
@@ -97,7 +97,7 @@ def test_openai_model_custom_model():
 
 
 def test_openai_model_complete():
-    with patch("antcrew.models.openai_model.OpenAI") as mock_openai:
+    with patch("antcrew_engine.models.openai_model.OpenAI") as mock_openai:
         from antcrew.models.base import Message
         from antcrew.models.openai_model import OpenAIModel
 
