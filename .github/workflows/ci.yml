@@ -26,6 +26,8 @@ jobs:
 
       - name: Run tests
         run: pytest --tb=short -q
+        env:
+          ANTCREW_SANDBOX: none   # tests use real subprocess; Docker path mismatch on CI
 
   lint:
     name: Lint
