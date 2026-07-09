@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.1] — 2026-07-09
+
+### Fixed
+- `__version__` now reads dynamically from installed package metadata (`importlib.metadata`) instead of a hardcoded string — `antcrew doctor` will always show the correct installed version.
+- Shim backward-compat: `antcrew.engine` now exports both the new names (`EngineLoop`, `EngineDecision`, `EngineLoopError`) and the old names (`Operator`, `OperatorDecision`, `OperatorError`) — code written against pre-0.33.0 continues to work.
+- Private helpers (`_extract_failing_files`, `_next_pending`, `_safe_parse_review`, `_safe_parse_tasks`, `_to_test_path`) now explicitly re-exported from capability shims — wildcard `import *` was silently skipping them.
+- `antcrew/engine/operator.py` submodule shim now exports `EngineLoopError` for tests that import directly from the submodule.
+- `build_llm` wrapper validates model name prefix before delegating to `antcrew-engine`, independent of which engine version is installed.
+- CI: `ANTCREW_SANDBOX=none` prevents host-Python-path-inside-Docker failure in test runner.
+
+---
+
 ## [0.33.0] — 2026-07-09
 
 ### Added

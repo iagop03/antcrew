@@ -487,7 +487,11 @@ AntCrew has two independent modes:
 | Mode | Command | Architecture | Best for |
 |---|---|---|---|
 | **Teams** (Layer 1) | `antcrew run` | LangGraph supervised multi-agent pipeline | Collaborative pipelines with human-in-the-loop at each agent |
-| **Engine** (Layer 2) | `antcrew engine` | Autonomous Operator loop with capability registry | Fully automated code generation from a one-line goal |
+| **Engine** (Layer 2) | `antcrew engine` | Autonomous EngineLoop — observe → decide → dispatch until conditions met | Brownfield work, resume runs, pipelines whose steps aren't known in advance |
+
+> **`antcrew engine` vs `antcrew-engine run`** — Installing `antcrew` gives you both. They invoke the same engine logic.
+> Use `antcrew engine` when you want run history, trace, cost, and diff commands available in the same `antcrew` session.
+> Use `antcrew-engine run` if you installed only the engine layer without Layer 1 (no LangGraph required).
 
 The engine is a self-driving loop: it observes the project state, selects the cheapest capability that closes the gap toward the goal, dispatches it, and repeats until the goal is met or it runs out of budget/iterations. No LangGraph, no supervisor — pure condition-driven dispatch.
 

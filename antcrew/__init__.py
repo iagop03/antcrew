@@ -290,4 +290,8 @@ __all__ = [
     "classify_task",
     "MinimalPipeline",
 ]
-__version__ = "0.33.0"
+try:
+    from importlib.metadata import version as _v
+    __version__: str = _v("antcrew")
+except Exception:
+    __version__ = "unknown"
