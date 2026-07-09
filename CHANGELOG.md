@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.2] — 2026-07-09
+
+### Fixed
+- `__version__` dynamic read via `importlib.metadata` now actually shipped in the published wheel — 0.33.1 on PyPI still contained the hardcoded string; 0.33.2 is the first release where `antcrew.__version__` matches the installed version at runtime.
+
+### Added
+- README clarification: `antcrew engine` vs `antcrew-engine run` — both invoke the same engine logic; the distinction is whether LangGraph (Layer 1) is present.
+
+---
+
 ## [0.33.1] — 2026-07-09
 
 ### Fixed
