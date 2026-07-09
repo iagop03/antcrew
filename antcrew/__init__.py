@@ -91,7 +91,7 @@ from antcrew.engine import (
     ValidatorResult, Validator,
     CapabilityRegistry,
     EventLog,
-    Operator, OperatorError,
+    EngineLoop, EngineLoopError,
     CapabilitySelector, CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
     EventBusBridge,
 )
@@ -274,7 +274,7 @@ __all__ = [
     "ValidatorResult", "Validator",
     "CapabilityRegistry",
     "EventLog",
-    "Operator", "OperatorError",
+    "EngineLoop", "EngineLoopError",
     "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
     "EventBusBridge",
     # Events

@@ -10,6 +10,19 @@ AntCrew spins up a team of specialized AI agents — Business Analyst, PM, Backe
 
 Designed for a specific sweet spot: **new MVPs, small-to-medium projects, and isolated new modules inside existing systems.** Not aimed at maintaining large legacy codebases.
 
+## Two-layer architecture
+
+AntCrew is split into two independent packages that address different execution models:
+
+| Layer | Package | Command | Model | Best for |
+|---|---|---|---|---|
+| **Layer 1** | `antcrew` | `antcrew run` | LangGraph supervised multi-agent pipeline with named roles | Structured pipelines, human-in-the-loop between roles, project sessions |
+| **Layer 2** | `antcrew-engine` | `antcrew engine` | Autonomous `EngineLoop` — observe → decide → dispatch until conditions satisfied | Brownfield work (`--from-dir`), resume runs, pipelines whose steps aren't known in advance |
+
+Layer 1 depends on Layer 2: all engine capabilities (`Architect`, `TaskPlanner`, `CodeGenerator`, etc.) are importable from `antcrew` directly as well as from `antcrew_engine`. LangGraph is a Layer 1 dependency only — `antcrew-engine` has no LangGraph dependency.
+
+The reason for the split: LangGraph resolves supervised pipelines with conditional edges, checkpointing, and fan-out/fan-in well. A goal-directed loop where the set of steps emerges from runtime artifact state (not from a preset graph) is not a good fit for a static LangGraph graph — so Layer 2 implements its own `EngineLoop` for that case.
+
 Key ideas:
 
 - **LLM-agnostic.** Anthropic, OpenAI, Gemini, Groq, Ollama, or any OpenAI-compatible endpoint. Mix models per agent.
@@ -1904,7 +1917,7 @@ antcrew show run_2024.json
 pip install antcrew
 ```
 
-> **Note:** `antcrew` bundles [antcrew-engine](https://github.com/iagop03/antcrew-engine) as a dependency. To use the capability-driven engine standalone (no LangGraph, lighter install) you can also `pip install antcrew-engine` directly.
+> **Architecture note:** `antcrew` bundles [`antcrew-engine`](https://github.com/iagop03/antcrew-engine) as a dependency. Layer 2 (`antcrew-engine`) can also be installed standalone — it has no LangGraph dependency and is lighter: `pip install antcrew-engine`.
 
 ### Optional extras
 
@@ -1942,7 +1955,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The full suite uses `SimulatedLLM` — no API keys required. 2367+ tests, no live network calls.
+The full suite uses `SimulatedLLM` — no API keys required. 2500+ tests, no live network calls.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Integration tests for the Operator observe→decide→dispatch loop.
+"""Integration tests for the EngineLoop observe→decide→dispatch loop.
 
 These tests use stub capabilities (no real LLM) to verify:
 - dispatch order respects cost and needs-filtering
@@ -18,9 +18,9 @@ from antcrew.engine import (
     Artifact, ArtifactDelta, ArtifactId, ArtifactKind, EMPTY_DELTA,
     CapabilityDescriptor, CapabilityResult, ConditionId,
     Goal, DesiredProjectState, Condition, Constraints,
-    CapabilityRegistry, EventLog, MemoryStore, Operator,
+    CapabilityRegistry, EventLog, MemoryStore, EngineLoop,
 )
-from antcrew.engine.operator import OperatorError
+from antcrew.engine.operator import EngineLoopError
 from antcrew.engine.validator import Validator, ValidatorResult
 from antcrew_engine.capabilities.base import BaseExecutor, _filter_python_delta
 
@@ -119,8 +119,8 @@ def _make_operator(
     total_limits: dict | None = None,
     stop_event=None,
     max_iterations: int = 30,
-) -> Operator:
-    return Operator(
+) -> EngineLoop:
+    return EngineLoop(
         registry, validators, EventLog(),
         max_iterations=max_iterations,
         retry_limits=retry_limits or {},
@@ -212,11 +212,11 @@ def test_retry_limits_block_stagnant_capability():
     validators = [_ArtifactValidator("art_done", "done")]
     op = _make_operator(reg, validators, retry_limits={"bad": 1})
 
-    with pytest.raises(OperatorError) as exc_info:
+    with pytest.raises(EngineLoopError) as exc_info:
         op.run(MemoryStore(), _goal("done"))
 
     # After retry_limit=1 consecutive stagnant runs, no eligible candidates → STUCK
-    assert exc_info.value.kind == OperatorError.Kind.STUCK
+    assert exc_info.value.kind == EngineLoopError.Kind.STUCK
 
 
 def test_retry_limit_resets_after_progress():
@@ -247,11 +247,11 @@ def test_total_limits_cap_lifetime_dispatches():
     validators = [_ArtifactValidator("art_done", "done")]
     op = _make_operator(reg, validators, total_limits={"greedy": 2}, max_iterations=20)
 
-    with pytest.raises(OperatorError) as exc_info:
+    with pytest.raises(EngineLoopError) as exc_info:
         op.run(MemoryStore(), _goal("done"))
 
     assert greedy.call_count == 2  # dispatched exactly 2 times
-    assert exc_info.value.kind in (OperatorError.Kind.STUCK, OperatorError.Kind.NO_PROGRESS)
+    assert exc_info.value.kind in (EngineLoopError.Kind.STUCK, EngineLoopError.Kind.NO_PROGRESS)
 
 
 # ---------------------------------------------------------------------------
@@ -270,10 +270,10 @@ def test_cancellation_via_stop_event():
     validators = [_ArtifactValidator("result", "done")]
     op = _make_operator(reg, validators, stop_event=stop)
 
-    with pytest.raises(OperatorError) as exc_info:
+    with pytest.raises(EngineLoopError) as exc_info:
         op.run(MemoryStore(), _goal("done"))
 
-    assert exc_info.value.kind == OperatorError.Kind.CANCELLED
+    assert exc_info.value.kind == EngineLoopError.Kind.CANCELLED
     assert cap.call_count == 0  # never ran
 
 
@@ -297,10 +297,10 @@ def test_cancellation_mid_run():
     validators = [_ArtifactValidator("result", "done")]
     op = _make_operator(reg, validators, stop_event=stop, max_iterations=20)
 
-    with pytest.raises(OperatorError) as exc_info:
+    with pytest.raises(EngineLoopError) as exc_info:
         op.run(MemoryStore(), _goal("done"))
 
-    assert exc_info.value.kind == OperatorError.Kind.CANCELLED
+    assert exc_info.value.kind == EngineLoopError.Kind.CANCELLED
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +375,7 @@ def test_syntax_gate_blocks_bad_capability_output():
 # ---------------------------------------------------------------------------
 
 def test_budget_exceeded_raises():
-    """Operator should raise BUDGET_EXCEEDED when accumulated cost surpasses max_cost_usd."""
+    """EngineLoop should raise BUDGET_EXCEEDED when accumulated cost surpasses max_cost_usd."""
 
     class _CostyCap(_Stub):
         def execute(self, store, goal):
@@ -391,10 +391,10 @@ def test_budget_exceeded_raises():
     op = _make_operator(reg, validators, max_iterations=20)
     op._max_cost_usd = 2.5  # budget = $2.50
 
-    with pytest.raises(OperatorError) as exc_info:
+    with pytest.raises(EngineLoopError) as exc_info:
         op.run(MemoryStore(), _goal("done"))
 
-    assert exc_info.value.kind == OperatorError.Kind.BUDGET_EXCEEDED
+    assert exc_info.value.kind == EngineLoopError.Kind.BUDGET_EXCEEDED
     assert cap.call_count <= 3  # must stop after 3rd dispatch ($3 > $2.50)
 
 
@@ -417,7 +417,7 @@ def test_filesystem_store_filesystem_path_returns_root(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_no_progress_raises_after_limit():
-    """Operator should raise NO_PROGRESS after 3 consecutive empty-delta runs."""
+    """EngineLoop should raise NO_PROGRESS after 3 consecutive empty-delta runs."""
     cap = _Stub(_descriptor("always_empty", produces=("done",)), artifact_id=None)
     reg = CapabilityRegistry()
     reg.register(cap)
@@ -425,10 +425,10 @@ def test_no_progress_raises_after_limit():
     validators = [_ArtifactValidator("art_done", "done")]
     op = _make_operator(reg, validators, max_iterations=20)
 
-    with pytest.raises(OperatorError) as exc_info:
+    with pytest.raises(EngineLoopError) as exc_info:
         op.run(MemoryStore(), _goal("done"))
 
-    assert exc_info.value.kind == OperatorError.Kind.NO_PROGRESS
+    assert exc_info.value.kind == EngineLoopError.Kind.NO_PROGRESS
     assert cap.call_count == 3  # exactly _NO_PROGRESS_LIMIT times
 
 

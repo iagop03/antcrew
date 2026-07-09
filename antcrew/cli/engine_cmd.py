@@ -19,7 +19,7 @@ from antcrew.cli._app import app, console, _MODEL_HELP
 from antcrew.engine import (
     Artifact, ArtifactId, ArtifactKind,
     CapabilityRegistry, Condition, ConditionId, Constraints,
-    DesiredProjectState, EventLog, FilesystemStore, Goal, MemoryStore, Operator,
+    DesiredProjectState, EventLog, FilesystemStore, Goal, MemoryStore, EngineLoop,
 )
 from antcrew.capabilities import (
     Architect, BugFixer, CodeGenerator, CodeRegenerator, CodeReviewer,
@@ -499,7 +499,7 @@ def engine_cmd(
     full:      bool = typer.Option(True,  "--full/--plan-only",
                                    help="Full pipeline (default) or stop after planning."),
     max_iter:  int  = typer.Option(50,    "--max-iter",
-                                   help="Max Operator iterations before STUCK error."),
+                                   help="Max EngineLoop iterations before STUCK error."),
     resume:      bool = typer.Option(False, "--resume/--no-resume",
                                      help="Resume from an existing --output directory."),
     fix_attempts: int = typer.Option(3, "--fix-attempts",
@@ -590,7 +590,7 @@ def engine_cmd(
         )
 
     pre_dispatch_fn = _make_pre_dispatch(confirm_before, console) if confirm_before is not None else None
-    operator   = Operator(
+    operator   = EngineLoop(
         registry, validators, log,
         max_iterations=max_iter,
         retry_limits={"test_runner": 1, "bug_fixer": fix_attempts, "code_reviewer": 2},
