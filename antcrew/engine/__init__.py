@@ -36,9 +36,6 @@ from antcrew_engine.engine import (
     CapabilityCompleted,
     ConditionSatisfied,
     ConditionInvalidated,
-    EngineDecision,
-    EngineLoop,
-    EngineLoopError,
     CapabilitySelector,
     CheapestFirst,
     FirstMatch,
@@ -46,6 +43,23 @@ from antcrew_engine.engine import (
     PrioritySelector,
     EventBusBridge,
 )
+
+# antcrew-engine >= 0.3.0 renamed Operator → EngineLoop, OperatorDecision →
+# EngineDecision, OperatorError → EngineLoopError.  Support both to avoid a
+# hard coupling to a specific antcrew-engine release.
+try:
+    from antcrew_engine.engine import EngineDecision, EngineLoop, EngineLoopError
+except ImportError:
+    from antcrew_engine.engine import (  # type: ignore[no-redef]
+        OperatorDecision as EngineDecision,
+        Operator as EngineLoop,
+        OperatorError as EngineLoopError,
+    )
+
+# Backward-compat aliases — tests and user code may still use old names
+Operator = EngineLoop
+OperatorDecision = EngineDecision
+OperatorError = EngineLoopError
 
 __all__ = [
     "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
@@ -58,8 +72,9 @@ __all__ = [
     "Event", "EventLog",
     "EngineStarted", "EngineFinished", "EngineError",
     "StateObserved", "CapabilityDispatched", "CapabilityCompleted",
-    "ConditionSatisfied", "ConditionInvalidated", "EngineDecision",
-    "EngineLoop", "EngineLoopError",
+    "ConditionSatisfied", "ConditionInvalidated",
+    "EngineDecision", "EngineLoop", "EngineLoopError",
+    "Operator", "OperatorDecision", "OperatorError",
     "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
     "EventBusBridge",
 ]

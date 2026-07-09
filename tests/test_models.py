@@ -93,7 +93,7 @@ def test_ollama_model_complete():
 def test_groq_model_instantiation():
     from antcrew.models.groq_model import GroqModel
 
-    with patch("antcrew.models.groq_model.Groq") as mock_groq:
+    with patch("antcrew_engine.models.groq_model.Groq") as mock_groq:
         model = GroqModel("llama3-70b-8192", api_key="test-key")
         assert model.model == "llama3-70b-8192"
         mock_groq.assert_called_once_with(api_key="test-key")
@@ -107,7 +107,7 @@ def test_groq_model_complete():
     mock_response = MagicMock()
     mock_response.choices = [mock_choice]
 
-    with patch("antcrew.models.groq_model.Groq") as mock_groq:
+    with patch("antcrew_engine.models.groq_model.Groq") as mock_groq:
         mock_groq.return_value.chat.completions.create.return_value = mock_response
         model = GroqModel(api_key="test-key")
         result = model.complete([Message(role="user", content="Hi")])
