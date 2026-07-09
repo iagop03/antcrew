@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [0.33.2] — 2026-07-09
+## [0.33.3] — 2026-07-09
 
 ### Fixed
 - `__version__` dynamic read via `importlib.metadata` now actually shipped in the published wheel — 0.33.1 on PyPI still contained the hardcoded string; 0.33.2 is the first release where `antcrew.__version__` matches the installed version at runtime.
