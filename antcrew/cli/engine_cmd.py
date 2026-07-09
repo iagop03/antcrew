@@ -469,7 +469,6 @@ def _print_summary(store, output_dir: Path | None, written: list[Path]) -> None:
     if test_report and isinstance(test_report.content, dict):
         passed = test_report.content.get("passed", False)
         colour = "green" if passed else "red"
-        icon   = "[checkmark]" if passed else "x"
         output = test_report.content.get("output", "")[-800:]
         console.print(Panel(output,
                             title=f"[{colour}]Tests {'passed' if passed else 'failed'}[/{colour}]",
