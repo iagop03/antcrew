@@ -10,7 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli._app import app
-from antcrew.models.base import BaseLLM, Message, _is_retryable
+from antcrew_engine.models.base import BaseLLM, Message, _is_retryable
 from antcrew.trace import TraceLog
 
 runner = CliRunner()

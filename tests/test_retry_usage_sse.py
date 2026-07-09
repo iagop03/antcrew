@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from antcrew.models.base import BaseLLM, Message, _is_retryable
+from antcrew_engine.models.base import BaseLLM, Message, _is_retryable
 from antcrew.models.simulated import SimulatedLLM
 
 
@@ -224,6 +224,8 @@ def test_usage_summary_empty_when_no_calls():
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "total_cost_usd": 0.0,
+        "total_cache_read_tokens": 0,
+        "total_cache_write_tokens": 0,
         "by_agent": [],
     }
 

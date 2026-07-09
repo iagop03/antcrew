@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.models.base import BaseLLM, _is_retryable
+from antcrew_engine.models.base import BaseLLM, _is_retryable
 from antcrew.models.simulated import SimulatedLLM
 
 

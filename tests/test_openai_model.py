@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from antcrew.models.base import Message
-from antcrew.models.openai_model import OpenAIModel, _is_reasoning_model
+from antcrew_engine.models.openai_model import OpenAIModel, _is_reasoning_model
 
 
 # ===========================================================================

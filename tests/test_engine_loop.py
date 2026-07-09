@@ -22,7 +22,7 @@ from antcrew.engine import (
 )
 from antcrew.engine.operator import OperatorError
 from antcrew.engine.validator import Validator, ValidatorResult
-from antcrew.capabilities.base import BaseExecutor, _filter_python_delta
+from antcrew_engine.capabilities.base import BaseExecutor, _filter_python_delta
 
 
 # ---------------------------------------------------------------------------

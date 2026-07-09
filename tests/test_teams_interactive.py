@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.models.simulated import SimulatedLLM, _pick_fixture
+from antcrew_engine.models.simulated import SimulatedLLM, _pick_fixture
 from antcrew.teams.base import InteractiveMixin
 
 
