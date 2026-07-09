@@ -488,6 +488,8 @@ Architect → TaskPlanner → CodeGenerator → DependencyInstaller
 
 Each capability is gated by preconditions (`needs`) and produces conditions (`produces`). The Operator selects the cheapest eligible capability each iteration.
 
+> All engine capabilities (`Architect`, `CodeGenerator`, `TestRunner`, etc.) are importable from the `antcrew` root namespace as well as from `antcrew_engine` directly.
+
 ### Quick start
 
 ```bash
@@ -1902,6 +1904,8 @@ antcrew show run_2024.json
 pip install antcrew
 ```
 
+> **Note:** `antcrew` bundles [antcrew-engine](https://github.com/iagop03/antcrew-engine) as a dependency. To use the capability-driven engine standalone (no LangGraph, lighter install) you can also `pip install antcrew-engine` directly.
+
 ### Optional extras
 
 ```bash
@@ -1938,7 +1942,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The full suite uses `SimulatedLLM` — no API keys required. ~1700 tests, no live network calls.
+The full suite uses `SimulatedLLM` — no API keys required. 2367+ tests, no live network calls.
 
 ---
 

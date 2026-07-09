@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.0] — 2026-07-09
+
+### Added
+- All 13 engine capabilities now exported from the `antcrew` root namespace: `Architect`, `BugFixer`, `CodeGenerator`, `CodeRegenerator`, `CodeReviewer`, `DependencyInstaller`, `DocGenerator`, `HitlReviewer`, `ReviewFixer`, `SpecExtractor`, `TaskPlanner`, `TeamExecutor`, `TestGenerator`, `TestRunner`. Previously only accessible via `antcrew.capabilities.*` or `antcrew_engine.*`.
+- `MultiRepoStore` added to the `antcrew` root re-exports.
+
+### Changed
+- Dependency bumped to `antcrew-engine>=0.2.0` (adds `MultiRepoStore`, cache hit metrics, `--from-dir`/`--repo`/`--route` CLI flags, `_ensure_conftest`, `PYTHONPATH` injection).
+
+### Fixed
+- Stale test imports updated after Layer 1/2 separation — `_filter_python_delta`, `_is_retryable`, `_is_reasoning_model`, `_pick_fixture` now imported from `antcrew_engine.*`.
+- `test_usage_summary_empty_when_no_calls` assertion updated to include `total_cache_read_tokens` and `total_cache_write_tokens` (added in antcrew-engine v0.2.0).
+- Deleted `test_server.py` — `antcrew.server` module was removed in v0.15.0; server replaced by `antcrew-platform`.
+
+---
+
 ## [0.32.0] — 2026-07-08 (engine)
 
 ### Engine — Layer 2 extracted to `antcrew-engine`; arch_text system-prompt caching
