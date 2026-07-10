@@ -29,6 +29,30 @@ jobs:
         env:
           ANTCREW_SANDBOX: none   # tests use real subprocess; Docker path mismatch on CI
 
+  pypi-compat:
+    name: PyPI compat (published wheel)
+    runs-on: ubuntu-latest
+    # Only run on main push — verifies the published release works, not pre-release commits.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install published antcrew from PyPI (not editable)
+        # Installs the wheel that users actually get with pip install antcrew.
+        # If this fails with ImportError or version mismatches, a release has a
+        # defect that the editable install job above would not catch.
+        run: pip install "antcrew[dev]"
+
+      - name: Run tests against installed wheel
+        run: pytest --tb=short -q
+        env:
+          ANTCREW_SANDBOX: none
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
