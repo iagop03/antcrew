@@ -133,7 +133,30 @@ class CodeExecutorTool(BaseTool):
         self.timeout = timeout
         self.max_output = max_output
 
+    # Env var prefixes that are safe to propagate into the subprocess.
+    # Everything else (API keys, tokens, DB URLs, etc.) is withheld.
+    _SAFE_ENV_PREFIXES = (
+        "PATH", "HOME", "TMPDIR", "TEMP", "TMP",
+        "LANG", "LC_", "PYTHON", "VIRTUAL_ENV",
+        # Windows-specific
+        "SYSTEMROOT", "SystemRoot", "USERPROFILE",
+        "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
+    )
+
     def run(self, input: str) -> ToolResult:
+        import os as _os
+        if _os.environ.get("ANTCREW_SANDBOX", "").lower() == "required":
+            return ToolResult("", error=(
+                "Code execution is disabled (ANTCREW_SANDBOX=required). "
+                "Use antcrew-engine capabilities for sandboxed execution."
+            ))
+
+        # Propagate only safe env vars — omit API keys, tokens, DB URLs, etc.
+        safe_env = {
+            k: v for k, v in _os.environ.items()
+            if any(k == p or k.startswith(p) for p in self._SAFE_ENV_PREFIXES)
+        }
+
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".py", delete=False, encoding="utf-8"
         ) as fh:
@@ -145,6 +168,7 @@ class CodeExecutorTool(BaseTool):
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                env=safe_env,
             )
             combined = proc.stdout + proc.stderr
             if len(combined) > self.max_output:
@@ -235,12 +259,21 @@ class WriteFileTool(BaseTool):
             if not p.is_absolute():
                 p = self.root / p
             resolved = p.resolve()
-            if not str(resolved).startswith(str(self.root)):
+            # is_relative_to() is exact; the old startswith() allowed
+            # /x/project-evil/ to bypass a root of /x/project.
+            if not resolved.is_relative_to(self.root):
                 raise ValueError(
                     f"Path '{raw}' escapes the allowed root '{self.root}'"
                 )
             return resolved
-        return p
+        # No root configured: reject absolute paths to prevent accidental writes
+        # to arbitrary filesystem locations when the tool is used without a scope.
+        if p.is_absolute():
+            raise ValueError(
+                f"WriteFileTool has no root configured — absolute paths are not "
+                f"allowed. Instantiate with root='/your/project' or use a relative path."
+            )
+        return p.resolve()
 
     def run(self, input: str) -> ToolResult:
         sep = "\n---\n"

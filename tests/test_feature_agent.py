@@ -41,13 +41,29 @@ class TestWriteFileTool:
         result = tool.run("no separator here at all")
         assert not result.ok
 
-    def test_no_root_writes_anywhere(self, tmp_path):
+    def test_no_root_rejects_absolute_path(self, tmp_path):
+        """Without a root, absolute paths are rejected to prevent unconstrained writes."""
         from antcrew.core.tools import WriteFileTool
         dest = tmp_path / "out.txt"
         tool = WriteFileTool()
         result = tool.run(f"{dest}\n---\ncontent")
-        assert result.ok
-        assert dest.read_text() == "content"
+        assert not result.ok
+        assert "absolute" in (result.error or "").lower() or "root" in (result.error or "").lower()
+
+    def test_no_root_allows_relative_path(self, tmp_path):
+        """Without a root, relative paths are resolved from CWD and allowed."""
+        from antcrew.core.tools import WriteFileTool
+        import os
+        tool = WriteFileTool()
+        # Use a relative path; it will be written relative to CWD
+        orig = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = tool.run("relative_out.txt\n---\nhello")
+            assert result.ok, result.error
+            assert (tmp_path / "relative_out.txt").read_text() == "hello"
+        finally:
+            os.chdir(orig)
 
     def test_overwrite_existing_file(self, tmp_path):
         from antcrew.core.tools import WriteFileTool
