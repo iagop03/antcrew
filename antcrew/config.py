@@ -60,7 +60,13 @@ _KNOWN_MODEL_PREFIXES = (
 )
 
 
-def build_llm(model_str: str, *, prompt_caching: bool = False, api_key: Optional[str] = None) -> BaseLLM:
+def build_llm(
+    model_str: str,
+    *,
+    prompt_caching: bool = False,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+) -> BaseLLM:
     """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'simulated'."""
     from antcrew_engine.config import build_llm as _build_llm
     s = model_str.strip().lower()
@@ -69,7 +75,7 @@ def build_llm(model_str: str, *, prompt_caching: bool = False, api_key: Optional
             f"Unknown model: {model_str!r}. "
             "Supported prefixes: claude, gpt, o1, o3, openai:, ollama:, groq:, azure:, gemini, simulated."
         )
-    return _build_llm(model_str, prompt_caching=prompt_caching, api_key=api_key)
+    return _build_llm(model_str, prompt_caching=prompt_caching, api_key=api_key, base_url=base_url)
 
 
 def _build_channel(cfg: dict):
