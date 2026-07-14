@@ -235,7 +235,7 @@ class TraceLog:
             params.append(since)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = self._conn.execute(
-            f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ?",
+            f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ?",  # nosec B608
             params + [limit],
         ).fetchall()
         return [dict(r) for r in rows]
