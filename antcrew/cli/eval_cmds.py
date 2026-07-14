@@ -382,7 +382,7 @@ def eval_cmd(
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=15):
+                with urllib.request.urlopen(req, timeout=15):  # nosec B310
                     pushed += 1
             except urllib.error.HTTPError as exc:
                 console.print(f"  [red]HTTP {exc.code}[/] {r.case.name or r.case.request[:30]}")

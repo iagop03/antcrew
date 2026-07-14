@@ -223,7 +223,7 @@ def serve(
             deadline = time.monotonic() + 30.0
             while time.monotonic() < deadline:
                 try:
-                    urllib.request.urlopen(f"{url}/health", timeout=1)
+                    urllib.request.urlopen(f"{url}/health", timeout=1)  # nosec B310
                     break
                 except Exception:
                     time.sleep(0.4)

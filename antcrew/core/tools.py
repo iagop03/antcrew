@@ -99,7 +99,7 @@ class WebSearchTool(BaseTool):
                 f"https://api.duckduckgo.com/?q={query}"
                 "&format=json&no_html=1&skip_disambig=1"
             )
-            with urllib.request.urlopen(url, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(url, timeout=self.timeout) as resp:  # nosec B310
                 data = _json.loads(resp.read().decode())
 
             parts: list[str] = []

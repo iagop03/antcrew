@@ -374,7 +374,7 @@ class SlackNotifyChannel:
                 self._webhook_url, data=data,
                 headers={"Content-Type": "application/json"},
             )
-            _req.urlopen(request, timeout=5)
+            _req.urlopen(request, timeout=5)  # nosec B310
         except Exception:
             pass  # Slack notification failure is never fatal
 

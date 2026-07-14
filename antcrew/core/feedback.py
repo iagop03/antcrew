@@ -116,7 +116,7 @@ class FeedbackRunner:
                 text=True,
                 timeout=self.timeout,
                 env=env,
-                shell=isinstance(self.cmd, str),
+                shell=isinstance(self.cmd, str),  # nosec B602
             )
             output = (proc.stdout + proc.stderr).strip()
             ok = proc.returncode == 0

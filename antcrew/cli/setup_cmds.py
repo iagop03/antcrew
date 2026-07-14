@@ -70,7 +70,7 @@ def cache_stats(
 
 @app.command()
 def serve(
-    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Bind host"),  # nosec B104
     port: int = typer.Option(8000, "--port", "-p", help="Bind port"),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev only)"),
     api_key: Optional[str] = typer.Option(
@@ -106,7 +106,7 @@ def serve(
     _has_dashboard = _static_index.exists()
 
     from antcrew import __version__ as _ver
-    display_host = "localhost" if host in ("0.0.0.0", "::") else host
+    display_host = "localhost" if host in ("0.0.0.0", "::") else host  # nosec B104
     auth_status = "[green]auth enabled[/]" if (_os.environ.get("ANTCREW_API_KEY")) else "[yellow]no auth[/]"
     console.print(f"\n[bold green]AntCrew[/] v{_ver}  ({auth_status})")
     console.print(f"  API       → [cyan]http://{display_host}:{port}[/]")

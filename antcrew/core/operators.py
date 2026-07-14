@@ -246,7 +246,7 @@ def build_operator(cfg: dict) -> BaseOperator:
     if op_type == "map":
         raw_fn = str(cfg["fn"])
         try:
-            fn = eval(raw_fn)  # noqa: S307 — intentional, documented
+            fn = eval(raw_fn)  # noqa: S307  # nosec B307 — intentional, documented
         except Exception as exc:
             raise ValueError(f"operator 'map': cannot eval fn={raw_fn!r}: {exc}") from exc
         if not callable(fn):

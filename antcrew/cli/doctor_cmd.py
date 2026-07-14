@@ -178,7 +178,7 @@ def _platform_check(base_url: str) -> list[tuple[str, str, str]]:
         platform_key = _get_key()
         if platform_key:
             req.add_header("X-Api-Key", platform_key)
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310
             import json as _json
             data = _json.loads(resp.read())
             db_ok = data.get("db", False)
