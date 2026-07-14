@@ -270,8 +270,8 @@ class WriteFileTool(BaseTool):
         # to arbitrary filesystem locations when the tool is used without a scope.
         if p.is_absolute():
             raise ValueError(
-                f"WriteFileTool has no root configured — absolute paths are not "
-                f"allowed. Instantiate with root='/your/project' or use a relative path."
+                "WriteFileTool has no root configured — absolute paths are not "
+                "allowed. Instantiate with root='/your/project' or use a relative path."
             )
         return p.resolve()
 

@@ -75,7 +75,12 @@ def build_llm(
             f"Unknown model: {model_str!r}. "
             "Supported prefixes: claude, gpt, o1, o3, openai:, ollama:, groq:, azure:, gemini, simulated."
         )
-    return _build_llm(model_str, prompt_caching=prompt_caching, api_key=api_key, base_url=base_url)
+    _kw: dict = {}
+    if api_key is not None:
+        _kw["api_key"] = api_key
+    if base_url is not None:
+        _kw["base_url"] = base_url
+    return _build_llm(model_str, prompt_caching=prompt_caching, **_kw)
 
 
 def _build_channel(cfg: dict):
