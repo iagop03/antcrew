@@ -1,14 +1,18 @@
 # AntCrew
 
-Multi-agent framework for software development teams, built on [LangGraph](https://github.com/langchain-ai/langgraph). LLM-agnostic — run with any cloud model or fully local.
+**From a one-line request to a reviewed, approvable GitHub PR — with a human in the loop at every step that matters.**
+
+AntCrew is a multi-agent pipeline for software teams built on [LangGraph](https://github.com/langchain-ai/langgraph). It takes a feature request, runs a coordinated team of AI agents (BA → PM → Dev → QA → Reviewer → DevOps), and opens a pull request on GitHub — pausing for human approval at any checkpoint you configure. LLM-agnostic: run with any cloud model or fully local.
 
 ---
 
 ## What is it?
 
-AntCrew spins up a team of specialized AI agents — Business Analyst, PM, Backend Dev, Frontend Dev, QA, Reviewer, DevOps, Doc Writer — that collaborate through a shared state graph to take a project from a one-line description to code, tests, CI config, and documentation.
+AntCrew spins up a team of specialized AI agents — Business Analyst, PM, Backend Dev, Frontend Dev, QA, Reviewer, DevOps, Doc Writer — that collaborate through a typed state graph to take a project from a one-line description to production-ready code, tests, CI config, and documentation.
 
-Designed for a specific sweet spot: **new MVPs, small-to-medium projects, and isolated new modules inside existing systems.** Not aimed at maintaining large legacy codebases.
+The key differentiator: **Human-in-the-Loop is a first-class primitive, not an afterthought.** Every agent checkpoint can pause for approval via Slack, a web link, or the REST API — no GitHub account or diff-reading skills required from the reviewer. The pipeline auto-posts an explainability comment on the PR summarizing what was built and why.
+
+Designed for a specific sweet spot: **new MVPs, small-to-medium features, and isolated new modules inside existing systems.** Not aimed at maintaining large legacy codebases.
 
 ## Two-layer architecture
 
