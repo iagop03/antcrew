@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 from enum import Enum
-from typing import Generic, Literal, Optional, TypeVar
+from typing import Any, Generic, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -45,6 +45,10 @@ class PRD(BaseModel):
     functional_requirements: list[str] = Field(default_factory=list)
     non_functional_requirements: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+    # Phase 1 extension point — workspace-defined fields validated against
+    # a JSON Schema stored in WorkspaceContractSchema.  Core fields above
+    # are always present; this dict is always ignored by built-in operators.
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class Ticket(BaseModel):
