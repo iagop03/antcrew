@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.6] — 2026-07-24
+
+### Added
+- **`GitHubIntegration.create_engine_pr()`** — pushes engine `ArtifactStore` output to a new branch and opens a PR with a TraceLog explainability comment (goal conditions satisfied/pending/not_reached + capability execution history with name, duration, cost, and produced artifact kinds)
+- **`GitHubIntegration._build_engine_summary_comment()`** — engine-specific comment builder; complements the existing `_build_summary_comment()` used for team (Layer 1) runs
+- `create_engine_pr()` accepts both `Artifact` objects from `antcrew_engine` and plain `{"file_path", "content"}` dicts from `antcrew-platform`'s `Run.state`
+
+---
+
+## [0.33.5] — 2026-07-14
+
+### Added
+- **BYOK support in `build_llm()`** — new `api_key` and `base_url` params passed through to `antcrew_engine.config.build_llm()`; antcrew-platform can now inject per-workspace customer keys in BYOK mode without mutating environment variables
+- **GitHub explainability comment** — `GitHubIntegration.create_pr()` now automatically posts a summary comment after opening the PR: objective, tickets addressed, generated files, and reviewer feedback; opt out per-call with `post_summary=False`; `post_comment(pr_url, body)` exposed as a public method for manual use
+
+### Fixed
+- **`WriteFileTool` path traversal** — replaced `str.startswith()` with `Path.is_relative_to()` (the string check allowed `/x/project-evil/` to bypass a root of `/x/project`); absolute paths without a configured root are now rejected
+- **`CodeExecutorTool` env isolation** — refuses execution when `ANTCREW_SANDBOX=required`; propagates only allowlisted env-var prefixes to the subprocess (API keys, tokens, DB URLs, and other secrets are withheld from LLM-generated code)
+
+### Changed
+- Dependency: `antcrew-engine>=0.3.5,<0.4` (aligns with path-traversal fix and BYOK param in engine)
+
+---
+
 ## [0.33.4] — 2026-07-09
 
 ### Fixed

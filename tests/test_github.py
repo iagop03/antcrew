@@ -259,3 +259,174 @@ def test_create_pr_updates_existing_file():
         gh.create_pr(state)
 
     assert put_payloads[0]["sha"] == existing_sha
+
+
+# ---------------------------------------------------------------------------
+# create_engine_pr
+# ---------------------------------------------------------------------------
+
+def _engine_arts() -> list[dict]:
+    return [
+        {"file_path": "src/main.py", "content": "def main(): pass\n"},
+        {"file_path": "tests/test_main.py", "content": "def test_main(): pass\n"},
+    ]
+
+
+def _engine_conditions() -> dict[str, str]:
+    return {
+        "requirements_exists": "satisfied",
+        "architecture_exists": "satisfied",
+        "implementation_exists": "satisfied",
+        "tests_pass": "not_reached",
+    }
+
+
+def _engine_capabilities() -> list[dict]:
+    return [
+        {"name": "SpecExtractor", "duration_s": 5.2, "cost_usd": 0.01, "produced": ["requirements"]},
+        {"name": "Architect",     "duration_s": 12.1, "cost_usd": 0.03, "produced": ["architecture"]},
+        {"name": "CodeGenerator", "duration_s": 20.0, "cost_usd": 0.08, "produced": ["implementation"]},
+    ]
+
+
+def _setup_engine_mocks(pr_url: str = "https://github.com/org/repo/pull/42"):
+    """Mock sequence for create_engine_pr with 2 artifacts."""
+    get_calls = [
+        _resp({"object": {"sha": "eng123"}}),   # GET ref
+        _resp({}, status=404),                  # GET contents/src/main.py
+        _resp({}, status=404),                  # GET contents/tests/test_main.py
+    ]
+    get_iter = iter(get_calls)
+    post_calls = [
+        _resp({}),                              # POST refs (create branch)
+        _resp({"html_url": pr_url}),            # POST pulls
+        _resp({}),                              # POST issues/{n}/comments (summary comment)
+    ]
+    post_iter = iter(post_calls)
+    return (
+        lambda *a, **kw: next(get_iter),
+        lambda *a, **kw: next(post_iter),
+    )
+
+
+def test_create_engine_pr_returns_url():
+    gh = _gh("org/repo")
+    get_side, post_side = _setup_engine_mocks()
+    with (
+        patch("httpx.get",  side_effect=get_side),
+        patch("httpx.post", side_effect=post_side),
+        patch("httpx.put",  return_value=_resp({})),
+    ):
+        url = gh.create_engine_pr(
+            goal="Build a REST API",
+            artifacts=_engine_arts(),
+            conditions=_engine_conditions(),
+            capabilities=_engine_capabilities(),
+        )
+    assert url == "https://github.com/org/repo/pull/42"
+
+
+def test_create_engine_pr_raises_on_empty_artifacts():
+    gh = _gh()
+    with pytest.raises(ValueError, match="empty"):
+        gh.create_engine_pr(goal="Build something", artifacts=[])
+
+
+def test_create_engine_pr_branch_uses_engine_prefix():
+    gh = _gh("o/r")
+    created: list[str] = []
+
+    get_responses = [
+        _resp({"object": {"sha": "s1"}}),
+        _resp({}, status=404),
+        _resp({}, status=404),
+    ]
+    get_iter = iter(get_responses)
+
+    def _post_side(*args, **kwargs):
+        payload = kwargs.get("json", {})
+        if "ref" in payload:
+            created.append(payload["ref"])
+        return _resp({"html_url": "https://github.com/o/r/pull/1"})
+
+    with (
+        patch("httpx.get",  side_effect=lambda *a, **kw: next(get_iter)),
+        patch("httpx.post", side_effect=_post_side),
+        patch("httpx.put",  return_value=_resp({})),
+    ):
+        gh.create_engine_pr("Build API", artifacts=_engine_arts())
+
+    assert created, "No branch created"
+    assert created[0].startswith("refs/heads/antcrew-engine/")
+
+
+def test_create_engine_pr_accepts_object_artifacts():
+    """Accepts Artifact-like objects (antcrew_engine.engine.Artifact) not just dicts."""
+    from unittest.mock import MagicMock
+    art = MagicMock()
+    art.file_path = "src/main.py"
+    art.content   = "pass\n"
+
+    gh = _gh("o/r")
+    get_responses = [_resp({"object": {"sha": "s1"}}), _resp({}, status=404)]
+    get_iter = iter(get_responses)
+
+    with (
+        patch("httpx.get",  side_effect=lambda *a, **kw: next(get_iter)),
+        patch("httpx.post", return_value=_resp({"html_url": "https://github.com/o/r/pull/2"})),
+        patch("httpx.put",  return_value=_resp({})),
+    ):
+        url = gh.create_engine_pr("Goal", artifacts=[art])
+    assert "pull/2" in url
+
+
+# ---------------------------------------------------------------------------
+# _build_engine_summary_comment
+# ---------------------------------------------------------------------------
+
+def test_engine_summary_comment_shows_conditions():
+    gh = _gh()
+    comment = gh._build_engine_summary_comment(
+        "Build API",
+        _engine_conditions(),
+        _engine_capabilities(),
+        artifact_count=2,
+    )
+    assert "✅" in comment
+    assert "requirements_exists" in comment
+    assert "tests_pass" in comment
+    assert "⬜" in comment
+
+
+def test_engine_summary_comment_shows_capabilities():
+    gh = _gh()
+    comment = gh._build_engine_summary_comment(
+        "Build API",
+        conditions=None,
+        capabilities=_engine_capabilities(),
+        artifact_count=2,
+    )
+    assert "SpecExtractor" in comment
+    assert "Architect" in comment
+    assert "CodeGenerator" in comment
+
+
+def test_engine_summary_comment_shows_total_cost():
+    gh = _gh()
+    comment = gh._build_engine_summary_comment(
+        "Build API",
+        conditions=None,
+        capabilities=_engine_capabilities(),
+        artifact_count=2,
+    )
+    # Total cost: 0.01 + 0.03 + 0.08 = 0.12
+    assert "0.12" in comment or "0.1200" in comment
+
+
+def test_engine_summary_comment_no_conditions():
+    gh = _gh()
+    comment = gh._build_engine_summary_comment(
+        "Build API", conditions=None, capabilities=None, artifact_count=5
+    )
+    assert "Build API" in comment
+    assert "5" in comment
