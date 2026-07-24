@@ -3,13 +3,23 @@ from antcrew.teams.research_team import ResearchTeam
 from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.fullstack_team import FullStackTeam
 from antcrew.teams.async_teams import (
-    AsyncDevTeam, AsyncFullStackTeam, AsyncResearchTeam, AsyncContentTeam,
-    AsyncCustomTeam, AsyncFeatureTeam, AsyncRouter,
+    AsyncDevTeam,
+    AsyncFullStackTeam,
+    AsyncResearchTeam,
+    AsyncContentTeam,
+    AsyncCustomTeam,
+    AsyncFeatureTeam,
+    AsyncRouter,
 )
 from antcrew.core.supervisor import Supervisor, ParallelGroup, parallel
 from antcrew.core.tools import (
-    BaseTool, ToolResult,
-    WebSearchTool, CodeExecutorTool, ReadFileTool, WriteFileTool, ListDirTool,
+    BaseTool,
+    ToolResult,
+    WebSearchTool,
+    CodeExecutorTool,
+    ReadFileTool,
+    WriteFileTool,
+    ListDirTool,
 )
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
 from antcrew.agents.direct_agent import DirectAgent
@@ -18,11 +28,22 @@ from antcrew.core.router import Router, RouteClassifier, LLMClassifier, RuleClas
 from antcrew.core.pipeline import Pipeline
 from antcrew.core.channel import BaseChannel
 from antcrew.core.artifacts import (
-    DevOpsArtifact, DocumentationArtifact,
-    PRD, CodeArtifact, TestArtifact, CodeReview, ResearchDocument,
-    ContentPiece, CodebaseAnalysis, Ticket,
-    ArtifactContract, ContractError, ARTIFACT_REGISTRY, resolve_artifact_schema,
-    coerce_model, coerce_list,
+    DevOpsArtifact,
+    DocumentationArtifact,
+    PRD,
+    CodeArtifact,
+    TestArtifact,
+    CodeReview,
+    ResearchDocument,
+    ContentPiece,
+    CodebaseAnalysis,
+    Ticket,
+    ArtifactContract,
+    ContractError,
+    ARTIFACT_REGISTRY,
+    resolve_artifact_schema,
+    coerce_model,
+    coerce_list,
 )
 from antcrew.agents.coherence import CoherenceAgent
 from antcrew.core.project_kb import ProjectKB
@@ -35,11 +56,12 @@ from antcrew.integrations.confluence import ConfluenceIntegration
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.models.gemini_model import GeminiModel
 from antcrew.models.fallback import FallbackLLM
+
 try:
     from antcrew.models.openai_model import OpenAIModel
     from antcrew.models.azure_openai_model import AzureOpenAIModel
 except ImportError:
-    OpenAIModel = None       # type: ignore[assignment,misc]
+    OpenAIModel = None  # type: ignore[assignment,misc]
     AzureOpenAIModel = None  # type: ignore[assignment,misc]
 from antcrew.models.cache import LLMCache, FileLLMCache
 from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
@@ -49,9 +71,16 @@ from antcrew.checkpointers import SqliteSaver
 from antcrew.core.exceptions import CostLimitExceeded
 from antcrew.core.events import bus, Event, EventBus, capture, new_run_id
 from antcrew.core.gates import (
-    BaseGate, GateResult, GateError,
-    NonEmptyGate, PythonSyntaxGate, JsonGate, SchemaGate,
-    AllGate, AnyGate, parse_gate,
+    BaseGate,
+    GateResult,
+    GateError,
+    NonEmptyGate,
+    PythonSyntaxGate,
+    JsonGate,
+    SchemaGate,
+    AllGate,
+    AnyGate,
+    parse_gate,
 )
 from antcrew.trace import TraceLog
 from antcrew.flow import load_flow, validate_flow, format_flow
@@ -60,9 +89,12 @@ from antcrew.config import load_context, TeamContext, build_llm, build_runner
 from antcrew.integrations.console import ConsoleChannel
 from antcrew.integrations.jira import JiraIntegration
 from antcrew.integrations.github import GitHubIntegration
+
 try:
     from antcrew.integrations.telegram.integration import (
-        TelegramChannel, TelegramIntegration, AgentBotConfig,
+        TelegramChannel,
+        TelegramIntegration,
+        AgentBotConfig,
     )
 except ImportError:
     TelegramChannel = None  # type: ignore[assignment,misc]
@@ -78,27 +110,64 @@ from antcrew.presets import AgentPreset, get_preset, CONCISE, STRICT, VERBOSE, C
 from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
 from antcrew.teams.custom_team import CustomTeam
 from antcrew.core.operators import (
-    BaseOperator, RenameOp, CopyOp, DropOp, SetOp, MapOp, MergeOp, build_operator,
+    BaseOperator,
+    RenameOp,
+    CopyOp,
+    DropOp,
+    SetOp,
+    MapOp,
+    MergeOp,
+    build_operator,
 )
 from antcrew.core.validation import validate_agent_dag
 from antcrew.testing import SequencedLLM
 from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind, ArtifactDelta, EMPTY_DELTA,
-    ArtifactStore, MemoryStore, FilesystemStore, MultiRepoStore,
-    Condition, ConditionId, DesiredProjectState, Constraints, Goal,
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    ArtifactDelta,
+    EMPTY_DELTA,
+    ArtifactStore,
+    MemoryStore,
+    FilesystemStore,
+    MultiRepoStore,
+    Condition,
+    ConditionId,
+    DesiredProjectState,
+    Constraints,
+    Goal,
     ProjectState,
-    CapabilityDescriptor, CapabilityResult, Executor,
-    ValidatorResult, Validator,
+    CapabilityDescriptor,
+    CapabilityResult,
+    Executor,
+    ValidatorResult,
+    Validator,
     CapabilityRegistry,
     EventLog,
-    EngineLoop, EngineLoopError,
-    CapabilitySelector, CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
+    EngineLoop,
+    EngineLoopError,
+    CapabilitySelector,
+    CheapestFirst,
+    FirstMatch,
+    MostProductive,
+    PrioritySelector,
     EventBusBridge,
 )
 from antcrew.capabilities import (
-    Architect, BugFixer, CodeGenerator, CodeRegenerator, CodeReviewer,
-    DependencyInstaller, DocGenerator, HitlReviewer, ReviewFixer,
-    SpecExtractor, TaskPlanner, TeamExecutor, TestGenerator, TestRunner,
+    Architect,
+    BugFixer,
+    CodeGenerator,
+    CodeRegenerator,
+    CodeReviewer,
+    DependencyInstaller,
+    DocGenerator,
+    HitlReviewer,
+    ReviewFixer,
+    SpecExtractor,
+    TaskPlanner,
+    TeamExecutor,
+    TestGenerator,
+    TestRunner,
 )
 
 __all__ = [
@@ -266,16 +335,35 @@ __all__ = [
     "TeamExecutor",
     "TestGenerator",
     "TestRunner",
-    "Artifact", "ArtifactId", "ArtifactKind", "ArtifactDelta", "EMPTY_DELTA",
-    "ArtifactStore", "MemoryStore", "FilesystemStore", "MultiRepoStore",
-    "Condition", "ConditionId", "DesiredProjectState", "Constraints", "Goal",
+    "Artifact",
+    "ArtifactId",
+    "ArtifactKind",
+    "ArtifactDelta",
+    "EMPTY_DELTA",
+    "ArtifactStore",
+    "MemoryStore",
+    "FilesystemStore",
+    "MultiRepoStore",
+    "Condition",
+    "ConditionId",
+    "DesiredProjectState",
+    "Constraints",
+    "Goal",
     "ProjectState",
-    "CapabilityDescriptor", "CapabilityResult", "Executor",
-    "ValidatorResult", "Validator",
+    "CapabilityDescriptor",
+    "CapabilityResult",
+    "Executor",
+    "ValidatorResult",
+    "Validator",
     "CapabilityRegistry",
     "EventLog",
-    "EngineLoop", "EngineLoopError",
-    "CapabilitySelector", "CheapestFirst", "FirstMatch", "MostProductive", "PrioritySelector",
+    "EngineLoop",
+    "EngineLoopError",
+    "CapabilitySelector",
+    "CheapestFirst",
+    "FirstMatch",
+    "MostProductive",
+    "PrioritySelector",
     "EventBusBridge",
     # Events
     "bus",
@@ -292,6 +380,7 @@ __all__ = [
 ]
 try:
     from importlib.metadata import version as _v
+
     __version__: str = _v("antcrew")
 except Exception:
     __version__ = "unknown"
