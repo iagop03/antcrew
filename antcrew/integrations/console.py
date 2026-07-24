@@ -18,8 +18,13 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 from antcrew.core.artifacts import (
-    PRD, Ticket, CodeArtifact, TestArtifact,
-    CodeReview, ResearchDocument, ContentPiece,
+    PRD,
+    CodeArtifact,
+    CodeReview,
+    ContentPiece,
+    ResearchDocument,
+    TestArtifact,
+    Ticket,
 )
 from antcrew.core.channel import BaseChannel
 

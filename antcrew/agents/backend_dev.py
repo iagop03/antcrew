@@ -5,7 +5,13 @@ import logging
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import (
-    ArtifactContract, ContractError, CodeArtifact, CodeReview, Ticket, TicketStatus, coerce_list,
+    ArtifactContract,
+    CodeArtifact,
+    CodeReview,
+    ContractError,
+    Ticket,
+    TicketStatus,
+    coerce_list,
 )
 from antcrew.core.state import TeamState
 

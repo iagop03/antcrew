@@ -6,7 +6,7 @@ from typing import Optional
 
 import typer
 
-from antcrew.cli._app import app, console, _MODEL_HELP
+from antcrew.cli._app import _MODEL_HELP, app, console
 
 
 @app.command(name="scan")
@@ -56,7 +56,9 @@ def scan_cmd(
     from rich.table import Table
 
     from antcrew.agents.codebase_scanner import (
-        _IGNORE_DIRS, _KEY_FILES, _MAX_TREE_LINES,
+        _IGNORE_DIRS,
+        _KEY_FILES,
+        _MAX_TREE_LINES,
         _build_tree,
     )
 
@@ -127,8 +129,8 @@ def scan_cmd(
 
         # ── LLM analysis (optional) ────────────────────────────────────────────
         if model:
+            from antcrew.agents.codebase_scanner import CodebaseScannerAgent, _scan_one
             from antcrew.config import build_llm
-            from antcrew.agents.codebase_scanner import _scan_one, CodebaseScannerAgent
 
             if not output_json:
                 console.print(f"\n[dim]Running LLM analysis with {model}…[/dim]")

@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import operator
 from typing import Annotated, Any, Optional
-from typing_extensions import TypedDict
 
 from langgraph.graph.message import add_messages
+from typing_extensions import TypedDict
 
 from antcrew.core.artifacts import (
+    PRD,
+    CodeArtifact,
     CodebaseAnalysis,
-    PRD, Ticket, CodeArtifact,
-    TestArtifact, CodeReview,
-    DevOpsArtifact, DocumentationArtifact,
-    ResearchDocument, ContentPiece,
+    CodeReview,
+    ContentPiece,
+    DevOpsArtifact,
+    DocumentationArtifact,
+    ResearchDocument,
+    TestArtifact,
+    Ticket,
 )
 
 

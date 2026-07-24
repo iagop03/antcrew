@@ -16,7 +16,7 @@ from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.table import Table
 
-from antcrew.core.artifacts import PRD, Ticket, CodeArtifact
+from antcrew.core.artifacts import PRD, CodeArtifact, Ticket
 
 console = Console()
 

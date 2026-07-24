@@ -4,7 +4,7 @@ Telegram limits: 4096 chars per message, HTML parse mode.
 """
 from __future__ import annotations
 
-from antcrew.core.artifacts import PRD, Ticket, CodeArtifact
+from antcrew.core.artifacts import PRD, CodeArtifact, Ticket
 
 _PRIORITY_EMOJI = {"low": "🟢", "medium": "🟡", "high": "🔴", "critical": "🚨"}
 

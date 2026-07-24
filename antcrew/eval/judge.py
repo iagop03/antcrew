@@ -13,7 +13,6 @@ from typing import Any
 from antcrew.core.agent import _strip_fences
 from antcrew.models.base import BaseLLM
 
-
 # ---------------------------------------------------------------------------
 # Result model
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import typer
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-from antcrew.cli._app import console, _TEAM_CHOICES
+from antcrew.cli._app import _TEAM_CHOICES, console
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -298,8 +298,12 @@ def _print_usage(llm) -> None:
 def _print_state_raw(raw: dict, team: str) -> None:
     """Like _print_state but works on plain dicts from load_state."""
     from antcrew.core.artifacts import (
-        CodeArtifact, ContentPiece, DevOpsArtifact,
-        PRD, ResearchDocument, Ticket,
+        PRD,
+        CodeArtifact,
+        ContentPiece,
+        DevOpsArtifact,
+        ResearchDocument,
+        Ticket,
     )
 
     def _maybe(cls, data):

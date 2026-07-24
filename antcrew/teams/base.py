@@ -17,9 +17,15 @@ import time
 from typing import TYPE_CHECKING
 
 from antcrew.core.artifacts import (
-    PRD, Ticket, CodeArtifact, TestArtifact,
-    CodeReview, DevOpsArtifact, DocumentationArtifact,
-    ResearchDocument, ContentPiece,
+    PRD,
+    CodeArtifact,
+    CodeReview,
+    ContentPiece,
+    DevOpsArtifact,
+    DocumentationArtifact,
+    ResearchDocument,
+    TestArtifact,
+    Ticket,
 )
 from antcrew.core.events import bus, new_run_id
 
@@ -243,10 +249,11 @@ class InteractiveMixin:
         - feedback  → if agent.conversational, call agent.refine(feedback),
                       update state, and show the revised artifact again.
         """
-        from antcrew.integrations.console import _display_artifact, _prompt_decision
-        from antcrew.console import edit_artifact_in_editor
         from rich.console import Console as _RC
         from rich.live import Live
+
+        from antcrew.console import edit_artifact_in_editor
+        from antcrew.integrations.console import _display_artifact, _prompt_decision
 
         _rc = _RC()
 

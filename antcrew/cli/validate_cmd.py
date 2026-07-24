@@ -8,6 +8,7 @@ import typer
 
 from antcrew.cli._app import app, console
 
+
 @app.command(name="validate")
 def validate_cmd(
     config: Path = typer.Argument(..., help="Path to agentteam.yaml or agentteam.json"),
@@ -31,6 +32,7 @@ def validate_cmd(
         antcrew validate team.yaml --strict
     """
     import yaml as _yaml
+
     from antcrew.models.simulated import SimulatedLLM as _Sim
 
     errors: list[str] = []

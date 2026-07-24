@@ -8,9 +8,11 @@ from typing import Any, Optional
 from antcrew.cli._app import console
 from antcrew.cli._shared import _print_state
 
+
 def _print_dry_run(team) -> None:
     """Print the step structure of a CustomTeam without running it."""
     from rich.table import Table
+
     from antcrew.teams.custom_team import _NestedTeamAgent
 
     groups = team._step_groups
@@ -60,6 +62,7 @@ def _print_dry_run(team) -> None:
 def _run_custom_with_progress(team, request: str, thread: str, *, stream: bool, llm=None):
     """Run a CustomTeam with per-step Rich progress output."""
     import time as _time
+
     from rich.live import Live
     from rich.panel import Panel as _Panel
     from rich.text import Text
@@ -272,6 +275,7 @@ def _run_with_hitl(
     No spinner is shown — the channel display IS the UX during HITL.
     """
     import concurrent.futures
+
     from antcrew.core.run_result import RunResult
 
     if channel is None:

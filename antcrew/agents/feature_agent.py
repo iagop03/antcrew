@@ -40,14 +40,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.tools import (
-    BaseTool, CodeExecutorTool, ListDirTool, ReadFileTool, WriteFileTool,
-)
 from antcrew.core.run_result import RunResult
+from antcrew.core.tools import (
+    BaseTool,
+    CodeExecutorTool,
+    ListDirTool,
+    ReadFileTool,
+    WriteFileTool,
+)
 
 if TYPE_CHECKING:
-    from antcrew.models.base import BaseLLM
     from antcrew.core.agent import TeamState
+    from antcrew.models.base import BaseLLM
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -198,7 +202,7 @@ class FeatureTeam:
         self.llm = llm
         self._feedback_loop = None
         if max_feedback_rounds > 0 and validate_cmd:
-            from antcrew.core.feedback import FeedbackRunner, FeedbackLoop
+            from antcrew.core.feedback import FeedbackLoop, FeedbackRunner
             runner = FeedbackRunner(
                 validate_cmd,
                 work_dir=project_dir,

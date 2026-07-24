@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import CodebaseAnalysis, PRD, coerce_list, coerce_model
+from antcrew.core.artifacts import PRD, CodebaseAnalysis, coerce_list, coerce_model
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\

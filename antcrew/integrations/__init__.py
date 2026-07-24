@@ -1,8 +1,8 @@
 try:
     from antcrew.integrations.telegram.integration import (
+        AgentBotConfig,
         TelegramChannel,
         TelegramIntegration,
-        AgentBotConfig,
     )
 except ImportError:
     TelegramChannel = None  # type: ignore[assignment,misc]

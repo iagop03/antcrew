@@ -12,6 +12,7 @@ from rich.table import Table
 from antcrew.cli._app import app, console
 from antcrew.cli._shared import _print_test_results
 
+
 @app.command(name="benchmark")
 def benchmark_cmd(
     cases_file: Path = typer.Argument(
@@ -47,6 +48,7 @@ def benchmark_cmd(
     """
     import concurrent.futures
     import time as _time
+
     from antcrew.config import build_llm
 
     if not cases_file.exists():
@@ -300,8 +302,8 @@ def watch_cmd(
             _watch_repo_path = str(repo_index.resolve())
 
     try:
-        from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
     except ImportError:
         console.print(
             "[red]watchdog is not installed.[/] "
@@ -309,11 +311,12 @@ def watch_cmd(
         )
         raise typer.Exit(1)
 
+    import difflib
     import threading
     import time as _time
-    import difflib
-    from antcrew.utils.persistence import save_state as _save
+
     from antcrew.config import build_llm
+    from antcrew.utils.persistence import save_state as _save
 
     llm = build_llm(model_name)
 
@@ -476,6 +479,7 @@ def export_cmd(
     antcrew export run_output.json --output my_project.zip --no-tests
     """
     import zipfile
+
     from antcrew.utils.persistence import load_state as _load_state
 
     if not path.exists():
@@ -551,8 +555,10 @@ def diff_cmd(
     antcrew diff run_v1.json run_v2.json --no-files   # metadata only
     """
     import difflib
-    from antcrew.utils.persistence import load_state as _load_state
+
     from rich.rule import Rule
+
+    from antcrew.utils.persistence import load_state as _load_state
 
     for p in (run_a, run_b):
         if not p.exists():
@@ -763,7 +769,7 @@ def test_cmd(
     Exit code is 0 when all tests pass, 1 otherwise.
     """
     from antcrew.core.artifacts import CodeArtifact, TestArtifact
-    from antcrew.sandbox import LocalRunner, DockerRunner
+    from antcrew.sandbox import DockerRunner, LocalRunner
     from antcrew.sandbox.runner import _write_artifacts
     from antcrew.utils.persistence import load_state
 
@@ -846,10 +852,10 @@ def test_cmd(
 
     # Feedback loop — only when tests failed and the user requested retries.
     if not result.success and feedback_rounds > 0:
-        from antcrew.core.feedback import run_test_feedback_loop
         from antcrew.agents.backend_dev import BackendDevAgent
         from antcrew.cli._shared import _build_team  # noqa: F401 — build_llm only
         from antcrew.config import build_llm
+        from antcrew.core.feedback import run_test_feedback_loop
 
         console.print(
             f"\n[bold yellow]Tests failed — running up to {feedback_rounds} fix round(s)…[/]\n"

@@ -9,7 +9,6 @@ from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
 from antcrew.core.artifacts import CodeArtifact, TestArtifact, Ticket, coerce_list
 from antcrew.core.state import TeamState
 
-
 _TS_EXTS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 
 

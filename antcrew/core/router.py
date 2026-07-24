@@ -68,8 +68,8 @@ from typing import TYPE_CHECKING, Any, Optional
 from antcrew.core.events import bus, new_run_id
 
 if TYPE_CHECKING:
-    from antcrew.models.base import BaseLLM
     from antcrew.core.run_result import RunResult
+    from antcrew.models.base import BaseLLM
 
 log = logging.getLogger(__name__)
 

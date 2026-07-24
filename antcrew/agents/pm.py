@@ -4,7 +4,7 @@ import hashlib
 import json
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import ArtifactContract, ContractError, PRD, Ticket, TicketStatus
+from antcrew.core.artifacts import PRD, ArtifactContract, ContractError, Ticket, TicketStatus
 from antcrew.core.state import TeamState
 
 

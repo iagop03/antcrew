@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import typer
 
 from antcrew.cli._app import app, console
+
 
 @app.command(name="graph")
 def graph_cmd(
@@ -33,7 +35,7 @@ def graph_cmd(
     antcrew graph --config agentteam.yaml
     antcrew graph --config flow.json --format mermaid
     """
-    from antcrew.graph import render_ascii, render_mermaid, _get_builtin_flow
+    from antcrew.graph import _get_builtin_flow, render_ascii, render_mermaid
 
     fmt = fmt.lower().strip()
     if fmt not in ("ascii", "mermaid"):

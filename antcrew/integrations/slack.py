@@ -71,8 +71,13 @@ except ImportError:
 def _artifact_text(artifact) -> str:
     """Format an artifact as mrkdwn text for a Slack section block (≤3000 chars)."""
     from antcrew.core.artifacts import (
-        PRD, Ticket, CodeArtifact, TestArtifact,
-        CodeReview, ResearchDocument, ContentPiece,
+        PRD,
+        CodeArtifact,
+        CodeReview,
+        ContentPiece,
+        ResearchDocument,
+        TestArtifact,
+        Ticket,
     )
 
     if artifact is None:

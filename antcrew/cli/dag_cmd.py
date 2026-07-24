@@ -38,8 +38,9 @@ def dag_cmd(
         raise typer.Exit(1)
 
     try:
-        import yaml as _yaml
         import json as _json
+
+        import yaml as _yaml
         raw = config.read_text(encoding="utf-8")
         cfg: dict = _yaml.safe_load(raw) if config.suffix.lower() in (".yaml", ".yml") else _json.loads(raw)
     except Exception as exc:
@@ -62,18 +63,18 @@ def dag_cmd(
             raise typer.Exit(1)
 
     elif team_type in ("dev", "fullstack"):
+        from antcrew.agents.backend_dev import BackendDevAgent
         from antcrew.agents.business import BusinessAnalystAgent
         from antcrew.agents.pm import PMAgent
-        from antcrew.agents.backend_dev import BackendDevAgent
         from antcrew.models.simulated import SimulatedLLM
         llm = SimulatedLLM()
         pipeline = [BusinessAnalystAgent(llm), PMAgent(llm), BackendDevAgent(llm)]
         if team_type == "fullstack":
+            from antcrew.agents.devops import DevOpsAgent
+            from antcrew.agents.doc_writer import DocWriterAgent
             from antcrew.agents.frontend_dev import FrontendDevAgent
             from antcrew.agents.qa import QAAgent
             from antcrew.agents.reviewer import ReviewerAgent
-            from antcrew.agents.devops import DevOpsAgent
-            from antcrew.agents.doc_writer import DocWriterAgent
             pipeline += [FrontendDevAgent(llm), QAAgent(llm), ReviewerAgent(llm), DevOpsAgent(llm), DocWriterAgent(llm)]
         agents = pipeline
 

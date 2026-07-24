@@ -8,6 +8,7 @@ import typer
 
 from antcrew.cli._app import app, console
 
+
 @app.command(name="publish")
 def publish_cmd(
     state_file: Path = typer.Argument(
@@ -67,11 +68,15 @@ def publish_cmd(
         raise typer.Exit(1)
 
     # Load and re-hydrate the state dict into Pydantic objects
-    from antcrew.utils.persistence import load_state as _load_state
     from antcrew.core.artifacts import (
-        PRD, CodeArtifact, DevOpsArtifact, DocumentationArtifact,
-        ResearchDocument, Ticket,
+        PRD,
+        CodeArtifact,
+        DevOpsArtifact,
+        DocumentationArtifact,
+        ResearchDocument,
+        Ticket,
     )
+    from antcrew.utils.persistence import load_state as _load_state
 
     raw = _load_state(state_file)
 

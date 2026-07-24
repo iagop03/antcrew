@@ -15,19 +15,43 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from antcrew.cli._app import app, console, _MODEL_HELP
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind,
-    CapabilityRegistry, Condition, ConditionId, Constraints,
-    DesiredProjectState, EventLog, FilesystemStore, Goal, MemoryStore, EngineLoop,
-)
 from antcrew.capabilities import (
-    Architect, BugFixer, CodeGenerator, CodeRegenerator, CodeReviewer,
-    DependencyInstaller, DocGenerator, ReviewFixer, TaskPlanner, TestGenerator, TestRunner,
+    Architect,
+    BugFixer,
+    CodeGenerator,
+    CodeRegenerator,
+    CodeReviewer,
+    DependencyInstaller,
+    DocGenerator,
+    ReviewFixer,
+    TaskPlanner,
+    TestGenerator,
+    TestRunner,
 )
 from antcrew.capabilities.validators import (
-    AllTasksCompletedValidator, CodeReviewedValidator, DependenciesInstalledValidator,
-    DocumentationExistsValidator, TestsExistValidator, TestsPassValidator, artifact_validators,
+    AllTasksCompletedValidator,
+    CodeReviewedValidator,
+    DependenciesInstalledValidator,
+    DocumentationExistsValidator,
+    TestsExistValidator,
+    TestsPassValidator,
+    artifact_validators,
+)
+from antcrew.cli._app import _MODEL_HELP, app, console
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    CapabilityRegistry,
+    Condition,
+    ConditionId,
+    Constraints,
+    DesiredProjectState,
+    EngineLoop,
+    EventLog,
+    FilesystemStore,
+    Goal,
+    MemoryStore,
 )
 
 _GOAL_META_REL = Path(".antcrew") / "goal.json"
@@ -184,10 +208,10 @@ def _load_existing_codebase(store, source_dir: Path, goal_description: str) -> i
 
 def _edit_content(content, console) -> "dict | str | None":
     """Open content in $EDITOR (or notepad on Windows). Returns parsed result or None on error."""
-    import os
-    import sys
     import json as _json
+    import os
     import subprocess
+    import sys
     import tempfile
 
     is_dict = isinstance(content, dict)
@@ -245,6 +269,7 @@ def _wire_hitl(registry: CapabilityRegistry, llm, hitl_after: list[str],
                hitl_max_rejections: int = 5) -> dict[str, int]:
     """Register HitlReviewer capabilities and patch downstream needs."""
     import dataclasses
+
     from antcrew.capabilities import HitlReviewer
 
     def _make_console_callback(cap_name: str):

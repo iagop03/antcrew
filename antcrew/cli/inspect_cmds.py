@@ -7,8 +7,9 @@ from typing import Optional
 
 import typer
 
-from antcrew.cli._app import app, console, _TEAM_CHOICES
+from antcrew.cli._app import _TEAM_CHOICES, app, console
 from antcrew.cli._shared import _print_state_raw
+
 
 @app.command()
 def show(
@@ -158,19 +159,19 @@ def describe(
         model_str = cfg.get("model", model_str)
 
     # ── Agent class registry (no instantiation needed) ────────────────────────
-    from antcrew.agents.business import BusinessAnalystAgent
-    from antcrew.agents.pm import PMAgent
     from antcrew.agents.backend_dev import BackendDevAgent
-    from antcrew.agents.frontend_dev import FrontendDevAgent
-    from antcrew.agents.qa import QAAgent
-    from antcrew.agents.reviewer import ReviewerAgent
+    from antcrew.agents.business import BusinessAnalystAgent
+    from antcrew.agents.codebase_scanner import CodebaseScannerAgent
+    from antcrew.agents.copywriter import CopywriterAgent
     from antcrew.agents.devops import DevOpsAgent
     from antcrew.agents.doc_writer import DocWriterAgent
-    from antcrew.agents.researcher import ResearcherAgent
-    from antcrew.agents.idea import IdeaAgent
-    from antcrew.agents.copywriter import CopywriterAgent
     from antcrew.agents.editor import EditorAgent
-    from antcrew.agents.codebase_scanner import CodebaseScannerAgent
+    from antcrew.agents.frontend_dev import FrontendDevAgent
+    from antcrew.agents.idea import IdeaAgent
+    from antcrew.agents.pm import PMAgent
+    from antcrew.agents.qa import QAAgent
+    from antcrew.agents.researcher import ResearcherAgent
+    from antcrew.agents.reviewer import ReviewerAgent
     from antcrew.agents.sprint_planner import SprintPlannerAgent
 
     _CLASSES: dict[str, type] = {
@@ -257,6 +258,7 @@ def describe(
             console.print(f"[red]Context file not found:[/] {context}")
         else:
             import json as _ctx_json
+
             from rich.table import Table as _RTable
             ctx_data = _ctx_json.loads(context.read_text(encoding="utf-8"))
             components = ctx_data.get("components") or [ctx_data]

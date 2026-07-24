@@ -29,10 +29,10 @@ import asyncio
 import functools
 
 from antcrew.core.run_result import RunResult
+from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.fullstack_team import FullStackTeam
 from antcrew.teams.research_team import ResearchTeam
-from antcrew.teams.content_team import ContentTeam
 
 
 class AsyncTeamMixin:

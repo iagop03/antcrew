@@ -9,7 +9,6 @@ import typer
 
 from antcrew.cli._app import app, console
 
-
 _CONFIG_DIR = ".antcrew"
 _CONFIG_FILE = "config.yaml"
 

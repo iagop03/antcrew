@@ -34,7 +34,6 @@ except ImportError:
 
 from antcrew.models.base import BaseLLM
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -156,8 +155,8 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
     # Supervisor: support `flow:` key for custom pipeline + optional `gates:`
     supervisor = None
     if "flow" in cfg:
-        from antcrew.core.supervisor import Supervisor
         from antcrew.core.gates import parse_gate as _pg
+        from antcrew.core.supervisor import Supervisor
         flow = [tuple(step) for step in cfg["flow"]]
         gates_raw: dict = cfg.get("gates") or {}
         gates = {name: _pg(spec) for name, spec in gates_raw.items()}
@@ -246,8 +245,8 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
         )
 
     if team_type == "auto":
-        from antcrew.core.router import Router, LLMClassifier
         from antcrew.agents.direct_agent import DirectAgent
+        from antcrew.core.router import LLMClassifier, Router
         simple_prompt = str(cfg.get("simple_prompt") or "You are a helpful assistant. Answer concisely.")
         complex_type = str(cfg.get("complex_team", "dev"))
         route_descriptions: dict = cfg.get("route_descriptions") or {
@@ -268,8 +267,8 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
         )
 
     if team_type == "routed":
-        from antcrew.core.router import Router, LLMClassifier, RuleClassifier
         from antcrew.agents.direct_agent import DirectAgent
+        from antcrew.core.router import LLMClassifier, Router, RuleClassifier
         routes_cfg: dict = cfg.get("routes") or {}
         if not routes_cfg:
             raise ValueError("'team: routed' requires a non-empty 'routes:' block.")
@@ -464,7 +463,7 @@ def load_context(path: str | Path) -> TeamContext:
 
 def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel, agent_cfg: dict):
     """Instantiate the right agent class by name."""
-    from antcrew.agents.registry import instantiate_agent, AGENT_REGISTRY
+    from antcrew.agents.registry import AGENT_REGISTRY, instantiate_agent
 
     agent = instantiate_agent(
         name, llm,
@@ -483,6 +482,7 @@ def _resolve_agent(name: str, llm: BaseLLM, approval: bool, options, channel, ag
         cfg.setdefault("name", name)
         if "template" in cfg:
             from pathlib import Path as _P
+
             import yaml as _yaml  # type: ignore[import]
             tpl_path = _P(cfg["template"])
             file_cfg = _yaml.safe_load(tpl_path.read_text(encoding="utf-8"))

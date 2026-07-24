@@ -31,11 +31,11 @@ from __future__ import annotations
 import logging
 import re
 from enum import Enum
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from antcrew.models.base import BaseLLM
     from antcrew.core.run_result import RunResult
+    from antcrew.models.base import BaseLLM
 
 log = logging.getLogger(__name__)
 
@@ -250,8 +250,8 @@ class MinimalPipeline:
                 max_error_chars=kw.get("max_error_chars", 2000),
             )
 
-        from antcrew.teams.dev_team import DevTeam
         from antcrew.core.supervisor import Supervisor
+        from antcrew.teams.dev_team import DevTeam
         return DevTeam(
             model=self._model,
             agents=agents,
@@ -290,9 +290,10 @@ class _SingleAgentTeam:
         self._max_error_chars = max_error_chars
 
     def run(self, request: str, *, thread_id: str = "default") -> "RunResult":
-        from antcrew.core.run_result import RunResult
-        from antcrew.core.events import bus, Event, new_run_id
         import time
+
+        from antcrew.core.events import Event, bus, new_run_id
+        from antcrew.core.run_result import RunResult
 
         run_id = new_run_id()
         agent_name = getattr(self._agent, "name", "agent")
@@ -344,8 +345,8 @@ class _SingleAgentTeam:
         # Optional feedback loop — only runs if a sandbox runner was provided.
         if self._runner is not None and self._feedback_rounds > 0:
             try:
-                from antcrew.core.feedback import run_test_feedback_loop
                 from antcrew.agents.backend_dev import BackendDevAgent
+                from antcrew.core.feedback import run_test_feedback_loop
                 fixer = BackendDevAgent(self._model)
                 state = run_test_feedback_loop(
                     state,
@@ -382,14 +383,14 @@ class _SingleAgentTeam:
 
 def _make_agents(names: list[str], model: "BaseLLM") -> dict:
     """Instantiate only the agents named in *names*."""
-    from antcrew.agents.business import BusinessAnalystAgent
-    from antcrew.agents.pm import PMAgent
     from antcrew.agents.backend_dev import BackendDevAgent
+    from antcrew.agents.business import BusinessAnalystAgent
+    from antcrew.agents.devops import DevOpsAgent
+    from antcrew.agents.doc_writer import DocWriterAgent
     from antcrew.agents.frontend_dev import FrontendDevAgent
+    from antcrew.agents.pm import PMAgent
     from antcrew.agents.qa import QAAgent
     from antcrew.agents.reviewer import ReviewerAgent
-    from antcrew.agents.doc_writer import DocWriterAgent
-    from antcrew.agents.devops import DevOpsAgent
 
     registry = {
         "business_analyst": lambda: BusinessAnalystAgent(model),

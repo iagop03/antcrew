@@ -1,34 +1,34 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from antcrew.agents.codebase_scanner import CodebaseScannerAgent
-from antcrew.agents.business import BusinessAnalystAgent
-from antcrew.agents.coherence import CoherenceAgent
-from antcrew.agents.pm import PMAgent
-from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.agents.backend_dev import BackendDevAgent
-from antcrew.agents.frontend_dev import FrontendDevAgent
-from antcrew.agents.qa import QAAgent
-from antcrew.agents.reviewer import ReviewerAgent
+from antcrew.agents.business import BusinessAnalystAgent
+from antcrew.agents.codebase_scanner import CodebaseScannerAgent
+from antcrew.agents.coherence import CoherenceAgent
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.doc_writer import DocWriterAgent
+from antcrew.agents.frontend_dev import FrontendDevAgent
+from antcrew.agents.pm import PMAgent
+from antcrew.agents.qa import QAAgent
+from antcrew.agents.reviewer import ReviewerAgent
+from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.core.events import bus, new_run_id
 from antcrew.core.run_result import RunResult
-from antcrew.core.supervisor import Supervisor
 from antcrew.core.state import TeamState
+from antcrew.core.supervisor import Supervisor
 from antcrew.models.anthropic_model import AnthropicModel
 from antcrew.models.base import BaseLLM
 from antcrew.teams.base import InteractiveMixin
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from antcrew.memory.store import BaseMemory
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+
     from antcrew.memory.repo_index import RepoIndex as _RepoIndexT
+    from antcrew.memory.store import BaseMemory
     from antcrew.sandbox.runner import SandboxRunner
     from antcrew.trace import TraceLog
-    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 log = logging.getLogger(__name__)
 
@@ -126,8 +126,9 @@ class FullStackTeam(InteractiveMixin):
         self.scan_context: Optional[dict] = scan_context
         self._project_kb = None
         if project_kb_path:
-            from antcrew.core.project_kb import ProjectKB
             from pathlib import Path as _Path
+
+            from antcrew.core.project_kb import ProjectKB
             self._project_kb = ProjectKB.load(project_kb_path)
             self._project_kb._path = _Path(project_kb_path)
 

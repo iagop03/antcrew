@@ -7,8 +7,9 @@ from typing import Optional
 
 import typer
 
-from antcrew.cli._app import app, console, _MODEL_HELP, _TEAM_CHOICES
+from antcrew.cli._app import _MODEL_HELP, _TEAM_CHOICES, app, console
 from antcrew.cli._shared import _build_team, _print_state
+
 
 def _extract_state_to_dir(state: dict, output_dir: "Path") -> None:
     """Write code/test/devops artifacts from a state dict to real files on disk."""
@@ -185,9 +186,10 @@ def eval_cmd(
 
     Exit code is 0 when all cases pass, 1 when any fails — useful in CI.
     """
+    from rich.table import Table
+
     from antcrew.config import build_llm
     from antcrew.eval import EvalCase, EvalRunner
-    from rich.table import Table
 
     # ── Load cases ────────────────────────────────────────────────────────────
     if not cases_file.exists():
@@ -316,8 +318,8 @@ def eval_cmd(
 
     # ── Save to local SQLite history ─────────────────────────────────────────
     if save and reports:
-        import sqlite3
         import datetime as _dt
+        import sqlite3
         save_path = Path(save).expanduser()
         save_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(save_path) as con:
@@ -357,8 +359,8 @@ def eval_cmd(
     # ── Push to platform ──────────────────────────────────────────────────────
     if push_to and reports:
         import os
-        import urllib.request
         import urllib.error
+        import urllib.request
         platform_key = os.environ.get("ANTCREW_PLATFORM_API_KEY", "") or os.environ.get("ANTCREW_PLATFORM_KEY", "")
         base = push_to.rstrip("/")
         pushed, errors = 0, 0

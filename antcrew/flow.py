@@ -50,7 +50,6 @@ import json
 from pathlib import Path
 from typing import Optional
 
-
 # All agent names recognised by the built-in registry
 _KNOWN_AGENTS: frozenset[str] = frozenset({
     "business_analyst",

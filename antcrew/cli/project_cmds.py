@@ -6,8 +6,9 @@ from typing import Optional
 
 import typer
 
-from antcrew.cli._app import _project_app, console, _MODEL_HELP, _TEAM_CHOICES
+from antcrew.cli._app import _MODEL_HELP, _TEAM_CHOICES, _project_app, console
 from antcrew.cli._shared import _print_state, _print_state_raw
+
 
 def _resolve_project_team(config: Optional[Path], team_opt: Optional[str], model: str):
     """Return (team_instance, team_spec_dict) or (None, None)."""
@@ -191,9 +192,10 @@ def project_history(
     path: Path = typer.Argument(..., help="Project JSON file"),
 ) -> None:
     """Show the run history of a project as a table."""
-    from rich.table import Table
     import json as _json
     import time as _time
+
+    from rich.table import Table
 
     if not path.exists():
         console.print(f"[red]Project file not found:[/] {path}")

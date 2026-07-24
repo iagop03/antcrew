@@ -208,7 +208,11 @@ class EvalRunner:
         judge_results: dict = {}
         if self.judge_llm:
             from antcrew.eval.judge import (
-                judge_code, judge_prd, judge_review, judge_tests, judge_tickets,
+                judge_code,
+                judge_prd,
+                judge_review,
+                judge_tests,
+                judge_tickets,
             )
             judge_results["prd"]     = judge_prd(state.get("prd"), case.request, self.judge_llm)
             judge_results["tickets"] = judge_tickets(state.get("tickets"), state.get("prd"), self.judge_llm)

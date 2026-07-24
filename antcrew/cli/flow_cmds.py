@@ -7,6 +7,7 @@ import typer
 
 from antcrew.cli._app import _flow_app, console
 
+
 @_flow_app.command("show")
 def flow_show(
     flow_file: Path = typer.Argument(..., help="Flow YAML or JSON file"),
@@ -16,7 +17,7 @@ def flow_show(
     The file can be a standalone list of edges OR a full team config with
     a 'flow:' key.  Both .yaml/.yml and .json are supported.
     """
-    from antcrew.flow import load_flow, format_flow, validate_flow
+    from antcrew.flow import format_flow, load_flow, validate_flow
 
     if not flow_file.exists():
         console.print(f"[red]File not found:[/] {flow_file}")

@@ -9,6 +9,7 @@ from rich.panel import Panel
 
 from antcrew.cli._app import app, console
 
+
 def _parse_since(since: str) -> str:
     """Return an ISO timestamp string from a human date or relative spec.
 
@@ -22,7 +23,8 @@ def _parse_since(since: str) -> str:
     if since.endswith("d") and since[:-1].isdigit():
         days = int(since[:-1])
         secs = _time.time() - days * 86400
-        from datetime import datetime as _dt, timezone as _tz
+        from datetime import datetime as _dt
+        from datetime import timezone as _tz
         return _dt.fromtimestamp(secs, tz=_tz.utc).isoformat()
     # Assume YYYY-MM-DD
     return since + "T00:00:00+00:00"
@@ -75,6 +77,7 @@ def history_cmd(
         antcrew history ~/.antcrew/trace.db --since 30d --export runs.csv
     """
     from rich.table import Table
+
     from antcrew.trace import TraceLog
 
     if not db.exists():

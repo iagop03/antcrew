@@ -1,158 +1,106 @@
-from antcrew.teams.dev_team import DevTeam
-from antcrew.teams.research_team import ResearchTeam
-from antcrew.teams.content_team import ContentTeam
-from antcrew.teams.fullstack_team import FullStackTeam
-from antcrew.teams.async_teams import (
-    AsyncDevTeam,
-    AsyncFullStackTeam,
-    AsyncResearchTeam,
-    AsyncContentTeam,
-    AsyncCustomTeam,
-    AsyncFeatureTeam,
-    AsyncRouter,
-)
-from antcrew.core.supervisor import Supervisor, ParallelGroup, parallel
-from antcrew.core.tools import (
-    BaseTool,
-    ToolResult,
-    WebSearchTool,
-    CodeExecutorTool,
-    ReadFileTool,
-    WriteFileTool,
-    ListDirTool,
-)
-from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
+from antcrew.agents.codebase_scanner import CodebaseScannerAgent
+from antcrew.agents.coherence import CoherenceAgent
+from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.direct_agent import DirectAgent
-from antcrew.core.feedback import FeedbackRunner, FeedbackLoop, FeedbackResult
-from antcrew.core.router import Router, RouteClassifier, LLMClassifier, RuleClassifier
-from antcrew.core.pipeline import Pipeline
-from antcrew.core.channel import BaseChannel
+from antcrew.agents.doc_writer import DocWriterAgent
+from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
+from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.core.artifacts import (
+    ARTIFACT_REGISTRY,
+    PRD,
+    ArtifactContract,
+    CodeArtifact,
+    CodebaseAnalysis,
+    CodeReview,
+    ContentPiece,
+    ContractError,
     DevOpsArtifact,
     DocumentationArtifact,
-    PRD,
-    CodeArtifact,
-    TestArtifact,
-    CodeReview,
     ResearchDocument,
-    ContentPiece,
-    CodebaseAnalysis,
+    TestArtifact,
     Ticket,
-    ArtifactContract,
-    ContractError,
-    ARTIFACT_REGISTRY,
-    resolve_artifact_schema,
-    coerce_model,
     coerce_list,
+    coerce_model,
+    resolve_artifact_schema,
 )
-from antcrew.agents.coherence import CoherenceAgent
+from antcrew.core.channel import BaseChannel
+from antcrew.core.feedback import FeedbackLoop, FeedbackResult, FeedbackRunner
+from antcrew.core.pipeline import Pipeline
 from antcrew.core.project_kb import ProjectKB
-from antcrew.core.task_classifier import TaskType, classify_task, MinimalPipeline
-from antcrew.agents.devops import DevOpsAgent
-from antcrew.agents.doc_writer import DocWriterAgent
-from antcrew.agents.codebase_scanner import CodebaseScannerAgent
-from antcrew.agents.sprint_planner import SprintPlannerAgent
+from antcrew.core.router import LLMClassifier, RouteClassifier, Router, RuleClassifier
+from antcrew.core.supervisor import ParallelGroup, Supervisor, parallel
+from antcrew.core.task_classifier import MinimalPipeline, TaskType, classify_task
+from antcrew.core.tools import (
+    BaseTool,
+    CodeExecutorTool,
+    ListDirTool,
+    ReadFileTool,
+    ToolResult,
+    WebSearchTool,
+    WriteFileTool,
+)
 from antcrew.integrations.confluence import ConfluenceIntegration
-from antcrew.models.simulated import SimulatedLLM
-from antcrew.models.gemini_model import GeminiModel
 from antcrew.models.fallback import FallbackLLM
+from antcrew.models.gemini_model import GeminiModel
+from antcrew.models.simulated import SimulatedLLM
+from antcrew.teams.async_teams import (
+    AsyncContentTeam,
+    AsyncCustomTeam,
+    AsyncDevTeam,
+    AsyncFeatureTeam,
+    AsyncFullStackTeam,
+    AsyncResearchTeam,
+    AsyncRouter,
+)
+from antcrew.teams.content_team import ContentTeam
+from antcrew.teams.dev_team import DevTeam
+from antcrew.teams.fullstack_team import FullStackTeam
+from antcrew.teams.research_team import ResearchTeam
 
 try:
-    from antcrew.models.openai_model import OpenAIModel
     from antcrew.models.azure_openai_model import AzureOpenAIModel
+    from antcrew.models.openai_model import OpenAIModel
 except ImportError:
     OpenAIModel = None  # type: ignore[assignment,misc]
     AzureOpenAIModel = None  # type: ignore[assignment,misc]
-from antcrew.models.cache import LLMCache, FileLLMCache
-from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
-from antcrew.sandbox import RunResult as SandboxRunResult
-from antcrew.core.run_result import RunResult
 from antcrew.checkpointers import SqliteSaver
+from antcrew.config import TeamContext, build_llm, build_runner, load_context
+from antcrew.core.events import Event, EventBus, bus, capture, new_run_id
 from antcrew.core.exceptions import CostLimitExceeded
-from antcrew.core.events import bus, Event, EventBus, capture, new_run_id
 from antcrew.core.gates import (
-    BaseGate,
-    GateResult,
-    GateError,
-    NonEmptyGate,
-    PythonSyntaxGate,
-    JsonGate,
-    SchemaGate,
     AllGate,
     AnyGate,
+    BaseGate,
+    GateError,
+    GateResult,
+    JsonGate,
+    NonEmptyGate,
+    PythonSyntaxGate,
+    SchemaGate,
     parse_gate,
 )
-from antcrew.trace import TraceLog
-from antcrew.flow import load_flow, validate_flow, format_flow
-from antcrew.project import Project
-from antcrew.config import load_context, TeamContext, build_llm, build_runner
+from antcrew.core.run_result import RunResult
+from antcrew.flow import format_flow, load_flow, validate_flow
 from antcrew.integrations.console import ConsoleChannel
-from antcrew.integrations.jira import JiraIntegration
 from antcrew.integrations.github import GitHubIntegration
+from antcrew.integrations.jira import JiraIntegration
+from antcrew.models.cache import FileLLMCache, LLMCache
+from antcrew.project import Project
+from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
+from antcrew.sandbox import RunResult as SandboxRunResult
+from antcrew.trace import TraceLog
 
 try:
     from antcrew.integrations.telegram.integration import (
+        AgentBotConfig,
         TelegramChannel,
         TelegramIntegration,
-        AgentBotConfig,
     )
 except ImportError:
     TelegramChannel = None  # type: ignore[assignment,misc]
     TelegramIntegration = None  # type: ignore[assignment,misc]
     AgentBotConfig = None  # type: ignore[assignment,misc]
-from antcrew.integrations.slack import SlackChannel
-from antcrew.utils.persistence import save_state, load_state
-from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult
-from antcrew.memory.chroma import ChromaMemory
-from antcrew.memory.repo_index import RepoIndex
-from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResult
-from antcrew.presets import AgentPreset, get_preset, CONCISE, STRICT, VERBOSE, CAREFUL
 from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
-from antcrew.teams.custom_team import CustomTeam
-from antcrew.core.operators import (
-    BaseOperator,
-    RenameOp,
-    CopyOp,
-    DropOp,
-    SetOp,
-    MapOp,
-    MergeOp,
-    build_operator,
-)
-from antcrew.core.validation import validate_agent_dag
-from antcrew.testing import SequencedLLM
-from antcrew.engine import (
-    Artifact,
-    ArtifactId,
-    ArtifactKind,
-    ArtifactDelta,
-    EMPTY_DELTA,
-    ArtifactStore,
-    MemoryStore,
-    FilesystemStore,
-    MultiRepoStore,
-    Condition,
-    ConditionId,
-    DesiredProjectState,
-    Constraints,
-    Goal,
-    ProjectState,
-    CapabilityDescriptor,
-    CapabilityResult,
-    Executor,
-    ValidatorResult,
-    Validator,
-    CapabilityRegistry,
-    EventLog,
-    EngineLoop,
-    EngineLoopError,
-    CapabilitySelector,
-    CheapestFirst,
-    FirstMatch,
-    MostProductive,
-    PrioritySelector,
-    EventBusBridge,
-)
 from antcrew.capabilities import (
     Architect,
     BugFixer,
@@ -169,6 +117,58 @@ from antcrew.capabilities import (
     TestGenerator,
     TestRunner,
 )
+from antcrew.core.operators import (
+    BaseOperator,
+    CopyOp,
+    DropOp,
+    MapOp,
+    MergeOp,
+    RenameOp,
+    SetOp,
+    build_operator,
+)
+from antcrew.core.validation import validate_agent_dag
+from antcrew.engine import (
+    EMPTY_DELTA,
+    Artifact,
+    ArtifactDelta,
+    ArtifactId,
+    ArtifactKind,
+    ArtifactStore,
+    CapabilityDescriptor,
+    CapabilityRegistry,
+    CapabilityResult,
+    CapabilitySelector,
+    CheapestFirst,
+    Condition,
+    ConditionId,
+    Constraints,
+    DesiredProjectState,
+    EngineLoop,
+    EngineLoopError,
+    EventBusBridge,
+    EventLog,
+    Executor,
+    FilesystemStore,
+    FirstMatch,
+    Goal,
+    MemoryStore,
+    MostProductive,
+    MultiRepoStore,
+    PrioritySelector,
+    ProjectState,
+    Validator,
+    ValidatorResult,
+)
+from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResult
+from antcrew.integrations.slack import SlackChannel
+from antcrew.memory.chroma import ChromaMemory
+from antcrew.memory.repo_index import RepoIndex
+from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult
+from antcrew.presets import CAREFUL, CONCISE, STRICT, VERBOSE, AgentPreset, get_preset
+from antcrew.teams.custom_team import CustomTeam
+from antcrew.testing import SequencedLLM
+from antcrew.utils.persistence import load_state, save_state
 
 __all__ = [
     # Teams

@@ -4,8 +4,14 @@ import json
 
 from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import (
-    ArtifactContract, CodeArtifact, ContractError, DevOpsArtifact,
-    DocumentationArtifact, PRD, Ticket, coerce_list,
+    PRD,
+    ArtifactContract,
+    CodeArtifact,
+    ContractError,
+    DevOpsArtifact,
+    DocumentationArtifact,
+    Ticket,
+    coerce_list,
 )
 from antcrew.core.state import TeamState
 

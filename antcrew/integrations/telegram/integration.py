@@ -25,17 +25,17 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ContextTypes,
     MessageHandler,
     filters,
-    ContextTypes,
 )
 
-from antcrew.core.artifacts import PRD, Ticket, CodeArtifact
+from antcrew.core.artifacts import PRD, CodeArtifact, Ticket
 from antcrew.core.channel import BaseChannel
 from antcrew.integrations.telegram.formatter import (
+    format_code_artifact,
     format_prd,
     format_tickets,
-    format_code_artifact,
 )
 from antcrew.integrations.telegram.hitl import HitlManager
 

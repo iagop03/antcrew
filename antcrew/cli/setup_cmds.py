@@ -8,6 +8,7 @@ import typer
 
 from antcrew.cli._app import app, console
 
+
 @app.command()
 def setup(
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Project name (skips the prompt)"),

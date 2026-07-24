@@ -16,10 +16,10 @@ log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from antcrew.core.channel import BaseChannel
-    from antcrew.core.tools import BaseTool
-    from antcrew.memory.store import BaseMemory
-    from antcrew.memory.repo_index import RepoIndex
     from antcrew.core.symbol_index import SymbolIndex
+    from antcrew.core.tools import BaseTool
+    from antcrew.memory.repo_index import RepoIndex
+    from antcrew.memory.store import BaseMemory
 
 
 _TOOL_CALL_RE = re.compile(

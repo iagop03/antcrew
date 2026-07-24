@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import ArtifactContract, ContractError, ContentPiece
+from antcrew.core.artifacts import ArtifactContract, ContentPiece, ContractError
 from antcrew.core.state import TeamState
 
 _PIECE_CONTRACT: ArtifactContract[ContentPiece] = ArtifactContract("content_piece", ContentPiece)

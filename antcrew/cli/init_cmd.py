@@ -7,12 +7,18 @@ import typer
 
 from antcrew.cli._app import app, console
 from antcrew.cli._templates import (
-    _YAML_DEV, _MAIN_DEV,
-    _YAML_FULLSTACK, _MAIN_FULLSTACK,
-    _YAML_RESEARCH, _MAIN_RESEARCH,
-    _YAML_CONTENT, _MAIN_CONTENT,
-    _YAML_CUSTOM, _MAIN_CUSTOM,
+    _MAIN_CONTENT,
+    _MAIN_CUSTOM,
+    _MAIN_DEV,
+    _MAIN_FULLSTACK,
+    _MAIN_RESEARCH,
+    _YAML_CONTENT,
+    _YAML_CUSTOM,
+    _YAML_DEV,
+    _YAML_FULLSTACK,
+    _YAML_RESEARCH,
 )
+
 
 @app.command()
 def init(

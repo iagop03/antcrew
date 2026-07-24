@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from antcrew.agents.idea import IdeaAgent
 from antcrew.agents.copywriter import CopywriterAgent
 from antcrew.agents.editor import EditorAgent
+from antcrew.agents.idea import IdeaAgent
 from antcrew.core.events import bus, new_run_id
 from antcrew.core.run_result import RunResult
-from antcrew.core.supervisor import Supervisor
 from antcrew.core.state import TeamState
+from antcrew.core.supervisor import Supervisor
 from antcrew.models.anthropic_model import AnthropicModel
 from antcrew.models.base import BaseLLM
 from antcrew.teams.base import InteractiveMixin
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+
     from antcrew.memory.store import BaseMemory
     from antcrew.trace import TraceLog
-    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 log = logging.getLogger(__name__)
 

@@ -171,8 +171,9 @@ def _platform_check(base_url: str) -> list[tuple[str, str, str]]:
     """Check reachability and health of a running antcrew-platform instance."""
     rows: list[tuple[str, str, str]] = []
     try:
-        import urllib.request
         import urllib.error
+        import urllib.request
+
         from antcrew.cli.configure_cmd import get_platform_api_key as _get_key
         req = urllib.request.Request(f"{base_url}/health", method="GET")
         platform_key = _get_key()

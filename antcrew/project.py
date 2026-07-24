@@ -30,12 +30,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from antcrew.core.artifacts import (
+    PRD,
     CodeArtifact,
     CodeReview,
     ContentPiece,
     DevOpsArtifact,
     DocumentationArtifact,
-    PRD,
     ResearchDocument,
     TestArtifact,
     Ticket,

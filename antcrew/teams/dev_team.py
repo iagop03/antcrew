@@ -6,17 +6,18 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from antcrew.agents.business import BusinessAnalystAgent
-from antcrew.agents.pm import PMAgent
 from antcrew.agents.backend_dev import BackendDevAgent
+from antcrew.agents.business import BusinessAnalystAgent
 from antcrew.agents.coherence import CoherenceAgent
+from antcrew.agents.pm import PMAgent
 from antcrew.core.artifacts import PRD, Ticket
-from antcrew.core.supervisor import Supervisor
-from antcrew.core.state import TeamState
 from antcrew.core.run_result import RunResult
+from antcrew.core.state import TeamState
+from antcrew.core.supervisor import Supervisor
 from antcrew.models.anthropic_model import AnthropicModel
 from antcrew.models.base import BaseLLM
 from antcrew.teams.base import InteractiveMixin
+
 
 class _KBProxy:
     """Injects a per-agent _kb_context into state before delegating to agent.run().
@@ -45,13 +46,14 @@ class _KBProxy:
 
 
 if TYPE_CHECKING:
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+
     from antcrew.core.agent import BaseAgent
     from antcrew.integrations.telegram.integration import TelegramChannel
-    from antcrew.memory.store import BaseMemory
     from antcrew.memory.repo_index import RepoIndex as _RepoIndexT
+    from antcrew.memory.store import BaseMemory
     from antcrew.sandbox.runner import SandboxRunner
     from antcrew.trace import TraceLog
-    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 log = logging.getLogger(__name__)
 
@@ -153,8 +155,8 @@ class DevTeam(InteractiveMixin):
         self.repo_index: "Optional[_RepoIndexT]" = None
         self.symbol_index = None
         if repo_path:
-            from antcrew.memory.repo_index import RepoIndex
             from antcrew.core.symbol_index import SymbolIndex
+            from antcrew.memory.repo_index import RepoIndex
             self.repo_index = RepoIndex(repo_path)
             self.repo_index.build()
             self.symbol_index = SymbolIndex.build([repo_path])
@@ -202,7 +204,7 @@ class DevTeam(InteractiveMixin):
 
     def run(self, request: str, *, thread_id: str = "default") -> RunResult:
         """Execute the full pipeline without human interaction."""
-        from antcrew.core.events import bus, Event, new_run_id
+        from antcrew.core.events import Event, bus, new_run_id
         _llms = self._unique_llms()
         if self.llm.max_cost_usd is not None:
             self.llm._cost_limit_offset = self.llm.get_usage_summary()["total_cost_usd"]

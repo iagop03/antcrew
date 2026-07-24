@@ -12,7 +12,6 @@ import re
 from pathlib import Path
 from typing import Optional
 
-
 # ── YAML template ────────────────────────────────────────────────────────────
 
 _YAML_TEMPLATE = """\
@@ -86,8 +85,8 @@ class SetupAgent:
         Returns the path to the written file.
         """
         from rich.console import Console
-        from rich.prompt import Prompt, Confirm
         from rich.panel import Panel
+        from rich.prompt import Confirm, Prompt
 
         console = Console()
         console.print()

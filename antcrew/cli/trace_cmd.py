@@ -10,10 +10,9 @@ from typing import Optional
 import typer
 from rich.panel import Panel
 
-from antcrew.cli._app import app, console, _MODEL_HELP, _TEAM_CHOICES
-from antcrew.cli._shared import _build_team, _print_state
+from antcrew.cli._app import _MODEL_HELP, _TEAM_CHOICES, app, console
 from antcrew.cli._run_helpers import _run_with_stream
-
+from antcrew.cli._shared import _build_team, _print_state
 
 # ── Serializers (used by --dump flag) ────────────────────────────────────────
 
@@ -109,8 +108,9 @@ def trace_cmd(
     Dump filtered runs as CSV to file:
         antcrew trace ~/.antcrew/trace.db --dump csv --dump-output out.csv --dump-team dev
     """
-    from antcrew.trace import TraceLog as _TraceLog
     from rich.table import Table
+
+    from antcrew.trace import TraceLog as _TraceLog
 
     if not db.exists():
         console.print(f"[red]File not found:[/] {db}")
@@ -132,7 +132,9 @@ def trace_cmd(
     # --- dump mode (JSON / CSV export) ---
     if dump is not None:
         import sys as _sys
-        from datetime import timezone as _tz, timedelta as _td, datetime as _dt
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+        from datetime import timezone as _tz
         fmt = dump.lower().strip()
         if fmt not in ("json", "csv"):
             console.print(f"[red]Unknown dump format:[/] {dump!r}. Use json or csv.")

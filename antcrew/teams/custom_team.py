@@ -74,7 +74,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.agents.template_agent import TemplateAgent
 from antcrew.core.events import bus, new_run_id
-from antcrew.core.operators import BaseOperator, _DELETE, build_operator
+from antcrew.core.operators import _DELETE, BaseOperator, build_operator
 from antcrew.core.run_result import RunResult
 
 if TYPE_CHECKING:
