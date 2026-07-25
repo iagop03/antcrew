@@ -222,6 +222,58 @@ class ReadFileTool(BaseTool):
             return ToolResult("", error=str(exc))
 
 
+def _validate_fetch_url(url: str) -> None:
+    """Raise ValueError if *url* targets a private/internal/reserved address.
+
+    Guards against SSRF: blocks loopback, private RFC-1918, link-local (169.254.x.x),
+    reserved, multicast, and unspecified IP ranges, plus known cloud metadata endpoints.
+    Domain names are accepted as-is — DNS rebinding is a network-level concern.
+    """
+    import ipaddress
+    import urllib.parse
+
+    _BLOCKED_HOSTS: frozenset[str] = frozenset({
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "0.0.0.0",  # nosec B104 — in a blocklist, not binding
+        "169.254.169.254",          # AWS / GCP / Azure / DigitalOcean metadata
+        "metadata.google.internal",
+        "metadata.internal",
+    })
+
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception as exc:
+        raise ValueError(f"Invalid URL: {url!r}") from exc
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"URL must use http or https scheme, got {scheme!r}")
+
+    hostname = (parsed.hostname or "").lower().strip("[]")
+    if not hostname:
+        raise ValueError(f"URL has no hostname: {url!r}")
+
+    if hostname in _BLOCKED_HOSTS:
+        raise ValueError(f"URL targets a blocked hostname: {hostname!r}")
+
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        return  # domain name — accept; DNS rebinding is a network-level concern
+
+    if (
+        addr.is_loopback
+        or addr.is_private
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_unspecified
+        or addr.is_multicast
+    ):
+        raise ValueError(f"URL targets a private/internal/reserved IP address: {addr}")
+
+
 class WebFetchTool(BaseTool):
     """Fetch a URL and return its text content.
 
@@ -258,8 +310,11 @@ class WebFetchTool(BaseTool):
 
     def run(self, input: str) -> ToolResult:
         url = input.strip()
-        if not url.startswith(("http://", "https://")):
-            return ToolResult("", error="URL must start with http:// or https://")
+        # SSRF guard on the initial URL
+        try:
+            _validate_fetch_url(url)
+        except ValueError as exc:
+            return ToolResult("", error=str(exc))
         try:
             import httpx
         except ImportError:
@@ -284,11 +339,20 @@ class WebFetchTool(BaseTool):
                     collected.append(text)
                     if sum(len(c) for c in collected) >= self.max_chars:
                         break
-                    # Follow rel=next link header for pagination
+                    # Follow rel=next link header for pagination —
+                    # validate each hop to prevent SSRF via attacker-controlled Link headers
                     import re
                     link_header = resp.headers.get("link", "")
                     m = re.search(r'<([^>]+)>\s*;\s*rel=["\']next["\']', link_header)
-                    current_url = m.group(1) if m else None
+                    if m:
+                        next_url = m.group(1)
+                        try:
+                            _validate_fetch_url(next_url)
+                            current_url = next_url
+                        except ValueError:
+                            current_url = None
+                    else:
+                        current_url = None
 
             full = "\n\n---\n\n".join(collected)
             if len(full) > self.max_chars:
