@@ -30,8 +30,6 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-log = logging.getLogger(__name__)
-
 from antcrew.core.artifacts import (
     PRD,
     CodeArtifact,
@@ -43,6 +41,8 @@ from antcrew.core.artifacts import (
     TestArtifact,
     Ticket,
 )
+
+log = logging.getLogger(__name__)
 
 # Keys whose values are lists of Pydantic models
 _LIST_KEYS: dict[str, Any] = {
