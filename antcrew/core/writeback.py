@@ -10,6 +10,8 @@ import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from antcrew.core.paths import safe_artifact_path
+
 
 @dataclass
 class WriteEntry:
@@ -149,18 +151,14 @@ def write_back(
         print_fn("[dim]No file artifacts found in state.[/dim]")
         return result
 
-    root_resolved = project_root.resolve()
-
     for file_path, content, atype in artifacts:
-        # Resolve: strip leading slash so Path doesn't treat it as absolute
-        rel = file_path.lstrip("/\\")
-        target = (project_root / rel).resolve()
-
-        # Guard against path traversal (e.g. file_path = "../../etc/passwd")
-        if not target.is_relative_to(root_resolved):
+        try:
+            target = safe_artifact_path(file_path, project_root)
+            rel = file_path.lstrip("/\\")  # display-only label, always within root after safe_artifact_path
+        except ValueError:
             print_fn(
                 f"  [red]SECURITY: skipped[/] {file_path!r} "
-                f"— resolves outside project root ({target})"
+                f"— resolves outside project root"
             )
             entry = WriteEntry(
                 file_path=file_path, operation="create",

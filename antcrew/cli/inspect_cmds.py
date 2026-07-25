@@ -91,8 +91,16 @@ def extract(
 
     console.print(f"\n[bold green]AntCrew extract[/] — {len(artifacts)} file(s) → [cyan]{output}/[/]\n")
 
+    from antcrew.core.paths import safe_artifact_path
+
+    skipped = 0
     for rel, content in artifacts:
-        dest = output / rel.lstrip("/")
+        try:
+            dest = safe_artifact_path(rel, output)
+        except ValueError:
+            console.print(f"  [red]SECURITY: skipped[/] {rel!r} — resolves outside output directory")
+            skipped += 1
+            continue
         if dry_run:
             console.print(f"  [dim](dry-run)[/] {dest}")
         else:
@@ -100,8 +108,11 @@ def extract(
             dest.write_text(content, encoding="utf-8")
             console.print(f"  [green]✓[/] {dest}")
 
-    if not dry_run:
-        console.print(f"\n[bold green]Done![/] {len(artifacts)} file(s) written to [cyan]{output}/[/]\n")
+    written = len(artifacts) - skipped
+    if not dry_run and written:
+        console.print(f"\n[bold green]Done![/] {written} file(s) written to [cyan]{output}/[/]\n")
+    if skipped:
+        console.print(f"[yellow]{skipped} file(s) skipped (path traversal attempt).[/]")
 
 
 @app.command()
