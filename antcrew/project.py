@@ -25,9 +25,12 @@ Load a saved project with ``Project.load(path, team=...)``.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+log = logging.getLogger(__name__)
 
 from antcrew.core.artifacts import (
     PRD,
@@ -75,10 +78,20 @@ class Project:
         *,
         name: str = "",
         path: Optional[str | Path] = None,
+        use_memory: bool = True,
     ) -> None:
         self.team = team
         self.name = name
         self._path = Path(path) if path else None
+        self._memory = None
+        if use_memory:
+            try:
+                from antcrew.memory.chroma import ChromaMemory
+                mem_path = str(Path(path).parent / ".antcrew_memory") if path else ".antcrew_memory"
+                self._memory = ChromaMemory(path=mem_path, collection=name or "project")
+                log.debug("Project: ChromaMemory active at %s", mem_path)
+            except Exception:
+                log.debug("Project: chromadb not available — memory disabled")
         self._state: dict = {}
         self._history: list[dict] = []
         self._created_at: float = time.time()
@@ -109,7 +122,14 @@ class Project:
         Returns the raw state dict from the latest run.
         """
         enriched = self._enrich(request)
+        if self._memory and hasattr(self.team, 'memory') and self.team.memory is None:
+            self.team.memory = self._memory
+            for agent in getattr(self.team, '_agents', {}).values():
+                agent.memory = self._memory
         run_result = self.team.run(enriched)
+        if self._memory:
+            result_state = run_result.state if hasattr(run_result, "state") else run_result
+            self._memory.store_run(result_state)
         self._merge(run_result, request)
         if self._path:
             self.save()

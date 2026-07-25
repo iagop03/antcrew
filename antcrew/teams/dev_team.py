@@ -266,6 +266,20 @@ class DevTeam(InteractiveMixin):
                     log.warning("CoherenceAgent failed: %s", exc)
             if self.memory:
                 self.memory.store_run(state)
+            if self._work_dir and state.get("code_artifacts"):
+                try:
+                    from antcrew.core.writeback import write_back
+                    wb = write_back(state, project_root=Path(self._work_dir), yes=True)
+                    if wb.total_written:
+                        bus.emit(Event(
+                            "writeback.done",
+                            {"written": wb.total_written, "project_root": str(wb.project_root)},
+                            run_id=_run_id,
+                            thread_id=thread_id,
+                        ))
+                        log.info("write_back: %d file(s) written to %s", wb.total_written, wb.project_root)
+                except Exception as exc:
+                    log.warning("write_back failed: %s", exc)
             if self._runner and state.get("test_artifacts"):
                 try:
                     state["test_results"] = self._runner.run(
