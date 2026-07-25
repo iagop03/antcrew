@@ -12,6 +12,7 @@ Usage::
 Built-in tools
 --------------
 - WebSearchTool   — DuckDuckGo Instant Answer API (no API key needed)
+- WebFetchTool    — fetch a URL and return stripped text (requires httpx)
 - CodeExecutorTool — sandboxed Python subprocess, 15 s timeout
 - ReadFileTool    — local filesystem read, configurable root and size limit
 """
@@ -217,6 +218,82 @@ class ReadFileTool(BaseTool):
             if len(content) > self.max_chars:
                 content = content[: self.max_chars] + "\n[truncated]"
             return ToolResult(content)
+        except Exception as exc:
+            return ToolResult("", error=str(exc))
+
+
+class WebFetchTool(BaseTool):
+    """Fetch a URL and return its text content.
+
+    HTML is stripped to readable text.  Follows up to *max_pages* paginated
+    links (``?page=``, ``?p=``, ``rel=next``) to gather additional content.
+    Requires ``httpx`` (``pip install httpx``).
+    """
+
+    name = "web_fetch"
+    description = (
+        "Fetch a URL and return its text content (HTML stripped). "
+        "Input: a URL. Returns up to ~8 000 characters of extracted text."
+    )
+
+    def __init__(
+        self,
+        *,
+        timeout: float = 15.0,
+        max_chars: int = 8_000,
+        max_pages: int = 1,
+    ) -> None:
+        self.timeout = timeout
+        self.max_chars = max_chars
+        self.max_pages = max_pages
+
+    @staticmethod
+    def _strip_html(html: str) -> str:
+        import re
+        html = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.S | re.I)
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+    def run(self, input: str) -> ToolResult:
+        url = input.strip()
+        if not url.startswith(("http://", "https://")):
+            return ToolResult("", error="URL must start with http:// or https://")
+        try:
+            import httpx
+        except ImportError:
+            return ToolResult("", error="httpx is not installed (pip install httpx)")
+
+        collected: list[str] = []
+        current_url: str | None = url
+
+        try:
+            with httpx.Client(
+                timeout=self.timeout,
+                follow_redirects=True,
+                headers={"User-Agent": "antcrew/1.0 (web-fetch-tool)"},
+            ) as client:
+                for _page in range(self.max_pages):
+                    if current_url is None:
+                        break
+                    resp = client.get(current_url)
+                    resp.raise_for_status()
+                    ct = resp.headers.get("content-type", "")
+                    text = self._strip_html(resp.text) if "html" in ct else resp.text
+                    collected.append(text)
+                    if sum(len(c) for c in collected) >= self.max_chars:
+                        break
+                    # Follow rel=next link header for pagination
+                    import re
+                    link_header = resp.headers.get("link", "")
+                    m = re.search(r'<([^>]+)>\s*;\s*rel=["\']next["\']', link_header)
+                    current_url = m.group(1) if m else None
+
+            full = "\n\n---\n\n".join(collected)
+            if len(full) > self.max_chars:
+                full = full[: self.max_chars] + "\n[truncated]"
+            return ToolResult(full or "(empty response)")
         except Exception as exc:
             return ToolResult("", error=str(exc))
 
