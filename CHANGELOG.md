@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.7] — 2026-07-26
+
+### Added
+- **`WebFetchTool`** — new built-in tool that fetches a URL and returns stripped text content; follows `rel=next` pagination (configurable `max_pages`); requires `httpx`
+
+### Security
+- **SSRF guard in `WebFetchTool`** — `_validate_fetch_url()` blocks private/loopback/link-local/reserved/multicast IP ranges and known cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`) before every HTTP request, including pagination hops from attacker-controlled `Link: rel=next` headers
+
+### Fixed
+- **Remove duplicate `serve` command** — orphaned `@app.command() def serve()` in `cli/setup_cmds.py` removed; canonical implementation lives in `cli/serve_cmd.py`
+
+### CI
+- **CHANGELOG version check** — CI now verifies that `pyproject.toml` version has a matching entry in `CHANGELOG.md` on every push/PR
+
+---
+
 ## [0.33.6] — 2026-07-24
 
 ### Added
