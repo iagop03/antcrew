@@ -6,6 +6,7 @@ from antcrew.agents.frontend_dev import FrontendDevAgent
 from antcrew.agents.idea import IdeaAgent
 from antcrew.agents.pm import PMAgent
 from antcrew.agents.qa import QAAgent
+from antcrew.agents.registry import instantiate_agent
 from antcrew.agents.researcher import ResearcherAgent
 from antcrew.agents.reviewer import ReviewerAgent
 
@@ -23,4 +24,6 @@ __all__ = [
     "IdeaAgent",
     "CopywriterAgent",
     "EditorAgent",
+    # Registry
+    "instantiate_agent",
 ]

@@ -1,6 +1,7 @@
+from antcrew.teams.base import AGENT_ARTIFACT
 from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.fullstack_team import FullStackTeam
 from antcrew.teams.research_team import ResearchTeam
 
-__all__ = ["DevTeam", "ResearchTeam", "ContentTeam", "FullStackTeam"]
+__all__ = ["DevTeam", "ResearchTeam", "ContentTeam", "FullStackTeam", "AGENT_ARTIFACT"]

@@ -100,7 +100,9 @@ except ImportError:
     TelegramChannel = None  # type: ignore[assignment,misc]
     TelegramIntegration = None  # type: ignore[assignment,misc]
     AgentBotConfig = None  # type: ignore[assignment,misc]
+from antcrew.agents.registry import instantiate_agent
 from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
+from antcrew.teams.base import AGENT_ARTIFACT
 from antcrew.capabilities import (
     Architect,
     BugFixer,
@@ -307,6 +309,9 @@ __all__ = [
     "TemplateAgent",
     "load_template_agent",
     "register_transform",
+    # Registry
+    "instantiate_agent",
+    "AGENT_ARTIFACT",
     # Operators
     "BaseOperator",
     "RenameOp",
