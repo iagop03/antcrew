@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.8] — 2026-07-26
+
+### Added
+- **`SecurityAuditor`** re-exported from `antcrew_engine.capabilities` — LLM-based cross-file security audit; see antcrew-engine 0.3.8 for full details
+
+---
+
 ## [0.33.7] — 2026-07-26
 
 ### Added
