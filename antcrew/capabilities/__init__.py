@@ -7,6 +7,7 @@ continues to work without modification.
 from antcrew_engine.capabilities import (
     Architect,
     BugFixer,
+    SecurityAuditor,
     CodeGenerator,
     CodeRegenerator,
     CodeReviewer,
@@ -22,6 +23,7 @@ from antcrew_engine.capabilities import (
 )
 
 __all__ = [
+    "SecurityAuditor",
     "SpecExtractor",
     "Architect",
     "TaskPlanner",
