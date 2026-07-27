@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind, ConditionId, MemoryStore,
-)
 from antcrew.capabilities.hitl_reviewer import HitlReviewer
-
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    ConditionId,
+    MemoryStore,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures

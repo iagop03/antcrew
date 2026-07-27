@@ -1,14 +1,12 @@
 """Tests for CLI HITL mode: _run_with_hitl returns RunResult, --save works."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from antcrew.core.run_result import RunResult
-
 
 # ---------------------------------------------------------------------------
 # _run_with_hitl returns RunResult
@@ -97,7 +95,7 @@ def test_run_with_hitl_only_injects_marked_agents():
 
 def test_save_state_works_with_run_result(tmp_path: Path):
     """save_state handles RunResult (the HITL return type) correctly."""
-    from antcrew.utils.persistence import save_state, load_state
+    from antcrew.utils.persistence import load_state, save_state
 
     state = {"_run_id": "hitl-r1", "prd": {"title": "T"}}
     result = RunResult(state=state, thread_id="default", cost_usd=0.01)
@@ -116,6 +114,7 @@ def test_save_state_works_with_run_result(tmp_path: Path):
 def test_serve_command_registered():
     """antcrew serve must be a registered CLI command."""
     from typer.testing import CliRunner
+
     from antcrew.cli import app
 
     runner = CliRunner()
@@ -127,7 +126,9 @@ def test_serve_command_registered():
 def test_serve_exits_cleanly_without_uvicorn(monkeypatch):
     """antcrew serve exits with code 1 when uvicorn is not installed."""
     import builtins
+
     from typer.testing import CliRunner
+
     from antcrew.cli import app
 
     original_import = builtins.__import__

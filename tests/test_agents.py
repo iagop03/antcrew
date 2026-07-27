@@ -2,11 +2,9 @@
 import json
 from unittest.mock import MagicMock
 
-import pytest
-
+from antcrew.agents.backend_dev import BackendDevAgent
 from antcrew.agents.business import BusinessAnalystAgent
 from antcrew.agents.pm import PMAgent
-from antcrew.agents.backend_dev import BackendDevAgent
 from antcrew.core.artifacts import Priority, TicketStatus
 from antcrew.core.state import TeamState
 

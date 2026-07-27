@@ -2,16 +2,20 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind, ConditionId, MemoryStore,
-)
 from antcrew.capabilities.code_generator import CodeGenerator, _next_pending
 from antcrew.capabilities.validators import AllTasksCompletedValidator
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    ConditionId,
+    MemoryStore,
+)
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.testing import SequencedLLM
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -46,7 +50,7 @@ def llm():
 
 @pytest.fixture
 def goal():
-    from antcrew.engine import Condition, ConditionId, DesiredProjectState, Goal
+    from antcrew.engine import Condition, DesiredProjectState, Goal
     return Goal(
         description="Build a todo API",
         desired_state=DesiredProjectState(frozenset([
@@ -94,7 +98,7 @@ class TestCodeGeneratorUnit:
         result = CodeGenerator(llm=llm).execute(_make_store(), goal)
         assert result.succeeded
         sources = [a for a in result.delta.created if a.kind == ArtifactKind.SOURCE]
-        assert len(sources) >= 0  # SimulatedLLM may return non-JSON; graceful
+        assert isinstance(sources, list)  # graceful when SimulatedLLM returns non-JSON
 
     def test_modifies_task_graph(self, llm, goal):
         result = CodeGenerator(llm=llm).execute(_make_store(), goal)
@@ -153,10 +157,12 @@ class TestCodeGeneratorMultipleRuns:
 
         assert not v.validate(store).satisfied
 
-        r1 = gen.execute(store, goal); store.apply(r1.delta)
+        r1 = gen.execute(store, goal)
+        store.apply(r1.delta)
         assert not v.validate(store).satisfied  # one task still pending
 
-        r2 = gen.execute(store, goal); store.apply(r2.delta)
+        r2 = gen.execute(store, goal)
+        store.apply(r2.delta)
         assert v.validate(store).satisfied
 
 

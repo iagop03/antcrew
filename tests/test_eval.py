@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from antcrew.eval.case import AgentScore, EvalCase, EvalReport
 from antcrew.eval.metrics import (
     score_code,
@@ -15,7 +13,6 @@ from antcrew.eval.metrics import (
 )
 from antcrew.eval.runner import EvalRunner
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -436,6 +433,7 @@ def test_eval_runner_compare_new_case():
 # ---------------------------------------------------------------------------
 
 def test_eval_importable_from_antcrew():
-    from antcrew import EvalCase as EC, EvalRunner as ER, EvalReport as ERep, AgentScore as AS
+    from antcrew import EvalCase as EC
+    from antcrew import EvalRunner as ER
     assert EC is EvalCase
     assert ER is EvalRunner

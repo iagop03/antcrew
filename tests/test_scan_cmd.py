@@ -1,9 +1,6 @@
 """Tests for antcrew scan and _parse_project_dirs."""
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli._app import app
@@ -33,14 +30,16 @@ class TestParseProjectDirs:
 
     def test_multiple_labeled_paths_returns_dict(self, tmp_path):
         a, b = tmp_path / "a", tmp_path / "b"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         pd, pds = _parse_project_dirs([f"backend:{a}", f"frontend:{b}"])
         assert pd is None
         assert pds == {"backend": str(a), "frontend": str(b)}
 
     def test_multiple_bare_paths_use_dir_name_as_label(self, tmp_path):
         a, b = tmp_path / "src", tmp_path / "client"
-        a.mkdir(); b.mkdir()
+        a.mkdir()
+        b.mkdir()
         ea, eb = str(a), str(b)
         pd, pds = _parse_project_dirs([ea, eb])
         assert pds == {"src": ea, "client": eb}
@@ -79,8 +78,10 @@ class TestScanCmd:
         assert "myapp" in result.output
 
     def test_scan_multiple_dirs(self, tmp_path):
-        be = tmp_path / "backend"; be.mkdir()
-        fe = tmp_path / "frontend"; fe.mkdir()
+        be = tmp_path / "backend"
+        be.mkdir()
+        fe = tmp_path / "frontend"
+        fe.mkdir()
         (be / "main.py").write_text("x=1")
         (fe / "index.ts").write_text("export {}")
         result = runner.invoke(app, ["scan", f"backend:{be}", f"frontend:{fe}"])
@@ -117,8 +118,12 @@ class TestScanCmd:
 
     def test_scan_json_multiple_dirs(self, tmp_path):
         import json
-        be = tmp_path / "be"; be.mkdir(); (be / "app.py").write_text("x=1")
-        fe = tmp_path / "fe"; fe.mkdir(); (fe / "index.ts").write_text("export {}")
+        be = tmp_path / "be"
+        be.mkdir()
+        (be / "app.py").write_text("x=1")
+        fe = tmp_path / "fe"
+        fe.mkdir()
+        (fe / "index.ts").write_text("export {}")
         result = runner.invoke(app, ["scan", f"be:{be}", f"fe:{fe}", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)

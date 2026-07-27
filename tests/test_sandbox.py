@@ -6,7 +6,6 @@ import pytest
 from antcrew.core.artifacts import CodeArtifact, TestArtifact
 from antcrew.sandbox.runner import LocalRunner, RunResult, SandboxRunner, _parse_counts
 
-
 # ---------------------------------------------------------------------------
 # Helpers — build minimal artifacts with valid content
 # ---------------------------------------------------------------------------
@@ -299,7 +298,9 @@ def test_fullstack_team_with_runner():
 # ---------------------------------------------------------------------------
 
 def test_importable_from_antcrew():
-    from antcrew import LocalRunner as LR, SandboxRunResult, SandboxRunner as SR
+    from antcrew import LocalRunner as LR
+    from antcrew import SandboxRunner as SR
+    from antcrew import SandboxRunResult
     assert LR is LocalRunner
     assert SandboxRunResult is RunResult
     assert SR is SandboxRunner

@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from antcrew.core.feedback import FeedbackLoop, FeedbackResult, FeedbackRunner
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # FeedbackResult
@@ -273,8 +271,8 @@ validate_cmd:
 """
         cfg_file = tmp_path / "t.yaml"
         cfg_file.write_text(cfg, encoding="utf-8")
-        from antcrew.config import load
         from antcrew.agents.feature_agent import FeatureTeam
+        from antcrew.config import load
         team = load(cfg_file)
         assert isinstance(team, FeatureTeam)
         assert team._feedback_loop is not None
@@ -284,8 +282,8 @@ validate_cmd:
         cfg = "team: feature\nmodel: simulated\n"
         cfg_file = tmp_path / "t.yaml"
         cfg_file.write_text(cfg, encoding="utf-8")
-        from antcrew.config import load
         from antcrew.agents.feature_agent import FeatureTeam
+        from antcrew.config import load
         team = load(cfg_file)
         assert isinstance(team, FeatureTeam)
         assert team._feedback_loop is None

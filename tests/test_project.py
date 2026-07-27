@@ -2,16 +2,14 @@
 from __future__ import annotations
 
 import json
-import time
 
 import pytest
 
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.project import Project, _deserialize_state, _serialize_state
+from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.research_team import ResearchTeam
-from antcrew.teams.content_team import ContentTeam
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,7 +77,6 @@ def test_project_code_artifacts_accumulate():
 def test_project_prd_replaced_by_latest():
     p = Project(_dev_team())
     p.run("Build login")
-    prd1 = p.state.get("prd")
     p.run("Redesign architecture")
     prd2 = p.state.get("prd")
     # PRD is always set (latest wins)

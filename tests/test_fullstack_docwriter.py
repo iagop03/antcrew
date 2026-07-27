@@ -1,19 +1,19 @@
 """Tests for DocWriterAgent, FullStackTeam, and FrontendDev accumulation fix."""
 from __future__ import annotations
 
-import json
-
-import pytest
-
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.core.artifacts import (
-    CodeArtifact, DevOpsArtifact, DocumentationArtifact,
-    PRD, Priority, Ticket, TicketStatus,
+    PRD,
+    CodeArtifact,
+    DevOpsArtifact,
+    DocumentationArtifact,
+    Priority,
+    Ticket,
+    TicketStatus,
 )
 from antcrew.core.run_result import RunResult
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.fullstack_team import FullStackTeam
-
 
 # ---------------------------------------------------------------------------
 # Helpers

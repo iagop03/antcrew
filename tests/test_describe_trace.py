@@ -65,6 +65,7 @@ class TestDescribeTrace:
             "agent_name TEXT, input_tokens INTEGER, output_tokens INTEGER, "
             "cost_usd REAL, duration_s REAL, started_at TEXT)"
         )
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         result = runner.invoke(app, ["describe", "--team", "dev", "--trace", str(db)])
         assert result.exit_code == 0

@@ -3,17 +3,16 @@ from __future__ import annotations
 
 import pytest
 
+from antcrew.models.simulated import SimulatedLLM
 from antcrew.presets import (
-    AgentPreset,
+    CAREFUL,
     CONCISE,
     STRICT,
     VERBOSE,
-    CAREFUL,
+    AgentPreset,
     get_preset,
     resolve_preset,
 )
-from antcrew.models.simulated import SimulatedLLM
-
 
 # ===========================================================================
 # AgentPreset dataclass

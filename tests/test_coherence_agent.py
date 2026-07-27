@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from antcrew.agents.coherence import CoherenceAgent, _build_context, _detect_changes, _parse_artifacts
+from antcrew.agents.coherence import (
+    CoherenceAgent,
+    _build_context,
+    _detect_changes,
+    _parse_artifacts,
+)
 from antcrew.core.artifacts import CodeArtifact
 from antcrew.models.simulated import SimulatedLLM
 

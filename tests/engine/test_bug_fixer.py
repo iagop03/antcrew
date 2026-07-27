@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind, MemoryStore,
-)
 from antcrew.capabilities.bug_fixer import BugFixer, _extract_failing_files
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    MemoryStore,
+)
 from antcrew.testing import SequencedLLM
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

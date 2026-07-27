@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind, MemoryStore,
-)
 from antcrew.capabilities.code_regenerator import CodeRegenerator
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    MemoryStore,
+)
 from antcrew.testing import SequencedLLM
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

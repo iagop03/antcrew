@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind, ConditionId, MemoryStore,
-)
 from antcrew.capabilities.task_planner import TaskPlanner, _safe_parse_tasks
 from antcrew.capabilities.validators import AllTasksCompletedValidator
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    ConditionId,
+    MemoryStore,
+)
 from antcrew.models.simulated import SimulatedLLM
-
 
 ARCH_CONTENT = "# Architecture\n\n## Components\n- API layer\n- Data layer"
 
@@ -37,7 +41,7 @@ def store_with_arch():
 
 @pytest.fixture
 def goal(tmp_path):
-    from antcrew.engine import Condition, ConditionId, Constraints, DesiredProjectState, Goal
+    from antcrew.engine import Condition, Constraints, DesiredProjectState, Goal
     return Goal(
         description="Build a todo API",
         desired_state=DesiredProjectState(frozenset([

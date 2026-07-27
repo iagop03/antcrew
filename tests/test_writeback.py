@@ -3,13 +3,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli._app import app
-from antcrew.core.writeback import WriteBackResult, write_back, _smart_apply
+from antcrew.core.writeback import _smart_apply, write_back
 
 runner = CliRunner()
 
@@ -321,14 +319,14 @@ class TestPatchMode:
 
 class TestFeedbackLoopIntegration:
     def test_dev_team_accepts_feedback_rounds(self):
-        from antcrew.teams.dev_team import DevTeam
         from antcrew.models.simulated import SimulatedLLM
+        from antcrew.teams.dev_team import DevTeam
         team = DevTeam(model=SimulatedLLM(), feedback_rounds=3)
         assert team._feedback_rounds == 3
 
     def test_fullstack_team_accepts_feedback_rounds(self):
-        from antcrew.teams.fullstack_team import FullStackTeam
         from antcrew.models.simulated import SimulatedLLM
+        from antcrew.teams.fullstack_team import FullStackTeam
         team = FullStackTeam(model=SimulatedLLM(), feedback_rounds=2)
         assert team._feedback_rounds == 2
 
@@ -345,8 +343,9 @@ class TestFeedbackLoopIntegration:
         assert agent.fix_test_failures({"_feedback_error": "error!", "code_artifacts": []}) is None
 
     def test_run_test_feedback_loop_passes_on_success(self):
-        from antcrew.core.feedback import run_test_feedback_loop
         from unittest.mock import MagicMock
+
+        from antcrew.core.feedback import run_test_feedback_loop
 
         mock_results = MagicMock()
         mock_results.success = True
@@ -364,8 +363,9 @@ class TestFeedbackLoopIntegration:
         agent.fix_test_failures.assert_not_called()
 
     def test_run_test_feedback_loop_calls_fix_on_failure(self):
-        from antcrew.core.feedback import run_test_feedback_loop
         from unittest.mock import MagicMock
+
+        from antcrew.core.feedback import run_test_feedback_loop
 
         fail_result = MagicMock()
         fail_result.success = False
@@ -389,8 +389,9 @@ class TestFeedbackLoopIntegration:
         agent.fix_test_failures.assert_called_once()
 
     def test_run_test_feedback_loop_exhausted(self):
-        from antcrew.core.feedback import run_test_feedback_loop
         from unittest.mock import MagicMock
+
+        from antcrew.core.feedback import run_test_feedback_loop
 
         fail_result = MagicMock()
         fail_result.success = False

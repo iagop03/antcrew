@@ -3,14 +3,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from antcrew.core.artifacts import (
-    DocumentationArtifact, PRD,
-    ResearchDocument, ResearchSection,
+    PRD,
+    DocumentationArtifact,
+    ResearchDocument,
+    ResearchSection,
 )
 from antcrew.integrations.confluence import ConfluenceIntegration, _md_to_storage
-
 
 # ---------------------------------------------------------------------------
 # _md_to_storage helper
@@ -121,7 +120,7 @@ def test_create_page_update_existing():
         patch("httpx.get", return_value=get_resp),
         patch("httpx.put", return_value=put_resp) as mock_put,
     ):
-        result = cf.create_or_update_page("DEV", "My Page", "# Hello")
+        cf.create_or_update_page("DEV", "My Page", "# Hello")
 
     assert mock_put.called
     put_payload = mock_put.call_args[1]["json"]

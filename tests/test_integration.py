@@ -5,9 +5,7 @@ state init → agent.run() → state transitions → final state assertions.
 """
 from __future__ import annotations
 
-import pytest
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # DevTeam
@@ -57,9 +55,9 @@ class TestDevTeamE2E:
 
     def test_extended_pipeline_with_qa_and_reviewer(self):
         """Level 3: BA→PM→Dev→QA→Reviewer full flow."""
+        from antcrew.agents.backend_dev import BackendDevAgent
         from antcrew.agents.business import BusinessAnalystAgent
         from antcrew.agents.pm import PMAgent
-        from antcrew.agents.backend_dev import BackendDevAgent
         from antcrew.agents.qa import QAAgent
         from antcrew.agents.reviewer import ReviewerAgent
         from antcrew.core.supervisor import Supervisor
@@ -158,7 +156,6 @@ class TestResearchTeamE2E:
         from antcrew.core.supervisor import Supervisor
 
         llm = SimulatedLLM()
-        supervisor = Supervisor(flow=[])   # no edges — single node
         team = ResearchTeam(
             model=llm,
             supervisor=Supervisor(flow=[("researcher", "writer")]),
@@ -247,7 +244,7 @@ class TestSimulatedLLMDeterminism:
         assert s1["prd"].title == s2["prd"].title
 
     def test_research_and_content_teams_dont_share_state(self):
-        from antcrew import ResearchTeam, ContentTeam
+        from antcrew import ContentTeam, ResearchTeam
         llm = SimulatedLLM()
         r_state = ResearchTeam(model=llm).run("Research topic", thread_id="cross-1")
         c_state = ContentTeam(model=llm).run("Blog topic", thread_id="cross-2")

@@ -3,23 +3,29 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from antcrew.core.artifacts import (
-    PRD, Ticket, Priority, TicketStatus,
-    CodeArtifact, CodeReview, ReviewFinding,
-    ResearchDocument, ResearchSection, ContentPiece,
+    PRD,
+    CodeArtifact,
+    CodeReview,
+    ContentPiece,
+    Priority,
+    ResearchDocument,
+    ResearchSection,
+    ReviewFinding,
+    Ticket,
+    TicketStatus,
 )
 from antcrew.integrations.slack import (
     _artifact_text,
-    _review_blocks,
-    _feedback_modal,
     _edit_modal,
+    _feedback_modal,
+    _review_blocks,
     _serialize_artifact,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -352,8 +358,9 @@ async def test_put_delivers_to_queue():
 
 
 def test_put_logs_warning_for_missing_session():
-    from antcrew.integrations.slack import SlackChannel
     import logging
+
+    from antcrew.integrations.slack import SlackChannel
 
     SlackChannel._queues = {}
     SlackChannel._loop = asyncio.new_event_loop()

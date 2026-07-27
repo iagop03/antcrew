@@ -1,16 +1,19 @@
 """Tests for GitHubIntegration."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from antcrew.core.artifacts import (
-    CodeArtifact, DevOpsArtifact, PRD,
-    Priority, Ticket, TicketStatus,
+    PRD,
+    CodeArtifact,
+    DevOpsArtifact,
+    Priority,
+    Ticket,
+    TicketStatus,
 )
 from antcrew.integrations.github import GitHubIntegration
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -156,13 +159,11 @@ def _setup_create_pr_mocks(pr_url: str = "https://github.com/org/repo/pull/1"):
 
 
 def test_create_pr_returns_url():
-    gh = _gh()
     with (
-        patch("httpx.get", side_effect=_setup_create_pr_mocks()) as mock_get,
-        patch("httpx.post", return_value=_resp({})) as mock_post,
+        patch("httpx.get", side_effect=_setup_create_pr_mocks()),
+        patch("httpx.post", return_value=_resp({})),
         patch("httpx.put", return_value=_resp({})),
     ):
-        # re-route through actual mock that matches the call sequence
         pass  # we patch in the next test
 
 

@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import pytest
 
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # WriteFileTool
@@ -17,7 +15,7 @@ class TestWriteFileTool:
     def test_writes_file(self, tmp_path):
         from antcrew.core.tools import WriteFileTool
         tool = WriteFileTool(root=str(tmp_path))
-        result = tool.run(f"hello.txt\n---\nhello world")
+        result = tool.run("hello.txt\n---\nhello world")
         assert result.ok
         assert (tmp_path / "hello.txt").read_text() == "hello world"
 
@@ -53,7 +51,6 @@ class TestWriteFileTool:
     def test_no_root_allows_relative_path(self, tmp_path):
         """Without a root, relative paths are resolved from CWD and allowed."""
         from antcrew.core.tools import WriteFileTool
-        import os
         tool = WriteFileTool()
         # Use a relative path; it will be written relative to CWD
         orig = os.getcwd()

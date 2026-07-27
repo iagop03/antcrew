@@ -1,10 +1,8 @@
 """Tests for `antcrew template` CLI commands (P2.2)."""
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli import app

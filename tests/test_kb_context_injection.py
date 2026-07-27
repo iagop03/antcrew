@@ -10,18 +10,20 @@ This ensures that a refactor of any agent's run() cannot silently drop KB contex
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock
 
 from antcrew.agents.business import BusinessAnalystAgent
+from antcrew.agents.devops import DevOpsAgent
+from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.pm import PMAgent
 from antcrew.agents.qa import QAAgent
 from antcrew.agents.reviewer import ReviewerAgent
-from antcrew.agents.doc_writer import DocWriterAgent
-from antcrew.agents.devops import DevOpsAgent
 from antcrew.core.artifacts import (
-    PRD, Ticket, CodeArtifact, Priority, TicketStatus,
+    PRD,
+    CodeArtifact,
+    Priority,
+    Ticket,
+    TicketStatus,
 )
 from antcrew.core.state import TeamState
 

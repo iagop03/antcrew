@@ -1,14 +1,11 @@
 """Tests for per-agent LLM (agent_models= parameter on all 4 teams)."""
 from __future__ import annotations
 
-import pytest
-
 from antcrew.models.simulated import SimulatedLLM
-from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.content_team import ContentTeam
-from antcrew.teams.research_team import ResearchTeam
+from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.fullstack_team import FullStackTeam
-
+from antcrew.teams.research_team import ResearchTeam
 
 # ---------------------------------------------------------------------------
 # Helpers

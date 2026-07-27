@@ -13,7 +13,6 @@ import pytest
 
 from antcrew.models.base import Message
 
-
 # ── Anthropic streaming retry ─────────────────────────────────────────────────
 
 class TestAnthropicStreamingRetry:

@@ -11,22 +11,38 @@ from __future__ import annotations
 
 import pytest
 
-from antcrew.engine import (
-    ArtifactId, ArtifactKind,
-    CapabilityRegistry, Condition, ConditionId, Constraints,
-    DesiredProjectState, EventLog, FilesystemStore, Goal, MemoryStore, Operator,
-    CheapestFirst, FirstMatch, MostProductive, PrioritySelector,
-)
 from antcrew.capabilities import (
-    Architect, CodeGenerator, CodeReviewer,
-    SpecExtractor, TaskPlanner, TestGenerator, TestRunner,
+    Architect,
+    CodeGenerator,
+    CodeReviewer,
+    SpecExtractor,
+    TaskPlanner,
+    TestGenerator,
+    TestRunner,
 )
 from antcrew.capabilities.validators import (
-    AllTasksCompletedValidator, CodeReviewedValidator,
-    TestsExistValidator, TestsPassValidator, artifact_validators,
+    AllTasksCompletedValidator,
+    artifact_validators,
+)
+from antcrew.engine import (
+    ArtifactId,
+    ArtifactKind,
+    CapabilityRegistry,
+    CheapestFirst,
+    Condition,
+    ConditionId,
+    Constraints,
+    DesiredProjectState,
+    EventLog,
+    FilesystemStore,
+    FirstMatch,
+    Goal,
+    MemoryStore,
+    MostProductive,
+    Operator,
+    PrioritySelector,
 )
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -234,7 +250,6 @@ class TestEventOrdering:
         goal = _plan_goal()
         Operator(_registry(llm), _plan_validators(), log, max_iterations=15).run(MemoryStore(), goal)
 
-        kinds = [e.kind for e in log.events()]
         for name in ("spec_extractor", "architect", "task_planner"):
             d_idx = next(i for i, e in enumerate(log.events())
                          if e.kind == "capability_dispatched" and e.capability_name == name)

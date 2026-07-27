@@ -1,12 +1,11 @@
 """Tests for ConsoleChannel, GeminiModel, and refactored run_interactive."""
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.core.artifacts import PRD, Ticket, CodeArtifact, Priority, TicketStatus
-from antcrew.integrations.console import ConsoleChannel, _display_artifact, _prompt_decision
-
+from antcrew.core.artifacts import PRD, CodeArtifact, Priority, Ticket
+from antcrew.integrations.console import ConsoleChannel, _display_artifact
 
 # ---------------------------------------------------------------------------
 # ConsoleChannel
@@ -176,10 +175,10 @@ def test_gemini_model_uses_env_api_key(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_supervisor_build_accepts_interrupt_before_override():
-    from antcrew.core.supervisor import Supervisor
-    from antcrew.models.simulated import SimulatedLLM
     from antcrew.agents.business import BusinessAnalystAgent
     from antcrew.agents.pm import PMAgent
+    from antcrew.core.supervisor import Supervisor
+    from antcrew.models.simulated import SimulatedLLM
 
     sup = Supervisor(flow=[("business_analyst", "pm")])
     llm = SimulatedLLM()
@@ -194,10 +193,10 @@ def test_supervisor_build_accepts_interrupt_before_override():
 
 
 def test_supervisor_build_respects_approval_required():
-    from antcrew.core.supervisor import Supervisor
-    from antcrew.models.simulated import SimulatedLLM
     from antcrew.agents.business import BusinessAnalystAgent
     from antcrew.agents.pm import PMAgent
+    from antcrew.core.supervisor import Supervisor
+    from antcrew.models.simulated import SimulatedLLM
 
     sup = Supervisor(flow=[("business_analyst", "pm")])
     llm = SimulatedLLM()

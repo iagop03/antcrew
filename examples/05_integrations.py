@@ -14,7 +14,7 @@ Swap the placeholders below for your actual Jira URL, project key, and repo.
 import os
 
 from antcrew import DevTeam
-from antcrew.integrations import JiraIntegration, GitHubIntegration
+from antcrew.integrations import GitHubIntegration, JiraIntegration
 from antcrew.models import SimulatedLLM  # swap for AnthropicModel() in production
 
 # ── Run the pipeline ──────────────────────────────────────────────────────────

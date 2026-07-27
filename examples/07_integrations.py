@@ -13,8 +13,9 @@ Run:
     python examples/07_integrations.py
 """
 import os
+
 from antcrew import DevTeam
-from antcrew.integrations import JiraIntegration, GitHubIntegration, ConfluenceIntegration
+from antcrew.integrations import ConfluenceIntegration, GitHubIntegration, JiraIntegration
 from antcrew.models import AnthropicModel
 
 team = DevTeam(model=AnthropicModel())

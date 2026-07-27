@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from antcrew.agents.template_agent import TemplateAgent, load_template_agent, _load_cfg
+from antcrew.agents.template_agent import TemplateAgent, _load_cfg, load_template_agent
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.testing import SequencedLLM
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -269,6 +268,7 @@ def test_load_template_agent_run(tmp_path):
 def test_config_inline_template_agent(tmp_path):
     """Inline system_prompt in YAML config creates a TemplateAgent."""
     import yaml  # type: ignore[import]
+
     from antcrew.config import load_context
 
     yaml_content = {
@@ -435,8 +435,8 @@ def test_run_interpolate_and_input_key_both_work():
 
 def test_interpolation_in_custom_team_pipeline():
     """Interpolation must work end-to-end through a CustomTeam."""
-    from antcrew.testing import SequencedLLM
     from antcrew.teams.custom_team import CustomTeam
+    from antcrew.testing import SequencedLLM
 
     llm = SequencedLLM(["step1 output", "review done"])
     steps = [
@@ -546,7 +546,7 @@ def test_system_prompt_file_relative_to_config_file(tmp_path):
     prompt_file.write_text("Prompt from file.", encoding="utf-8")
     cfg_file = tmp_path / "team.yaml"
     cfg_file.write_text(
-        f"name: a\nsystem_prompt_file: prompts/agent.md\n",
+        "name: a\nsystem_prompt_file: prompts/agent.md\n",
         encoding="utf-8"
     )
     agent = TemplateAgent(cfg_file, _llm())
@@ -613,7 +613,6 @@ def test_save_output_default_none():
 
 def test_save_output_stored_as_path():
     agent = TemplateAgent(_basic_cfg(save_output="out/result.md"), _llm())
-    from pathlib import Path
     assert agent._save_output == Path("out/result.md")
 
 
@@ -674,6 +673,7 @@ def test_save_output_in_custom_team(tmp_path):
 def test_validate_accepts_system_prompt_file(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     prompt_file = tmp_path / "p.md"
     prompt_file.write_text("You are an agent.", encoding="utf-8")
@@ -690,6 +690,7 @@ def test_validate_accepts_system_prompt_file(tmp_path):
 def test_validate_warns_missing_system_prompt_file(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -706,6 +707,7 @@ def test_validate_warns_missing_system_prompt_file(tmp_path):
 def test_validate_errors_on_both_prompt_fields(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -836,6 +838,7 @@ def test_user_template_in_custom_team_pipeline():
 def test_validate_accepts_user_template(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -859,6 +862,7 @@ def test_validate_accepts_user_template(tmp_path):
 def test_validate_warns_unknown_user_template_key(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -881,6 +885,7 @@ def test_validate_warns_unknown_user_template_key(tmp_path):
 def test_validate_errors_user_template_and_input_key(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1040,6 +1045,7 @@ def test_post_process_in_custom_team(tmp_path):
 def test_validate_shows_post_process_in_flags(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1056,6 +1062,7 @@ def test_validate_shows_post_process_in_flags(tmp_path):
 def test_validate_errors_unknown_post_process(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1074,7 +1081,7 @@ def test_validate_errors_unknown_post_process(tmp_path):
 # ===========================================================================
 
 def test_register_transform_makes_it_available():
-    from antcrew.agents.template_agent import register_transform, POST_PROCESS_TRANSFORMS
+    from antcrew.agents.template_agent import POST_PROCESS_TRANSFORMS, register_transform
     register_transform("reverse_test", lambda s: s[::-1])
     assert "reverse_test" in POST_PROCESS_TRANSFORMS
     assert POST_PROCESS_TRANSFORMS["reverse_test"]("abc") == "cba"
@@ -1094,7 +1101,7 @@ def test_register_transform_used_in_post_process():
 
 
 def test_register_transform_overrides_existing():
-    from antcrew.agents.template_agent import register_transform, POST_PROCESS_TRANSFORMS
+    from antcrew.agents.template_agent import POST_PROCESS_TRANSFORMS, register_transform
     original = POST_PROCESS_TRANSFORMS.get("strip")
     register_transform("strip", lambda s: "overridden")
     assert POST_PROCESS_TRANSFORMS["strip"]("anything") == "overridden"
@@ -1114,6 +1121,7 @@ def test_register_transform_exported_from_antcrew():
 
 def test_agents_cmd_exits_zero():
     from typer.testing import CliRunner as _CR
+
     from antcrew.cli import app
     r = _CR().invoke(app, ["agents"])
     assert r.exit_code == 0
@@ -1121,6 +1129,7 @@ def test_agents_cmd_exits_zero():
 
 def test_agents_cmd_lists_built_in_agents():
     from typer.testing import CliRunner as _CR
+
     from antcrew.cli import app
     r = _CR().invoke(app, ["agents"])
     assert "backend_dev" in r.output
@@ -1130,6 +1139,7 @@ def test_agents_cmd_lists_built_in_agents():
 
 def test_agents_cmd_lists_transforms():
     from typer.testing import CliRunner as _CR
+
     from antcrew.cli import app
     r = _CR().invoke(app, ["agents"])
     assert "strip" in r.output
@@ -1138,8 +1148,9 @@ def test_agents_cmd_lists_transforms():
 
 def test_agents_cmd_shows_registered_transform():
     from typer.testing import CliRunner as _CR
+
+    from antcrew.agents.template_agent import POST_PROCESS_TRANSFORMS, register_transform
     from antcrew.cli import app
-    from antcrew.agents.template_agent import register_transform, POST_PROCESS_TRANSFORMS
 
     register_transform("my_custom_xform", str.title)
     r = _CR().invoke(app, ["agents"])

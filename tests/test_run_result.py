@@ -8,20 +8,14 @@
 """
 from __future__ import annotations
 
-import hashlib
 import json
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
-from antcrew.core.run_result import RunResult, _serialize
-from antcrew.core.artifacts import PRD, Ticket, CodeArtifact, Priority, TicketStatus
-from antcrew.agents.pm import _stable_ticket_id, PMAgent
+from antcrew.agents.pm import PMAgent, _stable_ticket_id
+from antcrew.core.artifacts import PRD, CodeArtifact, Priority, Ticket, TicketStatus
 from antcrew.core.project_kb import ProjectKB
+from antcrew.core.run_result import RunResult, _serialize
 from antcrew.teams.dev_team import _KBProxy
-
 
 # ---------------------------------------------------------------------------
 # _serialize helper
@@ -208,7 +202,6 @@ def test_pm_agent_generates_stable_ids():
     llm = MagicMock()
     llm.system.return_value = json.dumps(_TICKETS)
 
-    from antcrew.core.state import TeamState
     prd = PRD(**_VALID_PRD)
     state: dict = {"request": "Build auth", "messages": [], "prd": prd,
                    "errors": [], "metadata": {}, "_kb_context": ""}

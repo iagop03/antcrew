@@ -1,13 +1,12 @@
 """Tests for DockerRunner — mocked subprocess, no real Docker required."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from antcrew.core.artifacts import CodeArtifact, TestArtifact
-from antcrew.sandbox.runner import DockerRunner, RunResult, _parse_counts
-
+from antcrew.sandbox.runner import DockerRunner
 
 # ---------------------------------------------------------------------------
 # Helpers

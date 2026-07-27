@@ -2,20 +2,17 @@
 from __future__ import annotations
 
 import json
-import time
 from unittest.mock import MagicMock
 
 import pytest
 
 from antcrew.core.events import (
     Event,
-    EventBus,
+    _make_evented_run,
     bus,
     capture,
     new_run_id,
-    _make_evented_run,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -197,7 +194,7 @@ def test_capture_cleans_up_after_exit():
 
 def test_capture_cleans_up_on_exception():
     try:
-        with capture("agent.end") as events:
+        with capture("agent.end") as _:
             raise ValueError("test error")
     except ValueError:
         pass
@@ -289,7 +286,6 @@ def test_evented_run_propagates_exception():
 # ---------------------------------------------------------------------------
 
 def test_single_agent_team_emits_pipeline_events():
-    import json
     from antcrew.core.task_classifier import _SingleAgentTeam
 
     mock_llm = MagicMock()
@@ -313,7 +309,6 @@ def test_single_agent_team_emits_pipeline_events():
 
 def test_single_agent_team_run_id_is_consistent():
     """All events in a run share the same run_id."""
-    import json
     from antcrew.core.task_classifier import _SingleAgentTeam
 
     mock_llm = MagicMock()

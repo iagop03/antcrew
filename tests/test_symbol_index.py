@@ -4,9 +4,11 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-import pytest
-
-from antcrew.core.symbol_index import SymbolIndex, _path_to_module, _build_signature, FunctionSymbol, ClassSymbol
+from antcrew.core.symbol_index import (
+    SymbolIndex,
+    _build_signature,
+    _path_to_module,
+)
 
 
 def _write(tmp_path: Path, filename: str, src: str) -> Path:

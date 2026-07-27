@@ -7,13 +7,10 @@ Tests for:
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 from antcrew_engine.models.simulated import SimulatedLLM, _pick_fixture
-from antcrew.teams.base import InteractiveMixin
 
+from antcrew.teams.base import InteractiveMixin
 
 # ---------------------------------------------------------------------------
 # InteractiveMixin presence
@@ -36,9 +33,9 @@ class TestMixinInheritance:
         assert callable(ContentTeam.run_interactive)
 
     def test_all_teams_have_apply_edit(self):
+        from antcrew.teams.content_team import ContentTeam
         from antcrew.teams.dev_team import DevTeam
         from antcrew.teams.research_team import ResearchTeam
-        from antcrew.teams.content_team import ContentTeam
         for cls in (DevTeam, ResearchTeam, ContentTeam):
             assert callable(getattr(cls, "_apply_edit", None)), f"{cls.__name__}._apply_edit missing"
 
@@ -49,33 +46,33 @@ class TestMixinInheritance:
 
 class TestTeamInstantiation:
     def test_research_team_default_agents(self):
-        from antcrew.teams.research_team import ResearchTeam
         from antcrew.models.simulated import SimulatedLLM
+        from antcrew.teams.research_team import ResearchTeam
         team = ResearchTeam(model=SimulatedLLM())
         assert "researcher" in team._agents
         assert "writer" in team._agents
 
     def test_content_team_default_agents(self):
-        from antcrew.teams.content_team import ContentTeam
         from antcrew.models.simulated import SimulatedLLM
+        from antcrew.teams.content_team import ContentTeam
         team = ContentTeam(model=SimulatedLLM())
         assert "idea" in team._agents
         assert "copywriter" in team._agents
         assert "editor" in team._agents
 
     def test_research_team_agent_override(self):
-        from antcrew.teams.research_team import ResearchTeam
         from antcrew.agents.researcher import ResearcherAgent
         from antcrew.models.simulated import SimulatedLLM
+        from antcrew.teams.research_team import ResearchTeam
         llm = SimulatedLLM()
         custom_researcher = ResearcherAgent(llm)
         team = ResearchTeam(model=llm, agents={"researcher": custom_researcher})
         assert team._agents["researcher"] is custom_researcher
 
     def test_content_team_agent_override(self):
-        from antcrew.teams.content_team import ContentTeam
         from antcrew.agents.copywriter import CopywriterAgent
         from antcrew.models.simulated import SimulatedLLM
+        from antcrew.teams.content_team import ContentTeam
         llm = SimulatedLLM()
         custom = CopywriterAgent(llm)
         team = ContentTeam(model=llm, agents={"copywriter": custom})

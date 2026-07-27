@@ -3,6 +3,7 @@ run --write-back (CLI), run --repo-index, AsyncFullStackTeam scan_context."""
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -23,17 +24,19 @@ class TestScanSince:
         assert result.exit_code == 0
 
     def test_since_shows_recent_file(self, tmp_path):
-        f = tmp_path / "new.py"; f.write_text("x=1")
+        f = tmp_path / "new.py"
+        f.write_text("x=1")
         result = runner.invoke(app, ["scan", str(tmp_path), "--since", "30"])
         assert result.exit_code == 0
         # The freshly created file should appear (it's < 30 days old)
         assert "new.py" in result.output
 
     def test_since_hides_old_file(self, tmp_path):
-        old = tmp_path / "old.py"; old.write_text("x=1")
+        old = tmp_path / "old.py"
+        old.write_text("x=1")
         # Set mtime to 60 days ago
         ancient = time.time() - 60 * 86400
-        import os; os.utime(str(old), (ancient, ancient))
+        os.utime(str(old), (ancient, ancient))
         result = runner.invoke(app, ["scan", str(tmp_path), "--since", "7"])
         assert result.exit_code == 0
         # old.py should not appear in the (filtered) tree
@@ -57,7 +60,8 @@ class TestDescribeContext:
             "what_exists": "Auth system", "what_is_missing": "Billing",
             **kw,
         }
-        p = tmp_path / "ctx.json"; p.write_text(json.dumps(ctx))
+        p = tmp_path / "ctx.json"
+        p.write_text(json.dumps(ctx))
         return p
 
     def test_describe_context_exits_zero(self, tmp_path):
@@ -91,7 +95,8 @@ class TestDescribeContext:
             {"label": "api",      "tech_stack": ["FastAPI"], "what_exists": "x", "what_is_missing": "y"},
             {"label": "frontend", "tech_stack": ["React"],   "what_exists": "x", "what_is_missing": "y"},
         ]}
-        p = tmp_path / "ctx.json"; p.write_text(json.dumps(ctx))
+        p = tmp_path / "ctx.json"
+        p.write_text(json.dumps(ctx))
         result = runner.invoke(app, ["describe", "--team", "fullstack", "--context", str(p)])
         assert result.exit_code == 0
         assert "FastAPI" in result.output

@@ -2,13 +2,9 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind,
-    CapabilityRegistry, Condition, ConditionId, Constraints,
-    DesiredProjectState, EventLog, Goal, MemoryStore, Operator,
-)
 from antcrew.capabilities.architect import Architect
 from antcrew.capabilities.code_generator import CodeGenerator
 from antcrew.capabilities.code_reviewer import CodeReviewer, _safe_parse_review
@@ -17,12 +13,27 @@ from antcrew.capabilities.task_planner import TaskPlanner
 from antcrew.capabilities.test_generator import TestGenerator
 from antcrew.capabilities.test_runner import TestRunner
 from antcrew.capabilities.validators import (
-    AllTasksCompletedValidator, ArtifactExistsValidator,
-    CodeReviewedValidator, TestsExistValidator, TestsPassValidator,
+    AllTasksCompletedValidator,
+    CodeReviewedValidator,
+    TestsExistValidator,
+    TestsPassValidator,
     artifact_validators,
 )
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    CapabilityRegistry,
+    Condition,
+    ConditionId,
+    Constraints,
+    DesiredProjectState,
+    EventLog,
+    Goal,
+    MemoryStore,
+    Operator,
+)
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import pytest
 
-from antcrew.core.pipeline import Pipeline, _DEFAULT_CARRY_KEYS
+from antcrew.core.pipeline import Pipeline
 from antcrew.core.run_result import RunResult
 from antcrew.models.simulated import SimulatedLLM
+from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.research_team import ResearchTeam
-from antcrew.teams.content_team import ContentTeam
-
 
 # ---------------------------------------------------------------------------
 # Minimal stub team for unit tests

@@ -1,18 +1,15 @@
 """Tests for CodebaseScannerAgent — unit + integration."""
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from antcrew.agents.codebase_scanner import (
-    _IGNORE_DIRS, _KEY_FILES,
-    _build_tree, _read_key_files, _scan_one,
+    _IGNORE_DIRS,
     CodebaseScannerAgent,
+    _build_tree,
+    _read_key_files,
+    _scan_one,
 )
 from antcrew.core.artifacts import CodebaseAnalysis
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -136,8 +133,12 @@ class TestCodebaseScannerAgent:
         assert isinstance(output["codebase_analysis"], CodebaseAnalysis)
 
     def test_run_with_project_dirs(self, tmp_path):
-        be = tmp_path / "backend"; be.mkdir(); (be / "main.py").write_text("x=1")
-        fe = tmp_path / "frontend"; fe.mkdir(); (fe / "index.ts").write_text("export {}")
+        be = tmp_path / "backend"
+        be.mkdir()
+        (be / "main.py").write_text("x=1")
+        fe = tmp_path / "frontend"
+        fe.mkdir()
+        (fe / "index.ts").write_text("export {}")
         agent = _agent()
         output = agent.run({"project_dirs": {"backend": str(be), "frontend": str(fe)}})
         assert "codebase_analyses" in output
@@ -165,9 +166,11 @@ class TestCodebaseScannerAgent:
         assert output["codebase_analysis"] is not None
 
     def test_extra_ignore_dirs(self, tmp_path):
-        vendor = tmp_path / "vendor"; vendor.mkdir()
+        vendor = tmp_path / "vendor"
+        vendor.mkdir()
         (vendor / "lib.py").write_text("x=1")
-        (tmp_path / "src").mkdir(); (tmp_path / "src" / "app.py").write_text("x=1")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "app.py").write_text("x=1")
         agent = CodebaseScannerAgent(llm=SimulatedLLM(), extra_ignore_dirs=["vendor"])
         assert "vendor" in agent._ignore
 
@@ -255,7 +258,9 @@ class TestFullStackTeamScanContext:
 
     def test_context_file_via_cli(self, tmp_path):
         import json
+
         from typer.testing import CliRunner
+
         from antcrew.cli._app import app
         ctx_file = tmp_path / "ctx.json"
         ctx_file.write_text(json.dumps({
@@ -274,6 +279,7 @@ class TestFullStackTeamScanContext:
 
     def test_context_file_not_found_exits_1(self, tmp_path):
         from typer.testing import CliRunner
+
         from antcrew.cli._app import app
         result = CliRunner().invoke(app, [
             "run", "Add billing",
@@ -310,8 +316,12 @@ class TestBrownfieldIntegration:
     def test_fullstack_team_with_project_dirs(self, tmp_path):
         from antcrew.teams.fullstack_team import FullStackTeam
 
-        be = tmp_path / "api"; be.mkdir(); (be / "app.py").write_text("x=1")
-        fe = tmp_path / "web"; fe.mkdir(); (fe / "index.ts").write_text("export {}")
+        be = tmp_path / "api"
+        be.mkdir()
+        (be / "app.py").write_text("x=1")
+        fe = tmp_path / "web"
+        fe.mkdir()
+        (fe / "index.ts").write_text("export {}")
 
         team = FullStackTeam(
             model=SimulatedLLM(),
@@ -324,8 +334,8 @@ class TestBrownfieldIntegration:
 
     def test_write_back_after_fullstack_run(self, tmp_path):
         """End-to-end: run pipeline, then write_back artifacts to project dir."""
-        from antcrew.teams.fullstack_team import FullStackTeam
         from antcrew.core.writeback import write_back
+        from antcrew.teams.fullstack_team import FullStackTeam
 
         project = tmp_path / "myproject"
         project.mkdir()

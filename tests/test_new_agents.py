@@ -2,16 +2,19 @@
 import json
 from unittest.mock import MagicMock
 
-from antcrew.agents.frontend_dev import FrontendDevAgent
-from antcrew.agents.qa import QAAgent
-from antcrew.agents.reviewer import ReviewerAgent
-from antcrew.agents.researcher import ResearcherAgent
-from antcrew.agents.idea import IdeaAgent
 from antcrew.agents.copywriter import CopywriterAgent
 from antcrew.agents.editor import EditorAgent
+from antcrew.agents.frontend_dev import FrontendDevAgent
+from antcrew.agents.idea import IdeaAgent
+from antcrew.agents.qa import QAAgent
+from antcrew.agents.researcher import ResearcherAgent
+from antcrew.agents.reviewer import ReviewerAgent
 from antcrew.core.artifacts import (
-    PRD, Ticket, CodeArtifact, ContentPiece,
-    Priority, TicketStatus,
+    CodeArtifact,
+    ContentPiece,
+    Priority,
+    Ticket,
+    TicketStatus,
 )
 from antcrew.core.state import TeamState
 

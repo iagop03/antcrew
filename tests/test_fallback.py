@@ -7,7 +7,6 @@ from antcrew.models.base import BaseLLM, Message
 from antcrew.models.fallback import FallbackLLM
 from antcrew.models.simulated import SimulatedLLM
 
-
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
@@ -116,7 +115,7 @@ def test_current_agent_propagates_to_all_models():
 def test_on_token_propagates_to_all_models():
     m1, m2 = SimulatedLLM(), SimulatedLLM()
     llm = FallbackLLM([m1, m2])
-    cb = lambda t: None
+    def cb(t): pass
     llm.on_token = cb
     assert m1.on_token is cb
     assert m2.on_token is cb
@@ -230,7 +229,6 @@ def test_cost_limit_raises_cost_limit_exceeded():
 
 
 def test_cost_limit_not_raised_before_threshold():
-    from antcrew.core.exceptions import CostLimitExceeded
     llm = FallbackLLM([SimulatedLLM()])
     llm.max_cost_usd = 999.0
     result = llm.system("You are a PM. Output JSON tickets array.", "Build x")
@@ -252,8 +250,10 @@ def test_cost_guard_uses_aggregate_across_models():
 
 def test_trace_propagates_to_inner_models():
     """Setting trace on FallbackLLM propagates to all inner models."""
+    import os
+    import tempfile
+
     from antcrew.trace import TraceLog
-    import tempfile, os
     m1, m2 = SimulatedLLM(), SimulatedLLM()
     llm = FallbackLLM([m1, m2])
     with tempfile.TemporaryDirectory() as d:
@@ -273,8 +273,10 @@ def test_trace_run_id_propagates_to_inner_models():
 
 
 def test_trace_none_clears_on_all_models():
+    import os
+    import tempfile
+
     from antcrew.trace import TraceLog
-    import tempfile, os
     m1, m2 = SimulatedLLM(), SimulatedLLM()
     llm = FallbackLLM([m1, m2])
     with tempfile.TemporaryDirectory() as d:

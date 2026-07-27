@@ -6,12 +6,10 @@ import time
 
 import pytest
 
-from antcrew.core.supervisor import ParallelGroup, Supervisor, _merge, parallel
 from antcrew.core.state import TeamState
+from antcrew.core.supervisor import ParallelGroup, Supervisor, _merge, parallel
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.dev_team import DevTeam
-from antcrew.teams.fullstack_team import FullStackTeam
-
 
 # ---------------------------------------------------------------------------
 # _merge helper
@@ -121,7 +119,7 @@ def test_parallel_group_runs_all_agents():
     a = _FixedAgent({"metadata": {"from_a": True}})
     b = _FixedAgent({"metadata": {"from_b": True}})
     group = ParallelGroup(a, b)
-    result = group.run(_empty_state())
+    group.run(_empty_state())
     assert a.ran
     assert b.ran
 
@@ -220,13 +218,6 @@ def test_supervisor_builds_with_parallel_group():
 
 def test_supervisor_parallel_group_end_to_end():
     """ParallelGroup node runs both inner agents; both append to messages."""
-    from antcrew.agents.backend_dev import BackendDevAgent
-    from antcrew.agents.frontend_dev import FrontendDevAgent
-
-    llm = SimulatedLLM()
-    supervisor = Supervisor(flow=[("coding", "coding")])  # single-node loop avoided
-    # Use a two-node flow: a → group
-    supervisor2 = Supervisor(flow=[("coding", "done")])
 
     a_ran = threading.Event()
     b_ran = threading.Event()

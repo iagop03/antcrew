@@ -5,7 +5,6 @@ import json
 import zipfile
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli import app

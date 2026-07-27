@@ -1,10 +1,8 @@
 """Tests for 'antcrew watch' CLI command."""
 from __future__ import annotations
 
-import json
 import threading
 import time
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -65,11 +63,7 @@ def test_watch_diff_shows_new_file(tmp_path, capsys):
     prev = _code_state({"main.py": "# old\n"})
     curr = _code_state({"main.py": "# old\n", "new.py": "# new\n"})
 
-    from rich.console import Console
-    console = Console(file=__import__("io").StringIO())
-
     # Inline the diff logic from watch_cmd
-    import difflib
 
     def _fmap(state):
         arts = state.get("code_artifacts") or []
@@ -87,7 +81,6 @@ def test_watch_diff_shows_modified_file():
     prev = _code_state({"auth.py": "def login(): pass\n"})
     curr = _code_state({"auth.py": "def login(): return True\n"})
 
-    import difflib
 
     def _fmap(state):
         arts = state.get("code_artifacts") or []
@@ -119,8 +112,8 @@ def test_watch_detects_file_change(tmp_path):
     """Watcher fires when a file is modified."""
     pytest.importorskip("watchdog", reason="watchdog not installed")
 
-    from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
 
     triggered = threading.Event()
 
@@ -148,8 +141,8 @@ def test_watch_detects_directory_change(tmp_path):
     """Watcher fires when any file inside a directory changes."""
     pytest.importorskip("watchdog", reason="watchdog not installed")
 
-    from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
 
     triggered = threading.Event()
 

@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import pytest
 
-from antcrew.engine import (
-    Artifact, ArtifactId, ArtifactKind, ConditionId, MemoryStore,
-)
 from antcrew.capabilities.test_generator import TestGenerator, _to_test_path
 from antcrew.capabilities.test_runner import TestRunner
 from antcrew.capabilities.validators import TestsExistValidator, TestsPassValidator
+from antcrew.engine import (
+    Artifact,
+    ArtifactId,
+    ArtifactKind,
+    ConditionId,
+    MemoryStore,
+)
 from antcrew.models.simulated import SimulatedLLM
 
 
@@ -19,7 +23,7 @@ def llm():
 
 @pytest.fixture
 def goal():
-    from antcrew.engine import Condition, ConditionId, DesiredProjectState, Goal
+    from antcrew.engine import Condition, DesiredProjectState, Goal
     return Goal(
         description="Build a todo API",
         desired_state=DesiredProjectState(frozenset([

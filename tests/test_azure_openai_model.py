@@ -5,9 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.models.base import Message
 from antcrew.models.azure_openai_model import AzureOpenAIModel
-
+from antcrew.models.base import Message
 
 _ENDPOINT = "https://my-corp.openai.azure.com"
 _KEY = "az-test-key"

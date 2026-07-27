@@ -1,7 +1,6 @@
 """Tests for QAAgent symbol extraction and code-first test generation."""
 from __future__ import annotations
 
-import pytest
 from antcrew.agents.qa import _extract_symbols_context, _python_symbols
 
 

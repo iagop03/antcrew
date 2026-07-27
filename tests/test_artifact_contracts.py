@@ -7,16 +7,14 @@ import pytest
 from pydantic import BaseModel
 
 from antcrew.core.artifacts import (
-    ArtifactContract,
     ARTIFACT_REGISTRY,
-    ContractError,
     PRD,
+    ArtifactContract,
     CodeArtifact,
-    ResearchDocument,
+    ContractError,
     resolve_artifact_schema,
 )
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # resolve_artifact_schema
@@ -170,7 +168,6 @@ class TestTemplateAgentOutputSchema:
 
     def test_output_schema_raises_on_invalid_json(self):
         """When the LLM fails to produce valid schema JSON, the contract raises."""
-        from pydantic import ValidationError
         agent = self._agent_with_schema("PRD")
         # SimulatedLLM does not return valid PRD JSON → should raise after retries
         with pytest.raises(Exception):
@@ -211,8 +208,9 @@ class TestTemplateAgentOutputSchema:
 
     def test_output_schema_with_json_roundtrip(self):
         """When LLM returns valid PRD JSON, result is stored as dict."""
-        from antcrew.agents.template_agent import TemplateAgent
         from unittest.mock import patch
+
+        from antcrew.agents.template_agent import TemplateAgent
 
         prd_data = {
             "title": "JWT Auth",
@@ -247,8 +245,9 @@ class TestTemplateAgentOutputSchema:
 
     def test_output_schema_with_contract_in_pipeline(self):
         """output_schema result flows into ArtifactContract.extract() downstream."""
-        from antcrew.agents.template_agent import TemplateAgent
         from unittest.mock import patch
+
+        from antcrew.agents.template_agent import TemplateAgent
 
         prd_data = {
             "title": "Feature X",
@@ -275,8 +274,8 @@ class TestTemplateAgentOutputSchema:
 
     def test_output_schema_with_yaml_config(self, tmp_path):
         """output_schema works end-to-end from YAML file."""
+
         from antcrew.agents.template_agent import load_template_agent
-        from unittest.mock import patch
 
         yaml_content = """
 name: pm

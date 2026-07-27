@@ -1,10 +1,9 @@
 """Tests for LLM adapters — no real API calls (instantiation + interface checks)."""
-import os
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from antcrew.models.base import BaseLLM, Message
-
 
 # ---------------------------------------------------------------------------
 # BaseLLM interface
@@ -73,7 +72,6 @@ def test_ollama_model_instantiation():
 
 
 def test_ollama_model_complete():
-    import httpx
     from antcrew.models.ollama_model import OllamaModel
 
     mock_response = MagicMock()
@@ -120,8 +118,8 @@ def test_groq_model_complete():
 # ---------------------------------------------------------------------------
 
 def test_cost_limit_exceeded_importable():
-    from antcrew.core.exceptions import CostLimitExceeded
     from antcrew import CostLimitExceeded as _top
+    from antcrew.core.exceptions import CostLimitExceeded
     assert CostLimitExceeded is _top
 
 
@@ -163,7 +161,6 @@ def test_cost_limit_raises_when_exceeded():
 
 def test_cost_limit_offset_resets_per_run():
     """Second run starts with a fresh budget even if prior run accumulated cost."""
-    from antcrew.core.exceptions import CostLimitExceeded
     from antcrew.models.simulated import SimulatedLLM
     from antcrew.teams.dev_team import DevTeam
 

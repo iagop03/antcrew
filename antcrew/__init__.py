@@ -102,7 +102,6 @@ except ImportError:
     AgentBotConfig = None  # type: ignore[assignment,misc]
 from antcrew.agents.registry import instantiate_agent
 from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
-from antcrew.teams.base import AGENT_ARTIFACT
 from antcrew.capabilities import (
     Architect,
     BugFixer,
@@ -168,6 +167,7 @@ from antcrew.memory.chroma import ChromaMemory
 from antcrew.memory.repo_index import RepoIndex
 from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult
 from antcrew.presets import CAREFUL, CONCISE, STRICT, VERBOSE, AgentPreset, get_preset
+from antcrew.teams.base import AGENT_ARTIFACT
 from antcrew.teams.custom_team import CustomTeam
 from antcrew.testing import SequencedLLM
 from antcrew.utils.persistence import load_state, save_state

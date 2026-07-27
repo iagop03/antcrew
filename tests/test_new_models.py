@@ -1,8 +1,6 @@
 """Tests for OpenAIModel, SimulatedLLM, and config loader."""
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
 
 # ---------------------------------------------------------------------------
 # SimulatedLLM

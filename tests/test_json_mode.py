@@ -1,14 +1,10 @@
 """Tests for v0.8.0 — native JSON mode / structured outputs."""
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from antcrew.models.simulated import SimulatedLLM
 from antcrew.models.fallback import FallbackLLM
-
+from antcrew.models.simulated import SimulatedLLM
 
 # ===========================================================================
 # SimulatedLLM — accept and ignore json_mode
@@ -368,7 +364,7 @@ def test_system_parsed_passes_json_mode_true():
     llm = _CaptureLLM()
     agent = PMAgent(llm)
 
-    result = agent.system_parsed(
+    agent.system_parsed(
         "You are a PM.",
         "Build a login system",
         schema=dict,

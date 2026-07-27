@@ -1,14 +1,11 @@
 """Tests for CustomTeam (v0.8.3 – v0.9.0)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from antcrew.teams.custom_team import CustomTeam
-from antcrew.models.simulated import SimulatedLLM
 from antcrew.core.run_result import RunResult
-
+from antcrew.models.simulated import SimulatedLLM
+from antcrew.teams.custom_team import CustomTeam
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -227,6 +224,7 @@ def test_trace_log_records_error_status(tmp_path):
 
 def test_config_load_custom_team(tmp_path):
     import yaml
+
     from antcrew.config import load
 
     cfg = {
@@ -248,6 +246,7 @@ def test_config_load_custom_team(tmp_path):
 
 def test_config_custom_team_no_steps_raises(tmp_path):
     import yaml
+
     from antcrew.config import load
 
     cfg = {"team": "custom", "model": "simulated"}
@@ -260,6 +259,7 @@ def test_config_custom_team_no_steps_raises(tmp_path):
 
 def test_config_custom_team_empty_steps_raises(tmp_path):
     import yaml
+
     from antcrew.config import load
 
     cfg = {"team": "custom", "model": "simulated", "steps": []}
@@ -276,6 +276,7 @@ def test_config_custom_team_empty_steps_raises(tmp_path):
 
 def test_init_custom_template(tmp_path):
     from typer.testing import CliRunner
+
     from antcrew.cli import app
 
     runner = CliRunner()
@@ -607,8 +608,8 @@ def test_retry_in_parallel_group(monkeypatch):
 def test_config_retry_from_yaml(tmp_path):
     """max_retries and retry_delay must be parsed from a YAML config file."""
     import yaml
+
     from antcrew.config import load
-    from antcrew.teams.custom_team import _parse_steps
 
     cfg = {
         "team": "custom",
@@ -632,7 +633,7 @@ def test_config_retry_from_yaml(tmp_path):
 # ===========================================================================
 
 def test_condition_none_always_runs():
-    from antcrew.teams.custom_team import _parse_condition, _Step, _condition_met
+    from antcrew.teams.custom_team import _condition_met, _Step
     step = _Step(agent=None, condition=None)  # type: ignore[arg-type]
     assert _condition_met(step, {}) is True
 
@@ -772,6 +773,7 @@ def test_condition_in_parallel_group_some_skipped():
 
 def test_condition_in_yaml_config(tmp_path):
     import yaml
+
     from antcrew.config import load
 
     cfg = {
@@ -796,6 +798,7 @@ def test_condition_in_yaml_config(tmp_path):
 
 def test_config_parallel_steps(tmp_path):
     import yaml
+
     from antcrew.config import load
 
     cfg = {
@@ -949,6 +952,7 @@ def test_cli_run_shows_step_names(tmp_path):
     """antcrew run --config team.yaml shows step names as progress."""
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
 
     cfg = {
@@ -971,6 +975,7 @@ def test_cli_run_shows_step_names(tmp_path):
 def test_cli_run_shows_skip_for_unfulfilled_condition(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
 
     cfg = {
@@ -1019,9 +1024,7 @@ def test_vars_request_always_wins():
 
 
 def test_vars_available_to_interpolation():
-    from antcrew.testing import SequencedLLM
 
-    llm = SequencedLLM(["done"])
     capture: list[str] = []
 
     # Patch _CaptureLLM inline
@@ -1059,6 +1062,7 @@ def test_vars_available_to_condition():
 
 def test_vars_from_yaml_config(tmp_path):
     import yaml
+
     from antcrew.config import load_context
     cfg = {
         "team": "custom",
@@ -1075,6 +1079,7 @@ def test_vars_from_yaml_config(tmp_path):
 def test_vars_not_counted_as_unknown_in_validate(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1097,6 +1102,7 @@ def test_vars_not_counted_as_unknown_in_validate(tmp_path):
 def test_dry_run_exits_zero(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1112,6 +1118,7 @@ def test_dry_run_exits_zero(tmp_path):
 def test_dry_run_shows_step_names(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1133,6 +1140,7 @@ def test_dry_run_no_llm_calls(tmp_path):
     """--dry-run must not hit the LLM; SimulatedLLM call_count stays 0."""
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1149,6 +1157,7 @@ def test_dry_run_no_llm_calls(tmp_path):
 def test_dry_run_shows_vars(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1166,6 +1175,7 @@ def test_dry_run_shows_vars(tmp_path):
 def test_dry_run_shows_parallel_steps(tmp_path):
     import yaml
     from typer.testing import CliRunner
+
     from antcrew.cli import app
     cfg = {
         "team": "custom",
@@ -1293,7 +1303,6 @@ def test_on_error_skip_uses_explicit_default():
 
 def test_on_error_skip_pipeline_continues():
     """After a skipped (failed) step, subsequent steps still run."""
-    from antcrew.testing import SequencedLLM
 
     class _FirstFailLLM(SimulatedLLM):
         def __init__(self):
@@ -1334,6 +1343,7 @@ def test_on_error_raise_propagates_exception():
 
 def test_on_error_from_yaml(tmp_path):
     import yaml
+
     from antcrew.config import load
 
     cfg = {
@@ -1401,6 +1411,7 @@ def test_nested_team_missing_file_raises(tmp_path):
 def test_nested_team_inherits_vars(tmp_path):
     """Nested team can declare its own vars which are used in its steps."""
     import yaml
+
     from antcrew.testing import SequencedLLM
 
     inner_cfg = {
@@ -1436,7 +1447,6 @@ def test_nested_team_inherits_vars(tmp_path):
 
 class TestCustomTeamGates:
     def test_gate_passes_and_pipeline_continues(self):
-        from antcrew.core.gates import NonEmptyGate
         team = CustomTeam(
             steps=[
                 {
@@ -1472,7 +1482,7 @@ class TestCustomTeamGates:
         assert result.state.get("story") is not None
 
     def test_gate_fails_raises_gate_error(self):
-        from antcrew.core.gates import GateError, NonEmptyGate
+        from antcrew.core.gates import GateError
         from antcrew.models.simulated import SimulatedLLM as _SIM
 
         # Monkey-patch to produce None output
@@ -1522,29 +1532,29 @@ class TestCustomTeamGates:
 
 class TestParseGate:
     def test_string_shorthand_non_empty(self):
-        from antcrew.core.gates import parse_gate, NonEmptyGate
+        from antcrew.core.gates import NonEmptyGate, parse_gate
         g = parse_gate("non_empty:prd")
         assert isinstance(g, NonEmptyGate)
         assert g.field == "prd"
 
     def test_string_shorthand_python_syntax(self):
-        from antcrew.core.gates import parse_gate, PythonSyntaxGate
+        from antcrew.core.gates import PythonSyntaxGate, parse_gate
         g = parse_gate("python_syntax:code_artifacts")
         assert isinstance(g, PythonSyntaxGate)
 
     def test_string_shorthand_json(self):
-        from antcrew.core.gates import parse_gate, JsonGate
+        from antcrew.core.gates import JsonGate, parse_gate
         g = parse_gate("json:payload")
         assert isinstance(g, JsonGate)
 
     def test_dict_non_empty_with_min_length(self):
-        from antcrew.core.gates import parse_gate, NonEmptyGate
+        from antcrew.core.gates import NonEmptyGate, parse_gate
         g = parse_gate({"type": "non_empty", "field": "prd", "min_length": 100})
         assert isinstance(g, NonEmptyGate)
         assert g.min_length == 100
 
     def test_dict_all_gate(self):
-        from antcrew.core.gates import parse_gate, AllGate
+        from antcrew.core.gates import AllGate, parse_gate
         g = parse_gate({
             "type": "all",
             "gates": [
@@ -1555,7 +1565,7 @@ class TestParseGate:
         assert isinstance(g, AllGate)
 
     def test_dict_any_gate(self):
-        from antcrew.core.gates import parse_gate, AnyGate
+        from antcrew.core.gates import AnyGate, parse_gate
         g = parse_gate({
             "type": "any",
             "gates": [

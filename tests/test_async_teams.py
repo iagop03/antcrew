@@ -2,24 +2,28 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from antcrew.core.router import RuleClassifier
+from antcrew.core.run_result import RunResult
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.async_teams import (
     AsyncContentTeam,
+    AsyncCustomTeam,
     AsyncDevTeam,
+    AsyncFeatureTeam,
     AsyncFullStackTeam,
     AsyncResearchTeam,
+    AsyncRouter,
     AsyncTeamMixin,
 )
-from antcrew.teams.dev_team import DevTeam
-from antcrew.teams.research_team import ResearchTeam
 from antcrew.teams.content_team import ContentTeam
+from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.fullstack_team import FullStackTeam
-from antcrew.core.run_result import RunResult
-
+from antcrew.teams.research_team import ResearchTeam
+from antcrew.testing import SequencedLLM
 
 # ===========================================================================
 # Inheritance checks
@@ -206,9 +210,6 @@ def test_exported_from_antcrew():
 # AsyncCustomTeam
 # ===========================================================================
 
-from antcrew.teams.async_teams import AsyncCustomTeam, AsyncFeatureTeam, AsyncRouter
-
-
 def test_async_custom_team_init():
     team = AsyncCustomTeam(
         steps=[{"name": "gen", "system_prompt": "Do it.", "output_key": "out"}],
@@ -284,10 +285,6 @@ def test_async_feature_team_exported():
 # AsyncRouter
 # ===========================================================================
 
-from unittest.mock import MagicMock
-from antcrew.core.router import RuleClassifier
-
-
 def _make_async_router():
     handler = MagicMock()
     handler.run.return_value = RunResult(state={"request": "r", "out": "x"})
@@ -326,9 +323,6 @@ def test_async_router_exported():
 # ===========================================================================
 # SequencedLLM
 # ===========================================================================
-
-from antcrew.testing import SequencedLLM
-
 
 def test_sequenced_llm_returns_in_order():
     llm = SequencedLLM(["first", "second", "third"])

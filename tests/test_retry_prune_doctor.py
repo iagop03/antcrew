@@ -1,16 +1,14 @@
 """Tests for LLM retry wiring, TraceLog.prune(), and antcrew doctor."""
 from __future__ import annotations
 
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-from typing import Optional
+from unittest.mock import MagicMock, patch
 
 import pytest
+from antcrew_engine.models.base import BaseLLM, Message, _is_retryable
 from typer.testing import CliRunner
 
 from antcrew.cli._app import app
-from antcrew_engine.models.base import BaseLLM, Message, _is_retryable
 from antcrew.trace import TraceLog
 
 runner = CliRunner()
@@ -140,7 +138,6 @@ class TestAnthropicRetryWiring:
 
             # Fail once, then succeed
             call_count = []
-            original_create = MockClient.return_value.messages.create
 
             def flaky(**kwargs):
                 call_count.append(1)
@@ -271,7 +268,7 @@ class TestTraceLogPrune:
 
     def _insert_run(self, tl: TraceLog, started_at: str) -> str:
         """Insert a run with an explicit started_at timestamp."""
-        import uuid, sqlite3
+        import uuid
         run_id = str(uuid.uuid4())
         tl._conn.execute(
             "INSERT INTO runs(id, thread_id, request, team, started_at, status) VALUES (?,?,?,?,?,?)",
@@ -394,5 +391,5 @@ class TestDoctorCmd:
     def test_doctor_no_ping_flag_skips_live_calls(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test123456789")
         with patch("anthropic.Anthropic") as mock_ant:
-            result = runner.invoke(app, ["doctor"])
+            runner.invoke(app, ["doctor"])
             mock_ant.assert_not_called()

@@ -431,10 +431,12 @@ class TestDashboardTestResults:
 
     def test_print_state_shows_test_results_on_success(self, tmp_path):
         """_print_state() must show a green panel when all tests passed."""
-        from antcrew.sandbox.runner import RunResult
-        from antcrew.cli import _print_state
-        from rich.console import Console
         from io import StringIO
+
+        from rich.console import Console
+
+        from antcrew.cli import _print_state
+        from antcrew.sandbox.runner import RunResult
 
         buf = StringIO()
         con = Console(file=buf, highlight=False)
@@ -459,10 +461,12 @@ class TestDashboardTestResults:
         assert "3 passed" in output
 
     def test_print_state_shows_failure(self, tmp_path):
-        from antcrew.sandbox.runner import RunResult
-        from antcrew.cli import _print_state
-        from rich.console import Console
         from io import StringIO
+
+        from rich.console import Console
+
+        from antcrew.cli import _print_state
+        from antcrew.sandbox.runner import RunResult
 
         buf = StringIO()
         con = Console(file=buf, highlight=False)
@@ -486,9 +490,11 @@ class TestDashboardTestResults:
         assert "2 failed" in output
 
     def test_print_test_results_with_dict(self):
-        from antcrew.cli import _print_test_results
-        from rich.console import Console
         from io import StringIO
+
+        from rich.console import Console
+
+        from antcrew.cli import _print_test_results
 
         buf = StringIO()
         con = Console(file=buf, highlight=False)
@@ -645,7 +651,7 @@ class TestConfigCacheKey:
             "team": "dev", "model": "simulated",
             "project": str(proj),
         }))
-        from antcrew.config import load_context, TeamContext
+        from antcrew.config import TeamContext, load_context
         from antcrew.project import Project
         ctx = load_context(cfg)
         assert isinstance(ctx, TeamContext)
@@ -679,7 +685,7 @@ class TestConfigCacheKey:
             "cache":   str(db),
             "project": str(proj),
         }))
-        from antcrew.config import load_context, TeamContext
+        from antcrew.config import TeamContext, load_context
         from antcrew.models.cache import FileLLMCache
         from antcrew.project import Project
         ctx = load_context(cfg)

@@ -9,14 +9,12 @@ Covers:
 from __future__ import annotations
 
 import threading
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.core.events import bus, capture, Event, EventBus, new_run_id
+from antcrew.core.events import EventBus, bus, capture
 from antcrew.core.feedback import FeedbackLoop, FeedbackResult
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

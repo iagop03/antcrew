@@ -4,10 +4,9 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
-from antcrew.cli import app, _parse_since
+from antcrew.cli import _parse_since, app
 from antcrew.trace import TraceLog
 
 cli = CliRunner()
@@ -46,7 +45,7 @@ def test_parse_since_relative_days():
     result = _parse_since("7d")
     assert "T" in result  # is an ISO timestamp
     # roughly in the past 7 days (not in the future, not 8+ days ago)
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     dt = datetime.fromisoformat(result)
     now = datetime.now(timezone.utc)
     assert now - timedelta(days=8) < dt < now
@@ -54,7 +53,7 @@ def test_parse_since_relative_days():
 
 def test_parse_since_zero_days():
     result = _parse_since("0d")
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     dt = datetime.fromisoformat(result)
     assert datetime.now(timezone.utc) - dt < timedelta(minutes=1)
 

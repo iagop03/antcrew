@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import pytest
+
 from antcrew.core.task_classifier import (
-    TaskType, classify_task, MinimalPipeline, _AGENTS_FOR_TYPE, _PIPELINE_FLOWS
+    _AGENTS_FOR_TYPE,
+    MinimalPipeline,
+    TaskType,
+    classify_task,
 )
 from antcrew.models.simulated import SimulatedLLM
 

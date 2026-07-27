@@ -1,15 +1,14 @@
 """Tests for Router, LLMClassifier, RuleClassifier, DirectAgent (v0.11.12)."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from antcrew.core.router import LLMClassifier, RouteClassifier, RuleClassifier, Router
 from antcrew.agents.direct_agent import DirectAgent
+from antcrew.core.router import LLMClassifier, RouteClassifier, Router, RuleClassifier
 from antcrew.core.run_result import RunResult
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Helpers

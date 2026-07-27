@@ -1,7 +1,6 @@
 """Tests for TeamState and core artifacts."""
-import pytest
 
-from antcrew.core.artifacts import PRD, Ticket, CodeArtifact, Priority, TicketStatus
+from antcrew.core.artifacts import PRD, CodeArtifact, Priority, Ticket, TicketStatus
 from antcrew.core.state import TeamState
 
 

@@ -5,8 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult
-
+from antcrew.memory.store import InMemoryMemory, MemoryResult
 
 # ===========================================================================
 # InMemoryMemory — basic CRUD
@@ -218,8 +217,8 @@ def test_store_run_tags_run_id():
 # ===========================================================================
 
 def test_recall_returns_empty_when_no_memory():
-    from antcrew.models.simulated import SimulatedLLM
     from antcrew.agents.business import BusinessAnalystAgent
+    from antcrew.models.simulated import SimulatedLLM
 
     llm = SimulatedLLM()
     agent = BusinessAnalystAgent(llm)
@@ -228,8 +227,8 @@ def test_recall_returns_empty_when_no_memory():
 
 
 def test_recall_returns_formatted_results():
-    from antcrew.models.simulated import SimulatedLLM
     from antcrew.agents.business import BusinessAnalystAgent
+    from antcrew.models.simulated import SimulatedLLM
 
     llm = SimulatedLLM()
     agent = BusinessAnalystAgent(llm)
@@ -244,9 +243,8 @@ def test_recall_returns_formatted_results():
 
 def test_business_analyst_uses_memory_in_prompt():
     """BA agent injects memory context into its LLM call when memory is set."""
-    import json
-    from antcrew.models.simulated import SimulatedLLM
     from antcrew.agents.business import BusinessAnalystAgent
+    from antcrew.models.simulated import SimulatedLLM
 
     llm = SimulatedLLM()
     agent = BusinessAnalystAgent(llm)

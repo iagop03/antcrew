@@ -4,10 +4,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from antcrew.models.base import Message
 from antcrew_engine.models.openai_model import OpenAIModel, _is_reasoning_model
 
+from antcrew.models.base import Message
 
 # ===========================================================================
 # _is_reasoning_model helper

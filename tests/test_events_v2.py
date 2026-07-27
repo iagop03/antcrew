@@ -12,13 +12,11 @@ Covers:
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from antcrew.core.events import bus, capture, Event, new_run_id
-from antcrew.models.simulated import SimulatedLLM
-
+from antcrew.core.events import Event, bus, capture
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -259,7 +257,6 @@ def test_pipeline_emits_pipeline_start_end():
     with capture("pipeline.start", "pipeline.end") as events:
         pipeline.run("Research")
 
-    types = [e.type for e in events]
     # The top-level Pipeline event + the ResearchTeam events
     pipeline_events = [e for e in events if e.payload.get("team") == "Pipeline"]
     assert any(e.type == "pipeline.start" for e in pipeline_events)

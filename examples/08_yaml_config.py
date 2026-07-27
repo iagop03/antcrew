@@ -12,9 +12,10 @@ agentteam.yaml supports:
 Run:
     python examples/08_yaml_config.py
 """
-import textwrap
 import tempfile
+import textwrap
 from pathlib import Path
+
 from antcrew.config import load
 
 # Write a temporary config for this demo

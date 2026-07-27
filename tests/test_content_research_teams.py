@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.models.simulated import SimulatedLLM
 from antcrew.memory.store import InMemoryMemory
-from antcrew.trace import TraceLog
+from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.content_team import ContentTeam
 from antcrew.teams.research_team import ResearchTeam
+from antcrew.trace import TraceLog
 
 
 def _trace(tmp_path: Path) -> TraceLog:
@@ -36,8 +36,8 @@ class TestAgentRegistry:
         assert cls is SprintPlannerAgent
 
     def test_get_agent_class_doc_writer(self):
-        from antcrew.agents.registry import get_agent_class
         from antcrew.agents.doc_writer import DocWriterAgent
+        from antcrew.agents.registry import get_agent_class
         cls = get_agent_class("doc_writer")
         assert cls is DocWriterAgent
 
@@ -55,7 +55,9 @@ class TestAgentRegistry:
 
     def test_agents_cmd_lists_sprint_planner(self):
         import json
+
         from typer.testing import CliRunner
+
         from antcrew.cli._app import app
         runner = CliRunner()
         result = runner.invoke(app, ["agents", "--json"])
@@ -71,11 +73,13 @@ class TestAgentRegistry:
 class TestWatchRepoIndex:
     def _invoke(self, *args):
         from typer.testing import CliRunner
+
         from antcrew.cli._app import app
         return CliRunner().invoke(app, list(args))
 
     def test_nonexistent_repo_index_exits_1(self, tmp_path):
-        spec = tmp_path / "spec.md"; spec.write_text("Build x")
+        spec = tmp_path / "spec.md"
+        spec.write_text("Build x")
         result = self._invoke(
             "watch", str(spec),
             "--team", "fullstack",
@@ -94,7 +98,8 @@ class TestWatchRepoIndex:
             return real(name, *a, **kw)
         monkeypatch.setattr(builtins, "__import__", _block)
 
-        spec = tmp_path / "spec.md"; spec.write_text("Build x")
+        spec = tmp_path / "spec.md"
+        spec.write_text("Build x")
         result = self._invoke(
             "watch", str(spec),
             "--team", "dev",
@@ -106,8 +111,10 @@ class TestWatchRepoIndex:
         assert result.exit_code == 1  # watchdog blocked
 
     def test_repo_index_file_not_dir_exits_1(self, tmp_path):
-        spec = tmp_path / "spec.md"; spec.write_text("Build x")
-        f = tmp_path / "notadir.txt"; f.write_text("x")
+        spec = tmp_path / "spec.md"
+        spec.write_text("Build x")
+        f = tmp_path / "notadir.txt"
+        f.write_text("x")
         result = self._invoke(
             "watch", str(spec),
             "--team", "fullstack",

@@ -1,14 +1,13 @@
 """Tests for antcrew.core.project_kb."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-import pytest
-
 from antcrew.core.project_kb import (
-    ProjectKB, EndpointRecord, ModelRecord, ServiceRecord,
-    _parse_requirements_txt, _parse_toml_deps, _try_route_decorator,
+    EndpointRecord,
+    ModelRecord,
+    ProjectKB,
+    ServiceRecord,
+    _parse_requirements_txt,
+    _parse_toml_deps,
 )
 
 

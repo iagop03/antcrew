@@ -346,7 +346,9 @@ def test_cli_flow_validate_reports_all_errors(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_importable_from_antcrew():
-    from antcrew import load_flow as lf, validate_flow as vf, format_flow as ff
+    from antcrew import format_flow as ff
+    from antcrew import load_flow as lf
+    from antcrew import validate_flow as vf
     assert lf is load_flow
     assert vf is validate_flow
     assert ff is format_flow

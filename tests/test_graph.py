@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli import app
-from antcrew.graph import render_ascii, render_mermaid, _get_builtin_flow
+from antcrew.graph import _get_builtin_flow, render_ascii, render_mermaid
 
 runner = CliRunner()
 
@@ -130,7 +128,6 @@ def test_get_builtin_flow_unknown_returns_none():
 
 def test_get_builtin_flow_case_insensitive():
     flow_lower = _get_builtin_flow("dev")
-    flow_upper = _get_builtin_flow("DEV")
     # DEV won't match because of the simple lower() check, but "dev" does
     assert flow_lower is not None
 

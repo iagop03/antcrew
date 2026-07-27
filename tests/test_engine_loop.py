@@ -10,20 +10,30 @@ These tests use stub capabilities (no real LLM) to verify:
 from __future__ import annotations
 
 import threading
-from dataclasses import field
 
 import pytest
+from antcrew_engine.capabilities.base import BaseExecutor, _filter_python_delta
 
 from antcrew.engine import (
-    Artifact, ArtifactDelta, ArtifactId, ArtifactKind, EMPTY_DELTA,
-    CapabilityDescriptor, CapabilityResult, ConditionId,
-    Goal, DesiredProjectState, Condition, Constraints,
-    CapabilityRegistry, EventLog, MemoryStore, EngineLoop,
+    EMPTY_DELTA,
+    Artifact,
+    ArtifactDelta,
+    ArtifactId,
+    ArtifactKind,
+    CapabilityDescriptor,
+    CapabilityRegistry,
+    CapabilityResult,
+    Condition,
+    ConditionId,
+    Constraints,
+    DesiredProjectState,
+    EngineLoop,
+    EventLog,
+    Goal,
+    MemoryStore,
 )
 from antcrew.engine.operator import EngineLoopError
 from antcrew.engine.validator import Validator, ValidatorResult
-from antcrew_engine.capabilities.base import BaseExecutor, _filter_python_delta
-
 
 # ---------------------------------------------------------------------------
 # Helpers

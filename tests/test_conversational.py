@@ -2,20 +2,23 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, AsyncMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from antcrew.core.agent import _strip_fences, BaseAgent
+from antcrew.core.agent import BaseAgent, _strip_fences
 from antcrew.core.artifacts import (
-    PRD, Ticket, TicketStatus, Priority,
-    CodeArtifact, TestArtifact,
-    CodeReview, ReviewFinding,
-    ResearchDocument, ResearchSection,
+    PRD,
+    CodeReview,
     ContentPiece,
+    Priority,
+    ResearchDocument,
+    ResearchSection,
+    ReviewFinding,
+    Ticket,
+    TicketStatus,
 )
 from antcrew.integrations.console import ConsoleChannel, _prompt_decision
-
 
 # ---------------------------------------------------------------------------
 # _strip_fences
@@ -46,16 +49,16 @@ class TestStripFences:
 
 class TestConversationalFlag:
     def test_all_agents_are_conversational(self):
-        from antcrew.agents.business import BusinessAnalystAgent
-        from antcrew.agents.pm import PMAgent
         from antcrew.agents.backend_dev import BackendDevAgent
-        from antcrew.agents.frontend_dev import FrontendDevAgent
-        from antcrew.agents.qa import QAAgent
-        from antcrew.agents.reviewer import ReviewerAgent
-        from antcrew.agents.researcher import ResearcherAgent
-        from antcrew.agents.idea import IdeaAgent
+        from antcrew.agents.business import BusinessAnalystAgent
         from antcrew.agents.copywriter import CopywriterAgent
         from antcrew.agents.editor import EditorAgent
+        from antcrew.agents.frontend_dev import FrontendDevAgent
+        from antcrew.agents.idea import IdeaAgent
+        from antcrew.agents.pm import PMAgent
+        from antcrew.agents.qa import QAAgent
+        from antcrew.agents.researcher import ResearcherAgent
+        from antcrew.agents.reviewer import ReviewerAgent
 
         for cls in [
             BusinessAnalystAgent, PMAgent, BackendDevAgent, FrontendDevAgent,

@@ -1,13 +1,6 @@
 """Tests for BaseTool, built-in tools, and the ReAct loop in BaseAgent."""
 from __future__ import annotations
 
-import json
-import sys
-import textwrap
-from pathlib import Path
-
-import pytest
-
 from antcrew.core.tools import (
     BaseTool,
     CodeExecutorTool,
@@ -16,7 +9,6 @@ from antcrew.core.tools import (
     WebSearchTool,
 )
 from antcrew.testing.llms import SequencedLLM
-
 
 # ---------------------------------------------------------------------------
 # ToolResult
@@ -130,7 +122,6 @@ def test_read_file_truncates_large_file(tmp_path):
 
 def test_web_search_returns_result(monkeypatch):
     import json as _json
-    import io
 
     fake_data = {
         "AbstractText": "Python is a programming language.",

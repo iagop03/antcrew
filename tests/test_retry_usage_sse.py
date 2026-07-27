@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import json
-import time
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from antcrew_engine.models.base import Message, _is_retryable
 
-from antcrew_engine.models.base import BaseLLM, Message, _is_retryable
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ===========================================================================
 # _is_retryable
@@ -310,8 +308,8 @@ def test_ollama_model_records_usage():
 def test_sse_endpoint_streams_tokens_and_done():
     """GET /run/{id}/stream yields token events then a done event."""
     pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
+    from antcrew.server import _runs, app  # type: ignore[import]
     from fastapi.testclient import TestClient
-    from antcrew.server import app, _runs  # type: ignore[import]
 
     client = TestClient(app)
 
@@ -338,7 +336,7 @@ def test_sse_endpoint_streams_tokens_and_done():
         lines = list(resp.iter_lines())
 
     # Parse events from lines
-    data_lines = [l for l in lines if l.startswith("data:")]
+    data_lines = [ln for ln in lines if ln.startswith("data:")]
     assert len(data_lines) >= 2  # at least 2 tokens
 
     first = json.loads(data_lines[0][len("data:"):].strip())
@@ -350,8 +348,8 @@ def test_sse_endpoint_streams_tokens_and_done():
 
 def test_sse_endpoint_404_for_unknown_run():
     pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
-    from fastapi.testclient import TestClient
     from antcrew.server import app  # type: ignore[import]
+    from fastapi.testclient import TestClient
 
     client = TestClient(app)
     resp = client.get("/run/does-not-exist/stream")
@@ -361,8 +359,8 @@ def test_sse_endpoint_404_for_unknown_run():
 def test_run_record_has_events_key():
     """POST /run creates a run record with an events list."""
     pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
+    from antcrew.server import _runs, app  # type: ignore[import]
     from fastapi.testclient import TestClient
-    from antcrew.server import app, _runs  # type: ignore[import]
 
     client = TestClient(app)
     resp = client.post("/run", json={"request": "test", "team": "dev", "model": "simulated"})
@@ -379,8 +377,8 @@ def test_run_record_has_events_key():
 def test_get_run_includes_usage_when_done():
     """GET /run/{id} includes usage field when the run is done."""
     pytest.importorskip("antcrew.server", reason="antcrew.server removed; use antcrew-platform")
+    from antcrew.server import _runs, app  # type: ignore[import]
     from fastapi.testclient import TestClient
-    from antcrew.server import app, _runs  # type: ignore[import]
 
     client = TestClient(app)
     run_id = "test-usage-001"

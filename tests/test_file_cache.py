@@ -1,12 +1,9 @@
 """Tests for FileLLMCache — SQLite-backed persistent LLM cache."""
 from __future__ import annotations
 
-import pytest
-
 from antcrew.models.base import Message
 from antcrew.models.cache import FileLLMCache, LLMCache
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -4,11 +4,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from antcrew.models.base import BaseLLM, Message
+from antcrew.models.base import Message
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # BaseLLM + SimulatedLLM
@@ -74,8 +71,8 @@ def test_base_agent_system_sets_current_agent():
 
 
 def test_different_agents_set_different_current_agent():
-    from antcrew.agents.pm import PMAgent
     from antcrew.agents.backend_dev import BackendDevAgent
+    from antcrew.agents.pm import PMAgent
 
     llm = SimulatedLLM()
     pm = PMAgent(llm=llm)

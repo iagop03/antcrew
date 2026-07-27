@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli import app
@@ -188,7 +186,7 @@ def test_eval_judge_score_not_dash_when_judge_enabled(tmp_path):
     # Without judge, the column shows "—". With judge it shows a number.
     lines = result.output.splitlines()
     # Find the summary table line that contains the case name
-    case_lines = [l for l in lines if "login" in l.lower()]
+    case_lines = [line for line in lines if "login" in line.lower()]
     assert case_lines, f"Expected 'login' in output:\n{result.output}"
     # The judge column should not be "—"
     assert "—" not in case_lines[-1] or "0." in case_lines[-1]

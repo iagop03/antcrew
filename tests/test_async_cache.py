@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from antcrew.core.run_result import RunResult
@@ -9,7 +10,6 @@ from antcrew.models.base import BaseLLM, Message
 from antcrew.models.cache import LLMCache
 from antcrew.models.fallback import FallbackLLM
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Helpers

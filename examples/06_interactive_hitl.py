@@ -13,7 +13,7 @@ Run:
     python examples/06_interactive_hitl.py
 """
 from antcrew import DevTeam
-from antcrew.models import AnthropicModel, SimulatedLLM
+from antcrew.models import AnthropicModel
 from antcrew.utils.persistence import save_state
 
 # Use SimulatedLLM to try without API keys

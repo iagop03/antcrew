@@ -3,15 +3,22 @@ from __future__ import annotations
 
 import pytest
 
-from antcrew.engine import (
-    ArtifactId, ArtifactKind, CapabilityRegistry,
-    Condition, ConditionId, Constraints, DesiredProjectState,
-    EventLog, Goal, MemoryStore, Operator,
-)
 from antcrew.capabilities.spec_extractor import SpecExtractor
 from antcrew.capabilities.validators import ArtifactExistsValidator
+from antcrew.engine import (
+    ArtifactId,
+    ArtifactKind,
+    CapabilityRegistry,
+    Condition,
+    ConditionId,
+    Constraints,
+    DesiredProjectState,
+    EventLog,
+    Goal,
+    MemoryStore,
+    Operator,
+)
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

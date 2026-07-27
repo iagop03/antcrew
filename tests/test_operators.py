@@ -4,13 +4,18 @@ from __future__ import annotations
 import pytest
 
 from antcrew.core.operators import (
-    BaseOperator, CopyOp, DropOp, MapOp, MergeOp, RenameOp, SetOp,
-    _DELETE, build_operator,
+    _DELETE,
+    CopyOp,
+    DropOp,
+    MapOp,
+    MergeOp,
+    RenameOp,
+    SetOp,
+    build_operator,
 )
 from antcrew.core.validation import validate_agent_dag
-from antcrew.teams.custom_team import CustomTeam, _apply_patch
 from antcrew.models.simulated import SimulatedLLM
-
+from antcrew.teams.custom_team import CustomTeam, _apply_patch
 
 # ---------------------------------------------------------------------------
 # _apply_patch
@@ -391,7 +396,14 @@ class TestValidateAgentDag:
 class TestExports:
     def test_all_operators_exported(self):
         from antcrew import (
-            BaseOperator, RenameOp, CopyOp, DropOp, SetOp, MapOp, MergeOp, build_operator,
+            BaseOperator,
+            CopyOp,
+            DropOp,
+            MapOp,
+            MergeOp,
+            RenameOp,
+            SetOp,
+            build_operator,
         )
         assert all(x is not None for x in [
             BaseOperator, RenameOp, CopyOp, DropOp, SetOp, MapOp, MergeOp, build_operator,

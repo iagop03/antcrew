@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli._app import app
@@ -17,12 +16,14 @@ runner = CliRunner()
 class TestBenchmarkContext:
     def _cases(self, tmp_path: Path, team: str = "fullstack") -> Path:
         data = [{"request": "Add auth", "team": team, "label": "Auth"}]
-        p = tmp_path / "cases.json"; p.write_text(json.dumps(data))
+        p = tmp_path / "cases.json"
+        p.write_text(json.dumps(data))
         return p
 
     def _ctx(self, tmp_path: Path) -> Path:
         ctx = {"label": "backend", "tech_stack": ["FastAPI"], "what_exists": "Auth"}
-        p = tmp_path / "ctx.json"; p.write_text(json.dumps(ctx))
+        p = tmp_path / "ctx.json"
+        p.write_text(json.dumps(ctx))
         return p
 
     def test_benchmark_context_missing_file_exits_1(self, tmp_path):
@@ -58,7 +59,8 @@ class TestBenchmarkContext:
 
     def test_benchmark_context_invalid_json_exits_1(self, tmp_path):
         cases = self._cases(tmp_path)
-        bad = tmp_path / "bad.json"; bad.write_text("{not json}")
+        bad = tmp_path / "bad.json"
+        bad.write_text("{not json}")
         result = runner.invoke(app, [
             "benchmark", str(cases),
             "--model", "simulated",
@@ -74,7 +76,8 @@ class TestWatchContext:
     """watch --context validation tests (no filesystem watching required)."""
 
     def test_watch_context_missing_file_exits_1(self, tmp_path):
-        spec = tmp_path / "spec.md"; spec.write_text("Build auth")
+        spec = tmp_path / "spec.md"
+        spec.write_text("Build auth")
         result = runner.invoke(app, [
             "watch", str(spec),
             "--team", "fullstack",
@@ -95,7 +98,8 @@ class TestWatchContext:
 
         monkeypatch.setattr(builtins, "__import__", _block_watchdog)
 
-        spec = tmp_path / "spec.md"; spec.write_text("Build auth")
+        spec = tmp_path / "spec.md"
+        spec.write_text("Build auth")
         ctx = tmp_path / "ctx.json"
         ctx.write_text(json.dumps({"label": "api", "tech_stack": ["FastAPI"]}))
         result = runner.invoke(app, [
@@ -109,8 +113,10 @@ class TestWatchContext:
         assert result.exit_code == 1
 
     def test_watch_context_invalid_json_exits_1(self, tmp_path):
-        spec = tmp_path / "spec.md"; spec.write_text("Build auth")
-        bad = tmp_path / "bad.json"; bad.write_text("{not json}")
+        spec = tmp_path / "spec.md"
+        spec.write_text("Build auth")
+        bad = tmp_path / "bad.json"
+        bad.write_text("{not json}")
         result = runner.invoke(app, [
             "watch", str(spec),
             "--team", "fullstack",

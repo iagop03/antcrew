@@ -2,19 +2,35 @@
 from __future__ import annotations
 
 import json
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from antcrew.core.gates import (
-    GateResult, GateError,
-    NonEmptyGate, PythonSyntaxGate, JsonGate, SchemaGate,
-    AllGate, AnyGate,
+import pytest
+
+from antcrew import (
+    BaseGate,
 )
 from antcrew import (
-    BaseGate, GateResult as _GR, GateError as _GE,
-    NonEmptyGate as _NEG, PythonSyntaxGate as _PSG,
+    GateError as _GE,
 )
-
+from antcrew import (
+    GateResult as _GR,
+)
+from antcrew import (
+    NonEmptyGate as _NEG,
+)
+from antcrew import (
+    PythonSyntaxGate as _PSG,
+)
+from antcrew.core.gates import (
+    AllGate,
+    AnyGate,
+    GateError,
+    GateResult,
+    JsonGate,
+    NonEmptyGate,
+    PythonSyntaxGate,
+    SchemaGate,
+)
 
 # ── top-level exports ─────────────────────────────────────────────────────────
 
@@ -350,16 +366,10 @@ class TestSupervisorGates:
 # ── CLI GateError output ──────────────────────────────────────────────────────
 
 def test_cli_gate_error_message(tmp_path):
-    from typer.testing import CliRunner
-    from antcrew.cli._app import app
-    from antcrew.models.simulated import SimulatedLLM
-    from antcrew.core.supervisor import Supervisor
-    from antcrew.teams.custom_team import CustomTeam
-    from antcrew.agents.pm import PMAgent
+
 
     # Build a team where the gate will definitely fail
     # PMAgent output with a gate requiring a very long prd
-    runner = CliRunner()
     # We test the exception formatting indirectly by checking GateError's str format
     exc = GateError("NonEmptyGate", "Field 'prd' is None", field="prd")
     assert "Gate check failed" not in str(exc)  # message is in exc.args[0]

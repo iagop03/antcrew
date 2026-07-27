@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
 from antcrew.engine import (
-    Artifact, ArtifactDelta, ArtifactId, ArtifactKind, FilesystemStore,
+    Artifact,
+    ArtifactDelta,
+    ArtifactId,
+    ArtifactKind,
+    FilesystemStore,
 )
 
 

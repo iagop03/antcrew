@@ -2,14 +2,12 @@
 _ProgressPanel, and _apply_edit (the HITL-adjacent utilities)."""
 from __future__ import annotations
 
-import asyncio
 import json
 
 import pytest
 
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.dev_team import DevTeam
-
 
 # ── helpers imported from the private surface ────────────────────────────────
 
@@ -147,7 +145,6 @@ class TestProgressPanel:
         assert avg >= 0.0
 
     def test_avg_per_agent_multiple(self):
-        import time
         p = self._panel()
         p.update("x", "pm")
         p.flush_current()

@@ -1,12 +1,9 @@
 """Tests for automatic memory injection in BaseAgent.system()."""
 from __future__ import annotations
 
-import pytest
-
-from antcrew.models.simulated import SimulatedLLM
-from antcrew.memory.store import InMemoryMemory, MemoryResult
 from antcrew.agents.pm import PMAgent
-
+from antcrew.memory.store import InMemoryMemory
+from antcrew.models.simulated import SimulatedLLM
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -113,7 +110,7 @@ def test_inject_memory_respects_memory_n():
     result = agent._inject_memory("login system authentication")
     # Only 1 result should be included (memory_n=1)
     lines = result.split("\n")
-    context_entries = [l for l in lines if l.startswith("Entry")]
+    context_entries = [line for line in lines if line.startswith("Entry")]
     assert len(context_entries) <= 1
 
 

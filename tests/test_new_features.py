@@ -8,17 +8,9 @@ Tests for 4 new features:
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-# Telegram tests are skipped when python-telegram-bot is not installed
-_telegram_available = importlib.util.find_spec("telegram") is not None
-skip_no_telegram = pytest.mark.skipif(
-    not _telegram_available,
-    reason="python-telegram-bot not installed (pip install antcrew[telegram])",
-)
 
 from antcrew.core.artifacts import (
     CodeArtifact,
@@ -31,6 +23,12 @@ from antcrew.models.simulated import SimulatedLLM
 from antcrew.project import Project
 from antcrew.teams.dev_team import DevTeam
 
+# Telegram tests are skipped when python-telegram-bot is not installed
+_telegram_available = importlib.util.find_spec("telegram") is not None
+skip_no_telegram = pytest.mark.skipif(
+    not _telegram_available,
+    reason="python-telegram-bot not installed (pip install antcrew[telegram])",
+)
 
 # ===========================================================================
 # 1. Artifact tracking -- created_at_run
@@ -337,16 +335,16 @@ class TestTelegramHITLFeedback:
         from antcrew.integrations.telegram.integration import _build_keyboard
         kb = _build_keyboard("s1", ["approve", "feedback", "reject"])
         labels = [b.text for b in kb.inline_keyboard[0]]
-        assert any("Aprobar" in l for l in labels)
-        assert any("Sugerir" in l for l in labels)
-        assert any("Rechazar" in l for l in labels)
+        assert any("Aprobar" in lbl for lbl in labels)
+        assert any("Sugerir" in lbl for lbl in labels)
+        assert any("Rechazar" in lbl for lbl in labels)
 
     def test_build_keyboard_edit_option(self):
         from antcrew.integrations.telegram.integration import _build_keyboard
         kb = _build_keyboard("s1", ["approve", "edit", "reject"])
         labels = [b.text for b in kb.inline_keyboard[0]]
-        assert any("Editar JSON" in l for l in labels)
-        assert not any("Sugerir" in l for l in labels)
+        assert any("Editar JSON" in lbl for lbl in labels)
+        assert not any("Sugerir" in lbl for lbl in labels)
 
     def test_build_keyboard_callback_data(self):
         from antcrew.integrations.telegram.integration import _build_keyboard
@@ -503,6 +501,7 @@ class TestSetupAgent:
 class TestSetupCLI:
     def test_setup_command_exists(self):
         from typer.testing import CliRunner
+
         from antcrew.cli import app
         runner = CliRunner()
         result = runner.invoke(app, ["setup", "--help"])
@@ -511,6 +510,7 @@ class TestSetupCLI:
 
     def test_setup_command_with_name_flag(self, tmp_path):
         from typer.testing import CliRunner
+
         from antcrew.cli import app
         runner = CliRunner()
         with patch("rich.prompt.Prompt.ask", side_effect=["", "1", "1", "1"]), \

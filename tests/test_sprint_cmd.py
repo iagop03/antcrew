@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from antcrew.cli._app import app
@@ -58,7 +57,8 @@ class TestSprintCmdBasics:
         assert "No tickets" in result.output
 
     def test_invalid_json_exits_1(self, tmp_path):
-        p = tmp_path / "bad.json"; p.write_text("{not json}")
+        p = tmp_path / "bad.json"
+        p.write_text("{not json}")
         result = runner.invoke(app, ["sprint", str(p)])
         assert result.exit_code == 1
 
@@ -71,7 +71,8 @@ class TestSprintCmdBasics:
 
     def test_dict_with_tickets_key(self, tmp_path):
         data = {"tickets": ["A", "B", "C"]}
-        p = tmp_path / "run.json"; p.write_text(json.dumps(data))
+        p = tmp_path / "run.json"
+        p.write_text(json.dumps(data))
         result = runner.invoke(app, ["sprint", str(p)])
         assert result.exit_code == 0
         assert "Sprint" in result.output

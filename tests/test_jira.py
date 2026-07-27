@@ -1,19 +1,18 @@
 """Tests for JiraIntegration."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from antcrew.core.artifacts import Priority, Ticket, TicketStatus
 from antcrew.integrations.jira import (
+    _ANTCREW_LABEL_PREFIX,
+    _PRIORITY_MAP,
     JiraIntegration,
     _adf_doc,
-    _PRIORITY_MAP,
     _antcrew_label,
-    _ANTCREW_LABEL_PREFIX,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

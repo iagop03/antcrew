@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import pytest
-from pathlib import Path
 
-from antcrew.trace import TraceLog
 from antcrew import TraceLog as _TopLevelTraceLog
-
+from antcrew.trace import TraceLog
 
 # ---------------------------------------------------------------------------
 # Import + instantiation
@@ -154,6 +152,11 @@ def test_team_run_populates_trace_log(tmp_path):
     agent_names = [c["agent_name"] for c in calls]
     # SimulatedLLM runs all agents — check expected ones are present
     assert "business_analyst" in agent_names or len(agent_names) > 0
+
+    stats = tlog.get_stats()
+    assert stats["total_runs"] == 1
+    assert stats["done_runs"] == 1
+    assert "total_cost_usd" in stats
     tlog.close()
 
 
@@ -173,9 +176,9 @@ def test_trace_log_clears_on_team_after_run(tmp_path):
 
 
 def test_trace_log_marks_error_on_exception(tmp_path):
+    from antcrew.core.exceptions import CostLimitExceeded
     from antcrew.models.simulated import SimulatedLLM
     from antcrew.teams.dev_team import DevTeam
-    from antcrew.core.exceptions import CostLimitExceeded
 
     tlog = TraceLog(tmp_path / "t.db")
     team = DevTeam(model=SimulatedLLM(), trace_log=tlog, max_cost_usd=0.0)
@@ -186,6 +189,9 @@ def test_trace_log_marks_error_on_exception(tmp_path):
     runs = tlog.list_runs()
     assert len(runs) == 1
     assert runs[0]["status"] == "error"
+
+    stats = tlog.get_stats()
+    assert stats["error_runs"] == 1
     tlog.close()
 
 
@@ -298,6 +304,7 @@ def test_migration_adds_columns_to_existing_db(tmp_path):
 
 def test_cli_show_call_full_trace(tmp_path):
     from typer.testing import CliRunner
+
     from antcrew.cli._app import app
 
     db = tmp_path / "trace.db"
@@ -326,6 +333,7 @@ def test_cli_show_call_full_trace(tmp_path):
 
 def test_cli_show_call_out_of_range(tmp_path):
     from typer.testing import CliRunner
+
     from antcrew.cli._app import app
 
     db = tmp_path / "trace.db"
@@ -341,6 +349,7 @@ def test_cli_show_call_out_of_range(tmp_path):
 
 def test_cli_show_call_requires_run_or_thread(tmp_path):
     from typer.testing import CliRunner
+
     from antcrew.cli._app import app
 
     db = tmp_path / "trace.db"
@@ -353,6 +362,7 @@ def test_cli_show_call_requires_run_or_thread(tmp_path):
 
 def test_cli_trace_detail_hints_when_no_full_trace(tmp_path):
     from typer.testing import CliRunner
+
     from antcrew.cli._app import app
 
     db = tmp_path / "trace.db"

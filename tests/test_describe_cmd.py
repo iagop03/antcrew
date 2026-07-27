@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -148,7 +147,8 @@ class TestContextWarnings:
         import json as _json
         ctx = tmp_path / "ctx.json"
         ctx.write_text(_json.dumps({"label": "app", "tech_stack": ["FastAPI"]}))
-        proj = tmp_path / "src"; proj.mkdir()
+        proj = tmp_path / "src"
+        proj.mkdir()
         result = runner.invoke(app, [
             "run", "Add feature",
             "--team", "fullstack",

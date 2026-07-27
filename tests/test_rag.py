@@ -4,20 +4,17 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-import pytest
-
 from antcrew.memory.repo_index import (
+    _PY_SPLIT,
+    _TS_SPLIT,
     RepoIndex,
     _chunk_by_pattern,
     _chunk_file,
     _chunk_fixed,
     _chunk_paragraphs,
     _detect_language,
-    _PY_SPLIT,
-    _TS_SPLIT,
 )
 from antcrew.memory.store import InMemoryMemory
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -264,16 +261,16 @@ def test_accepts_custom_memory(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_search_repo_returns_empty_without_index():
-    from antcrew.models.simulated import SimulatedLLM
     from antcrew.agents.backend_dev import BackendDevAgent
+    from antcrew.models.simulated import SimulatedLLM
 
     agent = BackendDevAgent(SimulatedLLM())
     assert agent.repo_index is None
     assert agent._search_repo("anything") == ""
 
 def test_search_repo_returns_context_when_wired(tmp_path):
-    from antcrew.models.simulated import SimulatedLLM
     from antcrew.agents.backend_dev import BackendDevAgent
+    from antcrew.models.simulated import SimulatedLLM
 
     _write(tmp_path, "auth.py", "def login(user, pw): pass")
     idx = RepoIndex(str(tmp_path))

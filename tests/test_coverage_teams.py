@@ -1,57 +1,21 @@
-"""Coverage tests for teams: DevTeam + FullStackTeam paths that aren't hit
-by the integration tests — trace_log, memory, sandbox runner, max_cost_usd."""
+"""Tests for DevTeam + FullStackTeam paths: memory, sandbox runner, max_cost_usd,
+FullStackTeam init, and AGENT_ARTIFACT coverage. TraceLog integration lives in test_trace.py."""
 from __future__ import annotations
 
-import json
-import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from antcrew.memory.store import InMemoryMemory
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.dev_team import DevTeam
 from antcrew.teams.fullstack_team import FullStackTeam
-from antcrew.memory.store import InMemoryMemory
 from antcrew.trace import TraceLog
 
 
 def _trace(tmp_path: Path) -> TraceLog:
     return TraceLog(str(tmp_path / "trace.db"))
-
-
-# ── DevTeam trace_log path ────────────────────────────────────────────────────
-
-class TestDevTeamTraceLog:
-    def test_run_with_trace_log(self, tmp_path):
-        tl = _trace(tmp_path)
-        team = DevTeam(model=SimulatedLLM(), trace_log=tl)
-        result = team.run("Add auth module")
-        assert result is not None
-        stats = tl.get_stats()
-        assert stats["total_runs"] == 1
-        assert stats["done_runs"] == 1
-
-    def test_trace_log_records_cost(self, tmp_path):
-        tl = _trace(tmp_path)
-        team = DevTeam(model=SimulatedLLM(), trace_log=tl)
-        team.run("Add billing")
-        stats = tl.get_stats()
-        assert "total_cost_usd" in stats
-
-    def test_trace_log_error_path(self, tmp_path):
-        tl = _trace(tmp_path)
-        team = DevTeam(model=SimulatedLLM(), trace_log=tl)
-        # Force an error in invoke to exercise the except branch
-        with patch.object(team._supervisor, "build") as mock_build:
-            mock_app = MagicMock()
-            mock_app.invoke.side_effect = RuntimeError("boom")
-            mock_build.return_value = mock_app
-            with pytest.raises(RuntimeError, match="boom"):
-                team.run("crash")
-        stats = tl.get_stats()
-        assert stats["total_runs"] == 1
-        assert stats["error_runs"] == 1
 
 
 # ── DevTeam memory path ───────────────────────────────────────────────────────
@@ -80,15 +44,6 @@ class TestDevTeamMemory:
 # ── DevTeam sandbox runner path ───────────────────────────────────────────────
 
 class TestDevTeamSandboxRunner:
-    def test_sandbox_runner_called_when_test_artifacts(self):
-        mock_runner = MagicMock()
-        mock_runner.run.return_value = [{"test": "passed"}]
-        team = DevTeam(model=SimulatedLLM(), runner=mock_runner)
-        result = team.run("Add auth module")
-        # SimulatedLLM produces test_artifacts → runner.run should be called
-        if result.state.get("test_artifacts"):
-            mock_runner.run.assert_called_once()
-
     def test_sandbox_runner_exception_logged(self):
         mock_runner = MagicMock()
         mock_runner.run.side_effect = RuntimeError("sandbox error")

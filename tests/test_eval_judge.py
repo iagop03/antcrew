@@ -1,22 +1,17 @@
 """Tests for LLM-as-judge evaluation (judge.py)."""
 from __future__ import annotations
 
-import json
-
-import pytest
-
 from antcrew.eval.judge import (
     JudgeResult,
+    _parse,
+    _truncate,
     judge_code,
     judge_prd,
     judge_review,
     judge_tests,
     judge_tickets,
-    _parse,
-    _truncate,
 )
 from antcrew.models.simulated import SimulatedLLM
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

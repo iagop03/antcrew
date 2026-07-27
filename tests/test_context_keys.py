@@ -1,12 +1,9 @@
 """Tests for context_keys — per-step state filtering (v0.11.11)."""
 from __future__ import annotations
 
-import pytest
-
+from antcrew.agents.template_agent import TemplateAgent
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.custom_team import CustomTeam, _filter_state, _Step
-from antcrew.agents.template_agent import TemplateAgent
-
 
 # ---------------------------------------------------------------------------
 # _filter_state helper
@@ -60,7 +57,7 @@ class TestCustomTeamContextKeys:
                 seen_state.update(state)
                 return {"spy_out": "done"}
 
-        from antcrew.teams.custom_team import _Step, _run_step
+        from antcrew.teams.custom_team import _run_step
         step = _Step(agent=_SpyAgent())
         full_state = {"request": "r", "prd": "doc", "code": "py"}
         _run_step(step, full_state)
@@ -77,7 +74,7 @@ class TestCustomTeamContextKeys:
                 seen_state.update(state)
                 return {"spy_out": "done"}
 
-        from antcrew.teams.custom_team import _Step, _run_step
+        from antcrew.teams.custom_team import _run_step
         step = _Step(agent=_SpyAgent(), context_keys=["prd"])
         _run_step(step, {"request": "r", "prd": "doc", "code": "py"})
         assert "prd" in seen_state
@@ -136,7 +133,6 @@ class TestCustomTeamContextKeys:
 
     def test_gate_still_sees_full_merged_state(self):
         """Gate runs on full merged state even when context_keys filters the agent's view."""
-        from antcrew.core.gates import NonEmptyGate
         team = CustomTeam(
             steps=[
                 {"name": "p", "system_prompt": "Plan.", "output_key": "plan"},
@@ -155,7 +151,7 @@ class TestCustomTeamContextKeys:
 
     def test_context_keys_not_in_agent_config(self):
         """'context_keys' is a team key — not passed to TemplateAgent config."""
-        from antcrew.teams.custom_team import _agent_cfg, _TEAM_KEYS
+        from antcrew.teams.custom_team import _TEAM_KEYS, _agent_cfg
         assert "context_keys" in _TEAM_KEYS
         raw = {
             "name": "a",
