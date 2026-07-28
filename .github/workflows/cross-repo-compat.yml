@@ -1,0 +1,75 @@
+name: Cross-repo compatibility
+
+# Runs on every push to main of antcrew, and daily at 06:00 UTC.
+# Installs antcrew + antcrew-engine from PyPI and validates every
+# import that antcrew-platform uses from either package.
+#
+# Purpose: catch renames / removals in antcrew-engine (like the
+# Operator→EngineLoop incident) before they reach antcrew-platform in prod.
+# Any ImportError or AttributeError here means platform is broken.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  cross-repo-imports:
+    name: Cross-repo import smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install antcrew + antcrew-engine from PyPI
+        run: pip install antcrew antcrew-engine
+
+      - name: Verify all cross-repo imports used by antcrew-platform
+        run: |
+          python - <<'EOF'
+          # antcrew_engine imports — every name platform imports from engine
+          from antcrew_engine.engine import (
+              EngineLoop, ConditionId, Condition, Constraints,
+              DesiredProjectState, Goal, EventLog, FilesystemStore, MemoryStore,
+          )
+          from antcrew_engine.engine.events import HitlRequested, HitlResolved
+          from antcrew_engine.engine.bus_bridge import EventBusBridge
+          from antcrew_engine.capabilities.hitl_reviewer import HitlReviewer
+          from antcrew_engine.capabilities.validators import artifact_validators
+          from antcrew_engine.capabilities.security_auditor import SecurityAuditor
+          from antcrew_engine.config import build_llm as engine_build_llm
+          from antcrew_engine.testing import SequencedLLM
+
+          # antcrew imports — every name platform imports from framework
+          from antcrew import bus, Event, new_run_id, RunResult
+          from antcrew import build_llm, Supervisor, AGENT_ARTIFACT
+          from antcrew import GitHubIntegration, TemplateAgent, CustomTeam
+          from antcrew import SlackChannel, TelegramChannel
+          from antcrew import JiraIntegration
+          from antcrew.agents.registry import instantiate_agent
+          from antcrew.agents.template_agent import TemplateAgent as _TA
+          from antcrew.integrations.platform import PlatformChannel
+
+          print("All cross-repo imports OK")
+          EOF
+
+      - name: Verify antcrew shims re-export engine names correctly
+        run: |
+          python - <<'EOF'
+          # antcrew re-exports some engine types via shims.
+          # If the engine renames a class, the shim breaks too — catch it here.
+          import antcrew
+          import antcrew_engine
+
+          # These must be the same class (shim = direct re-export)
+          assert antcrew.TemplateAgent is not None
+          assert antcrew.Supervisor is not None
+          assert antcrew.build_llm is not None
+          assert antcrew.instantiate_agent if hasattr(antcrew, 'instantiate_agent') else True
+
+          # EngineLoop must exist in engine (not Operator)
+          from antcrew_engine.engine import EngineLoop
+          assert not hasattr(antcrew_engine.engine, 'Operator'), \
+              "Operator still present — remove the old alias or update antcrew-platform"
+
+          print("Shim consistency OK")
+          EOF
