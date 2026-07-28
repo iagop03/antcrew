@@ -42,6 +42,7 @@ jobs:
           # antcrew imports — every name platform imports from framework
           from antcrew import bus, Event, new_run_id, RunResult
           from antcrew import build_llm, Supervisor, AGENT_ARTIFACT
+          from antcrew import ParallelGroup, parallel, FanOut, fan_out
           from antcrew import GitHubIntegration, TemplateAgent, CustomTeam
           from antcrew import SlackChannel, TelegramChannel
           from antcrew import JiraIntegration
