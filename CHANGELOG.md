@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.10] — 2026-07-28
+
+### Added
+
+- **`FanOut` and `fan_out()`** — dynamic fan-out node that spawns one agent instance per item in a state list at runtime, all running concurrently (`ThreadPoolExecutor`). Each agent receives its own LLM copy and a state copy where the fan-out key contains only its assigned item. Results are merged via the same list-concat / dict-union / last-write rules as `ParallelGroup`. Exported from `antcrew.core.supervisor` and `antcrew.__init__`.
+
+### Fixed
+
+- **LLM race condition in `ParallelGroup`** — when two agents in a group shared the same LLM object, concurrent writes to `llm.current_agent` (used for cost attribution) would race across threads. `ParallelGroup.run()` now detects shared LLM ids via `_shared_llm_ids()` and passes each affected thread a `copy.copy()` of the LLM before calling `agent.run()`. Agents with distinct LLM instances are unaffected (no unnecessary copying).
+
+### Deferred debt
+
+- `FanOut` creates LLM copies via `copy.copy()` (shallow). Agents that accumulate state on the LLM beyond `current_agent` (e.g. via `_usage_log`) will have their per-agent cost correctly attributed but the original LLM instance will not see those entries. Proper isolation requires deep-copy or per-agent LLM construction — tracked for a future release.
+
+---
+
 ## [0.33.9] — 2026-07-26
 
 ### Added

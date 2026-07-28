@@ -28,7 +28,7 @@ from antcrew.core.feedback import FeedbackLoop, FeedbackResult, FeedbackRunner
 from antcrew.core.pipeline import Pipeline
 from antcrew.core.project_kb import ProjectKB
 from antcrew.core.router import LLMClassifier, RouteClassifier, Router, RuleClassifier
-from antcrew.core.supervisor import ParallelGroup, Supervisor, parallel
+from antcrew.core.supervisor import FanOut, ParallelGroup, Supervisor, fan_out, parallel
 from antcrew.core.task_classifier import MinimalPipeline, TaskType, classify_task
 from antcrew.core.tools import (
     BaseTool,
@@ -191,6 +191,8 @@ __all__ = [
     "Supervisor",
     "ParallelGroup",
     "parallel",
+    "FanOut",
+    "fan_out",
     "Pipeline",
     # Tools
     "BaseTool",

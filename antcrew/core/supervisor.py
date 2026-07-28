@@ -36,6 +36,23 @@ Usage — parallel agents (concurrent execution with auto-merged state):
 
     List outputs are concatenated; dict outputs are merged; scalar outputs
     use last-write.  Agents run concurrently via ThreadPoolExecutor.
+
+Usage — dynamic fan-out (one agent per item in a state list):
+    from antcrew.core.supervisor import Supervisor, fan_out
+
+    supervisor = Supervisor(flow=[
+        ("pm",     "review"),
+        ("review", "qa"),
+    ])
+    app = supervisor.build({
+        "pm":     PMAgent(llm),
+        "review": fan_out(CodeReviewAgent, state_key="tickets", llm=llm),
+        "qa":     QAAgent(llm),
+    })
+
+    At runtime, fan_out reads state["tickets"], spawns one CodeReviewAgent
+    per ticket (each with its own LLM copy), runs them all concurrently,
+    and merges results via the same list-concat / dict-union / last-write rules.
 """
 from __future__ import annotations
 
@@ -75,11 +92,26 @@ def _merge(base: dict, update: dict) -> dict:
     return result
 
 
+def _shared_llm_ids(agents: list) -> set[int]:
+    """Return ids of LLM objects that appear on more than one agent."""
+    counts: dict[int, int] = {}
+    for agent in agents:
+        llm = getattr(agent, "llm", None)
+        if llm is not None:
+            lid = id(llm)
+            counts[lid] = counts.get(lid, 0) + 1
+    return {lid for lid, n in counts.items() if n > 1}
+
+
 class ParallelGroup:
     """Runs multiple agents concurrently and merges their state updates.
 
     List fields are concatenated; dict fields are union-merged; scalar fields
     use last-write semantics.  Use the :func:`parallel` helper to construct.
+
+    When two agents share the same LLM instance, each thread receives a
+    shallow copy so that concurrent writes to ``llm.current_agent`` (used
+    for cost attribution) do not race.
 
     Example::
 
@@ -99,9 +131,20 @@ class ParallelGroup:
         self._agents: list[BaseAgent] = list(agents)
 
     def run(self, state: TeamState) -> dict:
+        import copy
+
+        shared = _shared_llm_ids(self._agents)
+
+        def _run(agent: BaseAgent) -> dict:
+            llm = getattr(agent, "llm", None)
+            if llm is not None and id(llm) in shared:
+                agent = copy.copy(agent)
+                agent.llm = copy.copy(llm)
+            return agent.run(state)
+
         merged: dict = {}
         with ThreadPoolExecutor(max_workers=len(self._agents)) as pool:
-            futures = {pool.submit(agent.run, state): agent for agent in self._agents}
+            futures = {pool.submit(_run, agent): agent for agent in self._agents}
             for future in as_completed(futures):
                 partial = future.result()
                 merged = _merge(merged, partial)
@@ -119,6 +162,104 @@ def parallel(*agents: BaseAgent, name: str = "parallel_group") -> ParallelGroup:
     The *name* is used as the LangGraph node name (must be unique in the flow).
     """
     return ParallelGroup(*agents, name=name)
+
+
+# ---------------------------------------------------------------------------
+# FanOut
+# ---------------------------------------------------------------------------
+
+class FanOut:
+    """Spawns one agent instance per item in a state list and runs them concurrently.
+
+    At runtime, reads ``state[state_key]`` and creates one *agent_class* instance
+    per item, each with its own LLM copy.  Every agent receives a copy of the
+    state where ``state_key`` is replaced by a single-element list containing
+    only its assigned item.  Results are merged via the same rules as
+    :class:`ParallelGroup`: lists concatenated, dicts union-merged, scalars
+    last-write.
+
+    Use the :func:`fan_out` helper to construct.
+
+    Example — parallel per-ticket code review::
+
+        supervisor = Supervisor(flow=[("pm", "review"), ("review", "qa")])
+        app = supervisor.build({
+            "pm":     PMAgent(llm),
+            "review": fan_out(CodeReviewAgent, state_key="tickets", llm=llm),
+            "qa":     QAAgent(llm),
+        })
+    """
+
+    def __init__(
+        self,
+        agent_class: type,
+        *,
+        state_key: str,
+        llm,
+        name: str = "fan_out",
+        **agent_kwargs,
+    ) -> None:
+        if not callable(agent_class):
+            raise TypeError(
+                f"agent_class must be a callable (class), got {agent_class!r}"
+            )
+        self.name = name
+        self._agent_class = agent_class
+        self._state_key = state_key
+        self._llm = llm
+        self._agent_kwargs = agent_kwargs
+        self.approval_required = False
+
+    def run(self, state: TeamState) -> dict:
+        import copy
+
+        items = state.get(self._state_key)
+        if not items:
+            return {}
+        if not isinstance(items, list):
+            items = [items]
+
+        agents_and_states: list[tuple] = []
+        for item in items:
+            agent = self._agent_class(copy.copy(self._llm), **self._agent_kwargs)
+            item_state = dict(state)
+            item_state[self._state_key] = [item]
+            agents_and_states.append((agent, item_state))
+
+        merged: dict = {}
+        with ThreadPoolExecutor(max_workers=len(agents_and_states)) as pool:
+            futures = {
+                pool.submit(agent.run, item_state): agent
+                for agent, item_state in agents_and_states
+            }
+            for future in as_completed(futures):
+                partial = future.result()
+                merged = _merge(merged, partial)
+        return merged
+
+
+def fan_out(
+    agent_class: type,
+    *,
+    state_key: str,
+    llm,
+    name: str = "fan_out",
+    **agent_kwargs,
+) -> FanOut:
+    """Convenience constructor — creates a :class:`FanOut` node.
+
+    Each item in ``state[state_key]`` at runtime spawns one *agent_class*
+    instance (with its own LLM copy), all running concurrently.
+
+    Args:
+        agent_class: A :class:`~antcrew.core.agent.BaseAgent` subclass to instantiate.
+        state_key:   The TeamState key whose list is fanned out over.
+        llm:         LLM instance; each spawned agent receives a shallow copy.
+        name:        LangGraph node name (must be unique in the flow).
+        **agent_kwargs: Extra keyword arguments forwarded to *agent_class.__init__*.
+    """
+    return FanOut(agent_class, state_key=state_key, llm=llm, name=name, **agent_kwargs)
+
 
 # Must be set before the first checkpoint restore (checked at deserialize time)
 os.environ.setdefault(

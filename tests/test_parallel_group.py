@@ -275,3 +275,224 @@ def test_unique_llms_deduplicates_across_parallel_group():
     team = DevTeam(model=shared, agents={"backend_dev": group})
     llms = team._unique_llms()
     assert llms.count(shared) == 1
+
+
+# ---------------------------------------------------------------------------
+# LLM race condition — shared LLM gets per-thread copy
+# ---------------------------------------------------------------------------
+
+def test_parallel_group_copies_shared_llm():
+    """Agents sharing one LLM must each receive their own copy inside the thread."""
+    import threading
+
+    seen: list[int] = []
+    lock = threading.Lock()
+
+    class _TrackingLLM:
+        current_agent: str = ""
+        _usage_log: list = []
+
+        def __init__(self):
+            self._usage_log = []
+
+    class _RecordAgent:
+        approval_required = False
+
+        def __init__(self, llm, name):
+            self.llm = llm
+            self.name = name
+
+        def run(self, state):
+            self.llm.current_agent = self.name
+            import time; time.sleep(0.05)
+            with lock:
+                seen.append(id(self.llm))
+            return {}
+
+    shared_llm = _TrackingLLM()
+    a = _RecordAgent(shared_llm, "a")
+    b = _RecordAgent(shared_llm, "b")
+    ParallelGroup(a, b).run(_empty_state())
+
+    # Each thread must have written to a different LLM object id
+    assert len(seen) == 2
+    assert seen[0] != seen[1], "Both threads used the same LLM object — copy not applied"
+
+
+def test_parallel_group_no_copy_when_llm_not_shared():
+    """Agents with distinct LLM instances must keep their original objects."""
+    llm_a = SimulatedLLM()
+    llm_b = SimulatedLLM()
+
+    seen: list[int] = []
+
+    class _IdAgent:
+        approval_required = False
+
+        def __init__(self, llm):
+            self.llm = llm
+
+        def run(self, state):
+            seen.append(id(self.llm))
+            return {}
+
+    a = _IdAgent(llm_a)
+    b = _IdAgent(llm_b)
+    ParallelGroup(a, b).run(_empty_state())
+
+    assert id(llm_a) in seen
+    assert id(llm_b) in seen
+
+
+# ---------------------------------------------------------------------------
+# FanOut
+# ---------------------------------------------------------------------------
+
+def test_fan_out_requires_callable_class():
+    from antcrew.core.supervisor import FanOut
+    llm = SimulatedLLM()
+    with pytest.raises(TypeError, match="callable"):
+        FanOut("not_a_class", state_key="tickets", llm=llm)
+
+
+def test_fan_out_returns_empty_on_empty_list():
+    from antcrew.core.supervisor import fan_out
+    from antcrew.agents.backend_dev import BackendDevAgent
+
+    llm = SimulatedLLM()
+    node = fan_out(BackendDevAgent, state_key="tickets", llm=llm, name="review")
+    state = _empty_state()
+    state["tickets"] = []
+    result = node.run(state)
+    assert result == {}
+
+
+def test_fan_out_spawns_one_agent_per_item():
+    from antcrew.core.supervisor import fan_out
+    from antcrew.core.artifacts import Ticket
+
+    ran_items: list = []
+
+    class _TicketAgent:
+        name = "ticket_agent"
+        approval_required = False
+
+        def __init__(self, llm, **_kw):
+            self.llm = llm
+
+        def run(self, state):
+            tickets = state.get("tickets") or []
+            ran_items.extend(tickets)
+            return {}
+
+    llm = SimulatedLLM()
+    node = fan_out(_TicketAgent, state_key="tickets", llm=llm, name="review")
+    t1 = Ticket(id="T-1", title="Login", description="Build login", priority="high")
+    t2 = Ticket(id="T-2", title="Signup", description="Build signup", priority="medium")
+
+    state = _empty_state()
+    state["tickets"] = [t1, t2]
+    node.run(state)
+
+    assert len(ran_items) == 2
+    ids = {t.id for t in ran_items}
+    assert ids == {"T-1", "T-2"}
+
+
+def test_fan_out_merges_list_outputs():
+    from antcrew.core.supervisor import fan_out
+    from antcrew.core.artifacts import CodeArtifact, Ticket
+
+    class _GenAgent:
+        name = "gen"
+        approval_required = False
+
+        def __init__(self, llm, **_kw):
+            self.llm = llm
+
+        def run(self, state):
+            tickets = state.get("tickets") or []
+            arts = [
+                CodeArtifact(
+                    ticket_id=t.id, file_path=f"{t.id}.py",
+                    language="python", content="# x"
+                )
+                for t in tickets
+            ]
+            return {"code_artifacts": arts}
+
+    llm = SimulatedLLM()
+    node = fan_out(_GenAgent, state_key="tickets", llm=llm, name="gen")
+    t1 = Ticket(id="T-1", title="A", description="d", priority="high")
+    t2 = Ticket(id="T-2", title="B", description="d", priority="high")
+    t3 = Ticket(id="T-3", title="C", description="d", priority="high")
+
+    state = _empty_state()
+    state["tickets"] = [t1, t2, t3]
+    result = node.run(state)
+
+    assert len(result["code_artifacts"]) == 3
+    paths = {a.file_path for a in result["code_artifacts"]}
+    assert paths == {"T-1.py", "T-2.py", "T-3.py"}
+
+
+def test_fan_out_each_agent_sees_only_its_item():
+    from antcrew.core.supervisor import fan_out
+    from antcrew.core.artifacts import Ticket
+
+    seen_counts: list[int] = []
+
+    class _CountAgent:
+        name = "count"
+        approval_required = False
+
+        def __init__(self, llm, **_kw):
+            self.llm = llm
+
+        def run(self, state):
+            seen_counts.append(len(state.get("tickets") or []))
+            return {}
+
+    llm = SimulatedLLM()
+    node = fan_out(_CountAgent, state_key="tickets", llm=llm, name="count")
+    state = _empty_state()
+    state["tickets"] = [
+        Ticket(id=f"T-{i}", title=f"T{i}", description="d", priority="high")
+        for i in range(4)
+    ]
+    node.run(state)
+
+    # Each agent must see exactly 1 ticket
+    assert all(n == 1 for n in seen_counts), f"Unexpected counts: {seen_counts}"
+
+
+def test_fan_out_copies_llm_per_agent():
+    """Each spawned agent must receive a distinct LLM copy."""
+    from antcrew.core.supervisor import fan_out
+    from antcrew.core.artifacts import Ticket
+
+    llm_ids: list[int] = []
+
+    class _IdAgent:
+        name = "id_agent"
+        approval_required = False
+
+        def __init__(self, llm, **_kw):
+            self.llm = llm
+
+        def run(self, state):
+            llm_ids.append(id(self.llm))
+            return {}
+
+    original_llm = SimulatedLLM()
+    node = fan_out(_IdAgent, state_key="tickets", llm=original_llm, name="id_agent")
+    state = _empty_state()
+    state["tickets"] = [
+        Ticket(id=f"T-{i}", title=f"T{i}", description="d", priority="high")
+        for i in range(3)
+    ]
+    node.run(state)
+
+    assert len(llm_ids) == 3
+    assert len(set(llm_ids)) == 3, "All agents must have distinct LLM copies"
+    assert id(original_llm) not in llm_ids, "Original LLM must not be used directly"
