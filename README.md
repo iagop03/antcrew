@@ -1,5 +1,10 @@
 # AntCrew
 
+[![CI](https://github.com/iagop03/antcrew/actions/workflows/ci.yml/badge.svg)](https://github.com/iagop03/antcrew/actions)
+[![PyPI](https://img.shields.io/pypi/v/antcrew)](https://pypi.org/project/antcrew/)
+[![Python](https://img.shields.io/pypi/pyversions/antcrew)](https://pypi.org/project/antcrew/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **From a one-line request to a reviewed, approvable GitHub PR — with a human in the loop at every step that matters.**
 
 AntCrew is a multi-agent pipeline for software teams built on [LangGraph](https://github.com/langchain-ai/langgraph). It takes a feature request, runs a coordinated team of AI agents (BA → PM → Dev → QA → Reviewer → DevOps), and opens a pull request on GitHub — pausing for human approval at any checkpoint you configure. LLM-agnostic: run with any cloud model or fully local.
@@ -51,6 +56,15 @@ Key ideas:
 
 ## Quick start
 
+**No API key needed — try it instantly with the built-in simulated model:**
+
+```bash
+pip install antcrew
+antcrew run --model simulated "Build a REST API for user authentication"
+```
+
+Or from Python — zero cost, zero credentials:
+
 ```python
 from antcrew import DevTeam
 from antcrew.models import SimulatedLLM   # no API key needed
@@ -58,20 +72,20 @@ from antcrew.models import SimulatedLLM   # no API key needed
 team = DevTeam(model=SimulatedLLM())
 result = team.run("Add a password reset flow to the auth module")
 
-for artifact in result["code_artifacts"]:      # dict access works as before
+for artifact in result["code_artifacts"]:
     print(artifact.file_path, "—", artifact.description)
 
-print(result.thread_id)   # LangGraph thread used
-print(result.cost_usd)    # estimated API cost (0.0 with SimulatedLLM)
+print(result.cost_usd)    # 0.0 with SimulatedLLM
 ```
 
+**With a real model** (cloud or fully local):
+
 ```python
-# With real models
 from antcrew import DevTeam
 from antcrew.models import AnthropicModel, OllamaModel
 
 team = DevTeam(model=AnthropicModel("claude-sonnet-4-6"))  # cloud
-team = DevTeam(model=OllamaModel("llama3"))                # fully local
+team = DevTeam(model=OllamaModel("llama3"))                # fully local — no code leaves your machine
 
 result = team.run("Build a REST API for user authentication")
 print(result["prd"].title)           # PRD object
