@@ -3,7 +3,7 @@ agentteam.yaml loader — parses config files and returns a configured team.
 
 Minimal YAML format:
     team: dev                    # dev | research | content
-    model: claude                # claude | gpt-4o | ollama:<name> | groq:<name> | simulated
+    model: claude                # claude | gpt-4o | ollama:<name> | groq:<name> | moonshot:<name> | simulated
     agents:                      # optional per-agent overrides (Level 2)
       backend_dev:
         model: ollama:llama3
@@ -55,7 +55,7 @@ def _expand_env(value: Any) -> Any:
 
 _KNOWN_MODEL_PREFIXES = (
     "claude", "anthropic", "gpt", "o1", "o3",
-    "openai:", "ollama:", "groq:", "azure:", "gemini", "simulated",
+    "openai:", "ollama:", "groq:", "azure:", "gemini", "simulated", "moonshot:",
 )
 
 
@@ -72,7 +72,7 @@ def build_llm(
     if not any(s.startswith(p) for p in _KNOWN_MODEL_PREFIXES):
         raise ValueError(
             f"Unknown model: {model_str!r}. "
-            "Supported prefixes: claude, gpt, o1, o3, openai:, ollama:, groq:, azure:, gemini, simulated."
+            "Supported prefixes: claude, gpt, o1, o3, openai:, ollama:, groq:, azure:, gemini:, moonshot:, simulated."
         )
     _kw: dict = {}
     if api_key is not None:
