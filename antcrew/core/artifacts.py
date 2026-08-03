@@ -25,7 +25,7 @@ class TicketStatus(str, Enum):
 # ── Codebase analysis (produced by CodebaseScannerAgent) ─────────────────────
 
 class CodebaseAnalysis(BaseModel):
-    label: str = ""                                      # e.g. "frontend", "backend", "keycloak"
+    label: str = ""
     tech_stack: list[str] = Field(default_factory=list)
     existing_modules: list[str] = Field(default_factory=list)
     entry_points: list[str] = Field(default_factory=list)
@@ -45,9 +45,8 @@ class PRD(BaseModel):
     functional_requirements: list[str] = Field(default_factory=list)
     non_functional_requirements: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
-    # Phase 1 extension point — workspace-defined fields validated against
-    # a JSON Schema stored in WorkspaceContractSchema.  Core fields above
-    # are always present; this dict is always ignored by built-in operators.
+    # Phase 1 extension point — validated against WorkspaceContractSchema when
+    # one is registered.  Built-in operators never read this field.
     custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -59,6 +58,7 @@ class Ticket(BaseModel):
     status: TicketStatus = TicketStatus.OPEN
     acceptance_criteria: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class CodeArtifact(BaseModel):
@@ -68,6 +68,7 @@ class CodeArtifact(BaseModel):
     content: str
     language: Optional[str] = None
     created_at_run: int = 0
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── QA artifacts ─────────────────────────────────────────────────────────────
@@ -80,6 +81,7 @@ class TestArtifact(BaseModel):
     language: Optional[str] = None
     coverage_areas: list[str] = Field(default_factory=list)
     created_at_run: int = 0
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Code-review artifacts ─────────────────────────────────────────────────────
@@ -99,6 +101,7 @@ class CodeReview(BaseModel):
     verdict: Literal["approve", "request_changes", "reject"] = "approve"
     summary: str
     findings: list[ReviewFinding] = Field(default_factory=list)
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("verdict", mode="before")
     @classmethod
@@ -123,6 +126,7 @@ class ResearchDocument(BaseModel):
     key_findings: list[str] = Field(default_factory=list)
     sections: list[ResearchSection] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── DevOps artifacts ─────────────────────────────────────────────────────────
@@ -134,6 +138,7 @@ class DevOpsArtifact(BaseModel):
     language: str   # "dockerfile" | "yaml" | "hcl" | "shell" | etc.
     content: str
     created_at_run: int = 0
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Documentation artifacts ──────────────────────────────────────────────────
@@ -146,6 +151,7 @@ class DocumentationArtifact(BaseModel):
     format: str = "markdown"
     content: str
     created_at_run: int = 0
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Content artifacts ─────────────────────────────────────────────────────────
@@ -157,15 +163,150 @@ class ContentPiece(BaseModel):
     outline: list[str] = Field(default_factory=list)
     body: str = ""
     word_count: Optional[int] = None
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Workspace contract schema registry
+# ---------------------------------------------------------------------------
+
+class ContractError(Exception):
+    """Raised when an artifact cannot be extracted, validated, or produced."""
+
+
+class WorkspaceContractSchema:
+    """Per-workspace registry of custom_fields constraints for artifact types.
+
+    Each artifact type that carries ``custom_fields`` can have an optional
+    schema registered here.  When a schema is registered for a key, any call
+    to :meth:`ArtifactContract.inject` that produces a non-empty
+    ``custom_fields`` dict is validated against it.  Built-in operators never
+    populate ``custom_fields``, so they are unaffected by any registry.
+
+    Two schema formats are accepted:
+
+    **Pydantic model class** (no extra dependencies)::
+
+        class PRDExtras(BaseModel):
+            target_audience: str
+            brand_guidelines_url: str = ""
+
+        registry = WorkspaceContractSchema()
+        registry.register("prd", PRDExtras)
+
+    **JSON Schema dict** (requires ``pip install jsonschema``)::
+
+        registry.register("prd", {
+            "type": "object",
+            "properties": {
+                "target_audience": {"type": "string"},
+                "brand_guidelines_url": {"type": "string"},
+            },
+            "required": ["target_audience"],
+            "additionalProperties": False,
+        })
+
+    Apply globally so all contracts pick it up automatically::
+
+        from antcrew.core.artifacts import set_workspace_schema
+        set_workspace_schema(registry)
+    """
+
+    def __init__(self) -> None:
+        self._schemas: dict[str, type[BaseModel] | dict] = {}
+
+    def register(
+        self,
+        artifact_key: str,
+        schema: type[BaseModel] | dict,
+    ) -> "WorkspaceContractSchema":
+        """Register a schema for *artifact_key*.  Returns self for chaining."""
+        if isinstance(schema, dict):
+            self._schemas[artifact_key] = schema
+        elif isinstance(schema, type) and issubclass(schema, BaseModel):
+            self._schemas[artifact_key] = schema
+        else:
+            raise ValueError(
+                "schema must be a Pydantic BaseModel subclass or a JSON Schema dict, "
+                f"got {type(schema).__name__}"
+            )
+        return self
+
+    def validate(self, artifact_key: str, custom_fields: dict) -> None:
+        """Validate *custom_fields* against the registered schema.
+
+        No-op when no schema is registered for *artifact_key*.
+        Raises :class:`ContractError` on validation failure.
+        """
+        schema = self._schemas.get(artifact_key)
+        if schema is None:
+            return
+
+        if isinstance(schema, type) and issubclass(schema, BaseModel):
+            try:
+                schema.model_validate(custom_fields)
+            except Exception as exc:
+                raise ContractError(
+                    f"custom_fields for '{artifact_key}' failed Pydantic validation: {exc}"
+                ) from exc
+        else:
+            # JSON Schema dict — requires jsonschema package
+            try:
+                import jsonschema  # type: ignore[import]
+            except ImportError as exc:
+                raise ContractError(
+                    "JSON Schema dict validation requires 'jsonschema'. "
+                    "Install it: pip install jsonschema  "
+                    "(or pip install 'antcrew[contracts]')"
+                ) from exc
+            try:
+                jsonschema.validate(custom_fields, schema)
+            except jsonschema.ValidationError as exc:
+                raise ContractError(
+                    f"custom_fields for '{artifact_key}' failed JSON Schema validation: "
+                    f"{exc.message}"
+                ) from exc
+
+    def has(self, artifact_key: str) -> bool:
+        """Return True when a schema is registered for *artifact_key*."""
+        return artifact_key in self._schemas
+
+    def schema_for(self, artifact_key: str) -> type[BaseModel] | dict | None:
+        """Return the registered schema for *artifact_key*, or None."""
+        return self._schemas.get(artifact_key)
+
+    def __repr__(self) -> str:
+        return f"WorkspaceContractSchema(keys={sorted(self._schemas)})"
+
+
+# Module-level default registry — set once at workspace initialisation.
+_default_schema_registry: WorkspaceContractSchema | None = None
+
+
+def set_workspace_schema(registry: WorkspaceContractSchema) -> None:
+    """Set the module-level default schema registry.
+
+    All :class:`ArtifactContract` instances that do not carry their own
+    registry will fall back to this one.  Call once during workspace setup::
+
+        from antcrew.core.artifacts import WorkspaceContractSchema, set_workspace_schema
+
+        registry = WorkspaceContractSchema()
+        registry.register("prd", PRDExtras)
+        set_workspace_schema(registry)
+    """
+    global _default_schema_registry
+    _default_schema_registry = registry
+
+
+def get_workspace_schema() -> WorkspaceContractSchema | None:
+    """Return the current module-level default schema registry, or None."""
+    return _default_schema_registry
 
 
 # ---------------------------------------------------------------------------
 # Contract system
 # ---------------------------------------------------------------------------
-
-class ContractError(Exception):
-    """Raised when an artifact cannot be extracted or validated from state."""
-
 
 class ArtifactContract(Generic[T]):
     """Typed state accessor for a Pydantic artifact model.
@@ -174,6 +315,10 @@ class ArtifactContract(Generic[T]):
     and the Pydantic model used to validate it.  Agents that produce or
     consume a typed artifact use this to exchange objects instead of raw
     strings.
+
+    An optional *schema_registry* (or the module-level default set via
+    :func:`set_workspace_schema`) is used to validate ``custom_fields``
+    whenever :meth:`inject` is called with a non-empty dict.
 
     Usage::
 
@@ -192,9 +337,15 @@ class ArtifactContract(Generic[T]):
             ...
     """
 
-    def __init__(self, key: str, model: type[T]) -> None:
+    def __init__(
+        self,
+        key: str,
+        model: type[T],
+        schema_registry: WorkspaceContractSchema | None = None,
+    ) -> None:
         self.key = key
         self.model = model
+        self._schema_registry = schema_registry
 
     def extract(self, state: dict) -> T:
         """Return the artifact from *state* as a validated model instance.
@@ -232,15 +383,27 @@ class ArtifactContract(Generic[T]):
     def inject(self, instance: T) -> dict:
         """Return ``{key: model_dump()}`` ready to be returned from ``agent.run()``.
 
-        Stores as a plain dict (JSON-serializable) so checkpointers, the REPL,
-        and downstream agents all work without special handling.
+        If the instance has a non-empty ``custom_fields`` dict and a schema
+        registry is active (per-contract or module-level default), the dict is
+        validated before the artifact is stored.
+
+        Raises :class:`ContractError` on type mismatch or custom_fields
+        validation failure.
         """
         if not isinstance(instance, self.model):
             raise ContractError(
                 f"inject() received {type(instance).__name__}, "
                 f"expected {self.model.__name__}."
             )
-        return {self.key: instance.model_dump()}
+        dumped = instance.model_dump()
+
+        registry = self._schema_registry or _default_schema_registry
+        if registry is not None:
+            cf = dumped.get("custom_fields")
+            if cf:
+                registry.validate(self.key, cf)
+
+        return {self.key: dumped}
 
     def __repr__(self) -> str:
         return f"ArtifactContract(key={self.key!r}, model={self.model.__name__})"
@@ -252,18 +415,18 @@ class ArtifactContract(Generic[T]):
 
 #: Short-name → class mapping for all built-in artifact types.
 ARTIFACT_REGISTRY: dict[str, type[BaseModel]] = {
-    "CodebaseAnalysis":     CodebaseAnalysis,
-    "PRD":                  PRD,
-    "Ticket":               Ticket,
-    "CodeArtifact":         CodeArtifact,
-    "TestArtifact":         TestArtifact,
-    "ReviewFinding":        ReviewFinding,
-    "CodeReview":           CodeReview,
-    "ResearchSection":      ResearchSection,
-    "ResearchDocument":     ResearchDocument,
-    "DevOpsArtifact":       DevOpsArtifact,
+    "CodebaseAnalysis":      CodebaseAnalysis,
+    "PRD":                   PRD,
+    "Ticket":                Ticket,
+    "CodeArtifact":          CodeArtifact,
+    "TestArtifact":          TestArtifact,
+    "ReviewFinding":         ReviewFinding,
+    "CodeReview":            CodeReview,
+    "ResearchSection":       ResearchSection,
+    "ResearchDocument":      ResearchDocument,
+    "DevOpsArtifact":        DevOpsArtifact,
     "DocumentationArtifact": DocumentationArtifact,
-    "ContentPiece":         ContentPiece,
+    "ContentPiece":          ContentPiece,
 }
 
 

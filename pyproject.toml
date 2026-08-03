@@ -52,7 +52,8 @@ server    = ["uvicorn[standard]>=0.30"]  # deprecated alias for serve
 memory    = ["chromadb>=0.5"]
 dashboard = ["uvicorn[standard]>=0.30"]  # deprecated alias for serve
 watch     = ["watchdog>=4.0"]
-dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0", "watchdog>=4.0"]
+contracts = ["jsonschema>=4.0"]
+dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0", "watchdog>=4.0", "jsonschema>=4.0"]
 all       = ["python-telegram-bot>=20.0", "openai>=1.30",
              "slack-sdk>=3.19", "slack-bolt>=1.18",
              "uvicorn[standard]>=0.30", "aiofiles>=23.0",
