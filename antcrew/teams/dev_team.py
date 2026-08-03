@@ -315,7 +315,8 @@ class DevTeam(InteractiveMixin):
             }
             bus.emit(Event(
                 "pipeline.end",
-                {"cost_usd": cost, "success": not state.get("errors"), "artifact_summary": artifact_summary},
+                {"cost_usd": cost, "success": not state.get("errors"), "artifact_summary": artifact_summary,
+                 "model": getattr(self.llm, "model", None)},
                 run_id=_run_id,
                 thread_id=thread_id,
             ))
@@ -325,7 +326,8 @@ class DevTeam(InteractiveMixin):
                 self._trace_log.end_run(_trace_run_id, cost_usd=0.0, status="error")
             bus.emit(Event(
                 "pipeline.end",
-                {"cost_usd": 0.0, "success": False, "artifact_summary": {}},
+                {"cost_usd": 0.0, "success": False, "artifact_summary": {},
+                 "model": getattr(self.llm, "model", None)},
                 run_id=_run_id,
                 thread_id=thread_id,
             ))

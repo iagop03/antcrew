@@ -533,7 +533,8 @@ class CustomTeam:
                 self._trace_log.end_run(_trace_run_id, cost_usd=cost, status="done")
 
             bus.emit("pipeline.end",
-                     {"cost_usd": cost, "success": True, "artifact_summary": {}},
+                     {"cost_usd": cost, "success": True, "artifact_summary": {},
+                      "model": getattr(self.llm, "model", None)},
                      run_id=_run_id, thread_id=thread_id)
             return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
 
@@ -541,7 +542,8 @@ class CustomTeam:
             if self._trace_log is not None and _trace_run_id:
                 self._trace_log.end_run(_trace_run_id, status="error")
             bus.emit("pipeline.end",
-                     {"cost_usd": 0.0, "success": False, "artifact_summary": {}},
+                     {"cost_usd": 0.0, "success": False, "artifact_summary": {},
+                      "model": getattr(self.llm, "model", None)},
                      run_id=_run_id, thread_id=thread_id)
             raise
 

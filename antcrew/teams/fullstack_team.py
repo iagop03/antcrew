@@ -310,14 +310,16 @@ class FullStackTeam(InteractiveMixin):
             }
             bus.emit("pipeline.end",
                      {"cost_usd": cost, "success": not state.get("errors"),
-                      "artifact_summary": artifact_summary},
+                      "artifact_summary": artifact_summary,
+                      "model": getattr(self.llm, "model", None)},
                      run_id=_run_id, thread_id=thread_id)
             return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
         except Exception:
             if self._trace_log is not None and _trace_run_id is not None:
                 self._trace_log.end_run(_trace_run_id, cost_usd=0.0, status="error")
             bus.emit("pipeline.end",
-                     {"cost_usd": 0.0, "success": False, "artifact_summary": {}},
+                     {"cost_usd": 0.0, "success": False, "artifact_summary": {},
+                      "model": getattr(self.llm, "model", None)},
                      run_id=_run_id, thread_id=thread_id)
             raise
         finally:

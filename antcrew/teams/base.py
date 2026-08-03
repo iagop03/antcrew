@@ -390,7 +390,8 @@ class InteractiveMixin:
             if pipeline_stopped:
                 bus.emit("pipeline.end",
                          {"team": type(self).__name__, "success": False,
-                          "interactive": True, "stopped_after": prev_agent_name},
+                          "interactive": True, "stopped_after": prev_agent_name,
+                          "model": getattr(getattr(self, "llm", None), "model", None)},
                          run_id=_run_id, thread_id=thread_id)
                 break
 
@@ -399,7 +400,8 @@ class InteractiveMixin:
         final_state = app.get_state(config).values
         if not pipeline_stopped:
             bus.emit("pipeline.end",
-                     {"team": type(self).__name__, "success": True, "interactive": True},
+                     {"team": type(self).__name__, "success": True, "interactive": True,
+                      "model": getattr(getattr(self, "llm", None), "model", None)},
                      run_id=_run_id, thread_id=thread_id)
         return final_state
 

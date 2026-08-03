@@ -116,13 +116,21 @@ class Pipeline:
                 total_cost += result.cost_usd
                 final_state = prev_state
 
+            first_model = next(
+                (getattr(t, "llm", None) for t in self.teams), None
+            )
             bus.emit("pipeline.end",
-                     {"team": "Pipeline", "cost_usd": total_cost, "success": True},
+                     {"team": "Pipeline", "cost_usd": total_cost, "success": True,
+                      "model": getattr(first_model, "model", None)},
                      run_id=_run_id, thread_id=thread_id)
             return RunResult(state=final_state, thread_id=thread_id, cost_usd=total_cost)
         except Exception:
+            first_model = next(
+                (getattr(t, "llm", None) for t in self.teams), None
+            )
             bus.emit("pipeline.end",
-                     {"team": "Pipeline", "cost_usd": total_cost, "success": False},
+                     {"team": "Pipeline", "cost_usd": total_cost, "success": False,
+                      "model": getattr(first_model, "model", None)},
                      run_id=_run_id, thread_id=thread_id)
             raise
 
