@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.11] — 2026-08-04
+
+### Added
+
+- **`DiscoveryAgent`** — conversational requirements-gathering agent. Conducts a structured Q&A session (up to 7 rounds) to accumulate a `DiscoveryContext`, then converts it to a full PRD via `finalize()`. Three interaction modes: `ask_next(context)` → next question, `ingest(context, q, a)` → updated context, `run(state)` → pipeline step (`discovery_context` → `prd`). Registered as `"discovery"` in `AGENT_REGISTRY`.
+
+- **`antcrew discover` CLI command** — interactive terminal discovery session. Flags: `--project`, `--model`, `--save` (save `DiscoveryContext` to JSON), `--run` (trigger a pipeline run after discovery completes), `--team`, `--max-rounds`. Supports early exit with `done`/`q`.
+
+- **`DiscoveryContext` + `DiscoveryQA` artifacts** — new typed models in `core/artifacts.py`. `DiscoveryContext` accumulates `project_name`, `problem_statement`, `target_users`, `tech_stack`, `constraints`, `key_features`, `out_of_scope`, `qa_pairs` (list of `DiscoveryQA`), and `is_complete`. Added to `ARTIFACT_REGISTRY` and `TeamState`.
+
+- **`ConflictAgent`** — detects semantic contradictions between artifacts (PRD vs tickets, code vs review). Uses LLM analysis; produces `ConflictReport` with per-conflict `severity` (`low`/`medium`/`high`). Registered as `"conflict_detector"`.
+
+- **`RetroAgent`** — generates Agile sprint retrospectives from sprint state (tickets, code, review). Produces `RetroReport` with `what_went_well`, `what_could_improve`, `action_items`, `velocity_note`. Registered as `"retro"`.
+
+- **`CostAgent`** — estimates monthly infrastructure cost from PRD and tickets using a static USD/month price table (30+ component types). Writes `cost_estimate` dict to `metadata`. Registered as `"cost_estimator"`.
+
+- **`SecurityAgent`** — audits code artifacts for vulnerabilities. Uses `semgrep --config=auto` when available; falls back to LLM-based OWASP Top 10 analysis. Produces `SecurityReport`. Registered as `"security_auditor"`.
+
+- **`ConflictReport`, `RetroReport`, `SecurityReport`, `SecurityFinding`, `ConflictItem`** — new typed artifact models in `core/artifacts.py`. Added to `ARTIFACT_REGISTRY` and corresponding state keys to `TeamState`.
+
+- **`rationale: Optional[str]`** field on all structured artifact types (`PRD`, `Ticket`, `CodeArtifact`, `TestArtifact`, `CodeReview`, `ResearchDocument`, `DevOpsArtifact`, `DocumentationArtifact`, `ContentPiece`, `UIDesignSpec`). Agents can populate this with a 1–2 sentence explanation of their output.
+
+- **`--stream/--no-stream` flag on `antcrew interactive`** — prints tokens to the console as they are generated. Uses direct `console.print(token, end="")` rather than a Rich Live panel to avoid conflicts with HITL prompts. Defaults to `True`.
+
+### Changed
+
+- `AGENT_REGISTRY` now contains 20 built-in agent types (was 16).
+- `TeamState` gains `conflict_report`, `retro_report`, `security_report`, `discovery_context` keys.
+
+---
+
 ## [0.33.10] — 2026-07-28
 
 ### Added
