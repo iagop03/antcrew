@@ -225,6 +225,7 @@ class DiscoveryContext(BaseModel):
     out_of_scope: list[str] = Field(default_factory=list)
     qa_pairs: list[DiscoveryQA] = Field(default_factory=list)
     is_complete: bool = False
+    max_rounds: int = Field(default=7, ge=2, le=20)
     rationale: Optional[str] = None
 
 

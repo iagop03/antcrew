@@ -1,25 +1,29 @@
 """DiscoveryAgent — conversational requirements gathering.
 
-Usage as a standalone interactive session (CLI):
+Usage as standalone interactive session (CLI or script):
 
     agent = DiscoveryAgent(llm)
-    context = DiscoveryContext()
-    while not context.is_complete:
-        result = agent.ask_next(context)
-        if result["is_complete"]:
-            break
-        answer = input(result["next_question"] + " ")
-        context = agent.ingest(context, result["next_question"], answer)
+    context = agent.run_interactive()          # asks questions via stdin/stdout
     prd = agent.finalize(context)
 
-Usage as a pipeline step (converts existing discovery_context → prd):
+Or with a custom I/O adapter (e.g. for the platform WebSocket):
 
-    team = CustomTeam(steps=[DiscoveryAgent(llm), BackendDevAgent(llm)])
-    team.run(...)
+    agent = DiscoveryAgent(llm, human_interface=MyPlatformInterface())
+    context = agent.run_interactive(project_name="Customer portal")
+
+Usage as a pipeline step — two modes:
+
+  a) No prior context → runs the interactive loop automatically:
+       team = CustomTeam(steps=[DiscoveryAgent(llm), BackendDevAgent(llm)])
+       team.run({})   # discovery loop fires first, then backend dev continues
+
+  b) Pre-loaded context → converts discovery_context → prd without Q&A:
+       team.run({"discovery_context": existing_ctx})
 """
 from __future__ import annotations
 
 import json
+from typing import Optional, Protocol, runtime_checkable
 
 from antcrew.core.agent import BaseAgent
 from antcrew.core.artifacts import (
@@ -29,9 +33,45 @@ from antcrew.core.artifacts import (
 )
 from antcrew.core.state import TeamState
 
-_MAX_QA_ROUNDS = 7
+# ── Human interface protocol ─────────────────────────────────────────────────
 
-_ASK_SYSTEM = f"""\
+@runtime_checkable
+class HumanInterface(Protocol):
+    """Pluggable I/O adapter for the discovery Q&A loop.
+
+    Implement this to integrate with any UI (web socket, Telegram, Slack…).
+    The default implementation (CliHumanInterface) reads from stdin / writes
+    to stdout, making DiscoveryAgent work out-of-the-box in CLI mode.
+    """
+
+    def ask(self, question: str) -> str:
+        """Present *question* to the human and return their answer."""
+        ...
+
+    def notify(self, message: str) -> None:
+        """Display a non-interactive informational message."""
+        ...
+
+
+class CliHumanInterface:
+    """Default HumanInterface: reads from stdin, writes to stdout."""
+
+    def ask(self, question: str) -> str:
+        print(f"\n{question}")
+        try:
+            return input("> ").strip()
+        except EOFError:
+            return ""
+
+    def notify(self, message: str) -> None:
+        print(message)
+
+
+# ── LLM prompt templates ─────────────────────────────────────────────────────
+
+# Uses {max_rounds} placeholder — formatted at runtime so the limit matches
+# the DiscoveryContext's configured value.
+_ASK_SYSTEM_TPL = """\
 You are a product discovery facilitator. Your job is to gather enough information to write
 a clear Product Requirements Document (PRD) by asking one focused question at a time.
 
@@ -40,7 +80,7 @@ Given the current discovery context, decide:
 2. If yes → set is_complete=true and leave next_question empty.
 3. If no → ask the single most important missing question.
 
-After {_MAX_QA_ROUNDS} Q&A rounds, always set is_complete=true regardless.
+After {max_rounds} Q&A rounds, always set is_complete=true regardless.
 
 Respond ONLY with valid JSON (no markdown fences):
 {{
@@ -117,16 +157,22 @@ def _context_to_str(context: DiscoveryContext) -> str:
         "constraints": context.constraints,
         "out_of_scope": context.out_of_scope,
         "qa_rounds_completed": len(context.qa_pairs),
-        "max_qa_rounds": _MAX_QA_ROUNDS,
+        "max_qa_rounds": context.max_rounds,
     }
     return f"Current structured context:\n{json.dumps(fields, indent=2)}{qa_text}"
 
+
+# ── Agent ────────────────────────────────────────────────────────────────────
 
 class DiscoveryAgent(BaseAgent):
     name = "discovery"
     role_description = "Conducts a conversational Q&A session to gather project requirements."
     consumes: list[str] = ["discovery_context"]
     produces: list[str] = ["prd"]
+
+    def __init__(self, llm, *, human_interface: Optional[HumanInterface] = None, **kwargs):
+        super().__init__(llm, **kwargs)
+        self._human_interface: HumanInterface = human_interface or CliHumanInterface()
 
     # ── Interactive helpers ───────────────────────────────────────────────────
 
@@ -136,10 +182,11 @@ class DiscoveryAgent(BaseAgent):
         Returns:
             {"next_question": str, "is_complete": bool, "rationale": str}
         """
-        if context.is_complete or len(context.qa_pairs) >= _MAX_QA_ROUNDS:
+        if context.is_complete or len(context.qa_pairs) >= context.max_rounds:
             return {"next_question": "", "is_complete": True, "rationale": "Discovery complete."}
 
-        data: dict = self.system_parsed(_ASK_SYSTEM, _context_to_str(context), dict)
+        ask_system = _ASK_SYSTEM_TPL.format(max_rounds=context.max_rounds)
+        data: dict = self.system_parsed(ask_system, _context_to_str(context), dict)
         return {
             "next_question": data.get("next_question", ""),
             "is_complete": bool(data.get("is_complete", False)),
@@ -149,7 +196,7 @@ class DiscoveryAgent(BaseAgent):
     def ingest(self, context: DiscoveryContext, question: str, answer: str) -> DiscoveryContext:
         """Add a Q&A pair and re-extract structured fields from the full conversation.
 
-        Returns an updated DiscoveryContext.
+        Returns an updated DiscoveryContext (max_rounds is preserved).
         """
         new_pair = DiscoveryQA(question=question, answer=answer)
         updated_pairs = context.qa_pairs + [new_pair]
@@ -168,7 +215,8 @@ class DiscoveryAgent(BaseAgent):
             key_features=data.get("key_features") or context.key_features,
             out_of_scope=data.get("out_of_scope") or context.out_of_scope,
             qa_pairs=updated_pairs,
-            is_complete=len(updated_pairs) >= _MAX_QA_ROUNDS,
+            max_rounds=context.max_rounds,
+            is_complete=len(updated_pairs) >= context.max_rounds,
         )
 
     def finalize(self, context: DiscoveryContext) -> PRD:
@@ -192,19 +240,70 @@ class DiscoveryAgent(BaseAgent):
                 functional_requirements=context.key_features,
             )
 
+    def run_interactive(
+        self,
+        context: Optional[DiscoveryContext] = None,
+        *,
+        project_name: str = "",
+    ) -> DiscoveryContext:
+        """Run the full Q&A loop using the configured HumanInterface.
+
+        Works out-of-the-box in CLI mode (stdin/stdout).  Pass a custom
+        *human_interface* at construction time to wire up a platform UI,
+        WebSocket, or any other I/O channel.
+
+        Args:
+            context: existing DiscoveryContext to resume; creates a fresh one
+                     when omitted.
+            project_name: seed the project name when starting fresh.
+
+        Returns:
+            A completed DiscoveryContext (is_complete=True or max_rounds reached).
+        """
+        if context is None:
+            context = DiscoveryContext(project_name=project_name)
+
+        hi = self._human_interface
+        rounds = context.max_rounds
+        hi.notify(f"Starting discovery (up to {rounds} question{'s' if rounds != 1 else ''})…")
+
+        while True:
+            result = self.ask_next(context)
+            if result["is_complete"]:
+                hi.notify("Discovery complete — generating PRD…")
+                break
+            answer = hi.ask(result["next_question"])
+            if not answer:
+                # Empty answer on EOF or deliberate skip
+                hi.notify("Skipping — ending discovery early.")
+                context.is_complete = True
+                break
+            context = self.ingest(context, result["next_question"], answer)
+
+        return context
+
     # ── Pipeline step ─────────────────────────────────────────────────────────
 
     def run(self, state: TeamState) -> dict:
-        """Pipeline step: convert discovery_context → prd.
+        """Pipeline step: discovery_context → prd.
 
-        Use this when DiscoveryAgent is part of a pipeline that starts from a
-        previously completed DiscoveryContext (e.g. loaded from a file or platform session).
+        When *discovery_context* is already present in state (e.g. loaded from
+        a completed platform session), it is converted directly to a PRD.
+
+        When *discovery_context* is absent, the agent runs the interactive Q&A
+        loop via its HumanInterface before finalizing — this is the recommended
+        way to use DiscoveryAgent as the first step of a pipeline:
+
+            team = CustomTeam(steps=[DiscoveryAgent(llm), BackendDevAgent(llm)])
+            team.run({})   # discovery fires first, then the rest of the pipeline
         """
         raw = state.get("discovery_context")
-        if raw is None:
-            return {"errors": ["DiscoveryAgent: no discovery_context in state — run `antcrew discover` first."]}
 
-        if isinstance(raw, dict):
+        if raw is None:
+            context = self.run_interactive(
+                project_name=state.get("request", ""),
+            )
+        elif isinstance(raw, dict):
             try:
                 context = DiscoveryContext.model_validate(raw)
             except Exception as exc:
@@ -217,12 +316,13 @@ class DiscoveryAgent(BaseAgent):
         prd = self.finalize(context)
         return {
             "prd": prd,
+            "discovery_context": context,
             "current_agent": self.name,
             "messages": [
                 {
                     "role": "assistant",
                     "content": (
-                        f"[Discovery] PRD generated from {len(context.qa_pairs)} Q&A rounds: "
+                        f"[Discovery] PRD generated from {len(context.qa_pairs)} Q&A round(s): "
                         f"'{prd.title}' — "
                         f"{len(prd.functional_requirements)} requirement(s)."
                     ),
