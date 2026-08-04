@@ -1,13 +1,13 @@
 """antcrew discover — conversational requirements gathering before running a pipeline."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Optional
 
 import typer
 
 from antcrew.cli._app import _MODEL_HELP, _TEAM_CHOICES, app, console
+from antcrew.core.artifacts import DiscoveryContext
 
 
 @app.command()

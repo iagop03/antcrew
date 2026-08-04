@@ -7,7 +7,6 @@ from antcrew.core.artifacts import (
     CodeArtifact,
     ConflictItem,
     ConflictReport,
-    PRD,
     Ticket,
     coerce_list,
 )

@@ -3,8 +3,8 @@ from antcrew.agents.coherence import CoherenceAgent
 from antcrew.agents.conflict import ConflictAgent
 from antcrew.agents.cost import CostAgent
 from antcrew.agents.devops import DevOpsAgent
-from antcrew.agents.discovery import DiscoveryAgent
 from antcrew.agents.direct_agent import DirectAgent
+from antcrew.agents.discovery import DiscoveryAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
 from antcrew.agents.retro import RetroAgent

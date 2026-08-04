@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import PRD, Ticket, coerce_list
+from antcrew.core.artifacts import Ticket, coerce_list
 from antcrew.core.state import TeamState
 
 # Static monthly price table (USD). Updated: 2024-Q4 estimates.
