@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 AGENT_REGISTRY: dict[str, tuple[str, str]] = {
     "business_analyst":  ("antcrew.agents.business",         "BusinessAnalystAgent"),
     "pm":                ("antcrew.agents.pm",                "PMAgent"),
+    "ui_designer":       ("antcrew.agents.ui_design",         "UIDesignAgent"),
     "backend_dev":       ("antcrew.agents.backend_dev",       "BackendDevAgent"),
     "frontend_dev":      ("antcrew.agents.frontend_dev",      "FrontendDevAgent"),
     "qa":                ("antcrew.agents.qa",                "QAAgent"),

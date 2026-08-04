@@ -166,6 +166,37 @@ class ContentPiece(BaseModel):
     custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
+# ── UI design artifacts ───────────────────────────────────────────────────────
+
+class DesignTokens(BaseModel):
+    """Color and typography tokens for a product's design system."""
+    color_primary: str
+    color_secondary: str
+    color_background: str
+    color_text: str
+    font_family: str
+    font_scale: dict[str, str] = Field(default_factory=dict)
+
+
+class Screen(BaseModel):
+    """A single UI screen / page in the application."""
+    id: str
+    name: str
+    description: str
+    route: str = ""
+    components: list[str] = Field(default_factory=list)
+    linked_tickets: list[str] = Field(default_factory=list)
+
+
+class UIDesignSpec(BaseModel):
+    """Full UI design specification produced by UIDesignAgent."""
+    screens: list[Screen]
+    navigation_flow: list[str] = Field(default_factory=list)
+    tokens: DesignTokens
+    design_system: str = ""
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # Workspace contract schema registry
 # ---------------------------------------------------------------------------
@@ -427,6 +458,9 @@ ARTIFACT_REGISTRY: dict[str, type[BaseModel]] = {
     "DevOpsArtifact":        DevOpsArtifact,
     "DocumentationArtifact": DocumentationArtifact,
     "ContentPiece":          ContentPiece,
+    "DesignTokens":          DesignTokens,
+    "Screen":                Screen,
+    "UIDesignSpec":          UIDesignSpec,
 }
 
 

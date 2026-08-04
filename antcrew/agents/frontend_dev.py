@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from antcrew.core.agent import BaseAgent, _json_loads, _strip_fences
-from antcrew.core.artifacts import CodeArtifact, Ticket, coerce_list
+from antcrew.core.artifacts import CodeArtifact, Screen, Ticket, UIDesignSpec, coerce_list
 from antcrew.core.state import TeamState
 
 _PLAN_SYSTEM = """\
@@ -93,11 +93,46 @@ def _parse_obj(raw: str) -> dict:
         return {}
 
 
+def _extract_ui_spec(state: TeamState) -> UIDesignSpec | None:
+    raw = state.get("ui_design_spec")
+    if raw is None:
+        return None
+    if isinstance(raw, UIDesignSpec):
+        return raw
+    if isinstance(raw, dict):
+        try:
+            return UIDesignSpec.model_validate(raw)
+        except Exception:
+            return None
+    return None
+
+
+def _screen_for_ticket(spec: UIDesignSpec, ticket_id: str) -> Screen | None:
+    return next((s for s in spec.screens if ticket_id in s.linked_tickets), None)
+
+
+def _design_context(spec: UIDesignSpec) -> str:
+    tok = spec.tokens
+    parts = [
+        f"\n\nDesign system: {spec.design_system or 'custom'}",
+        f"Palette — primary: {tok.color_primary}, secondary: {tok.color_secondary}, "
+        f"background: {tok.color_background}, text: {tok.color_text}",
+        f"Font: {tok.font_family}",
+    ]
+    if tok.font_scale:
+        parts.append(
+            "Font scale: " + ", ".join(f"{k}={v}" for k, v in tok.font_scale.items())
+        )
+    if spec.navigation_flow:
+        parts.append("Navigation flow: " + " → ".join(spec.navigation_flow))
+    return "\n".join(parts) + "\n"
+
+
 class FrontendDevAgent(BaseAgent):
     name = "frontend_dev"
     role_description = "Implements open tickets as frontend code (stack detected from ticket)."
     conversational = True
-    consumes: list[str] = ["tickets", "code_artifacts"]
+    consumes: list[str] = ["tickets", "code_artifacts", "ui_design_spec"]
     produces: list[str] = ["code_artifacts"]
 
     def run(self, state: TeamState) -> dict:
@@ -116,16 +151,31 @@ class FrontendDevAgent(BaseAgent):
             topics = query.split() + [t.title for t in tickets[:3]]
             sym_ctx = self.symbol_index.context_for(topics)
         repo_ctx = kb_ctx + sym_ctx + self._search_repo(query) + self._recall(query)
-        plan_prompt = _PLAN_SYSTEM + repo_ctx
-        file_prompt = _FILE_SYSTEM + repo_ctx
+
+        ui_spec = _extract_ui_spec(state)
+        design_ctx = _design_context(ui_spec) if ui_spec is not None else ""
+
+        plan_prompt = _PLAN_SYSTEM + repo_ctx + design_ctx
+        file_prompt = _FILE_SYSTEM + repo_ctx + design_ctx
 
         new_artifacts: list[CodeArtifact] = []
 
         for ticket in tickets:
             ticket_json = ticket.model_dump_json(indent=2)
 
+            # Inject screen-level design context for this ticket when available
+            screen_ctx = ""
+            if ui_spec is not None:
+                screen = _screen_for_ticket(ui_spec, ticket.id)
+                if screen is not None:
+                    screen_ctx = (
+                        f"\n\nAssigned screen: {screen.name} (route: {screen.route})\n"
+                        f"Components to implement: {', '.join(screen.components)}\n"
+                        f"Screen description: {screen.description}\n"
+                    )
+
             # Phase 1 — plan: get the list of frontend files to create (no content).
-            plan_raw = self.system(plan_prompt, f"Ticket:\n{ticket_json}")
+            plan_raw = self.system(plan_prompt, f"Ticket:\n{ticket_json}{screen_ctx}")
             file_specs = _parse_list(plan_raw)
 
             sibling_paths = [s.get("file_path", "") for s in file_specs]
@@ -133,7 +183,7 @@ class FrontendDevAgent(BaseAgent):
             # Phase 2 — generate each file individually.
             for spec in file_specs:
                 context = (
-                    f"Ticket:\n{ticket_json}\n\n"
+                    f"Ticket:\n{ticket_json}{screen_ctx}\n\n"
                     f"File to generate:\n{json.dumps(spec, indent=2)}\n\n"
                     f"Other files in this ticket (for imports/references): {sibling_paths}"
                 )

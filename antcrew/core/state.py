@@ -17,6 +17,7 @@ from antcrew.core.artifacts import (
     ResearchDocument,
     TestArtifact,
     Ticket,
+    UIDesignSpec,
 )
 
 
@@ -45,6 +46,9 @@ class TeamState(TypedDict):
     # Research / content artifacts
     research_document: Optional[ResearchDocument]
     content_piece: Optional[ContentPiece]
+
+    # UI design artifacts (produced by UIDesignAgent, consumed by FrontendDevAgent)
+    ui_design_spec: Optional[UIDesignSpec]
 
     # Populated post-pipeline by SandboxRunner when injected into a team
     test_results: Optional[Any]
