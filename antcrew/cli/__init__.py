@@ -7,6 +7,7 @@ from antcrew.cli import (
     configure_cmd,  # noqa: F401
     cost_cmd,  # noqa: F401
     dag_cmd,  # noqa: F401
+    discover_cmd,  # noqa: F401
     doctor_cmd,  # noqa: F401
     engine_cmd,  # noqa: F401
     eval_cmds,  # noqa: F401

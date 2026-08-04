@@ -14,6 +14,7 @@ from antcrew.core.artifacts import (
     ConflictReport,
     ContentPiece,
     DevOpsArtifact,
+    DiscoveryContext,
     DocumentationArtifact,
     ResearchDocument,
     RetroReport,
@@ -57,6 +58,9 @@ class TeamState(TypedDict):
     conflict_report: Optional[ConflictReport]
     retro_report: Optional[RetroReport]
     security_report: Optional[SecurityReport]
+
+    # Conversational discovery (produced by DiscoveryAgent, consumed as PRD seed)
+    discovery_context: Optional[DiscoveryContext]
 
     # Populated post-pipeline by SandboxRunner when injected into a team
     test_results: Optional[Any]

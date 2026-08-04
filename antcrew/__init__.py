@@ -3,6 +3,7 @@ from antcrew.agents.coherence import CoherenceAgent
 from antcrew.agents.conflict import ConflictAgent
 from antcrew.agents.cost import CostAgent
 from antcrew.agents.devops import DevOpsAgent
+from antcrew.agents.discovery import DiscoveryAgent
 from antcrew.agents.direct_agent import DirectAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
@@ -22,6 +23,8 @@ from antcrew.core.artifacts import (
     ContractError,
     DesignTokens,
     DevOpsArtifact,
+    DiscoveryContext,
+    DiscoveryQA,
     DocumentationArtifact,
     ResearchDocument,
     RetroReport,
@@ -229,6 +232,7 @@ __all__ = [
     "RetroAgent",
     "CostAgent",
     "SecurityAgent",
+    "DiscoveryAgent",
     # Router
     "Router",
     "RouteClassifier",
@@ -255,6 +259,8 @@ __all__ = [
     "RetroReport",
     "SecurityFinding",
     "SecurityReport",
+    "DiscoveryQA",
+    "DiscoveryContext",
     "ArtifactContract",
     "ContractError",
     "ARTIFACT_REGISTRY",

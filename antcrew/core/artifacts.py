@@ -207,6 +207,27 @@ class UIDesignSpec(BaseModel):
     rationale: Optional[str] = None
 
 
+# ── Discovery artifacts (produced by DiscoveryAgent) ────────────────────────
+
+class DiscoveryQA(BaseModel):
+    question: str
+    answer: str = ""
+
+
+class DiscoveryContext(BaseModel):
+    """Accumulated requirements gathered during a conversational discovery session."""
+    project_name: str = ""
+    problem_statement: str = ""
+    target_users: str = ""
+    tech_stack: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    key_features: list[str] = Field(default_factory=list)
+    out_of_scope: list[str] = Field(default_factory=list)
+    qa_pairs: list[DiscoveryQA] = Field(default_factory=list)
+    is_complete: bool = False
+    rationale: Optional[str] = None
+
+
 # ── Analysis / meta artifacts ────────────────────────────────────────────────
 
 class ConflictItem(BaseModel):
@@ -517,6 +538,8 @@ ARTIFACT_REGISTRY: dict[str, type[BaseModel]] = {
     "RetroReport":           RetroReport,
     "SecurityFinding":       SecurityFinding,
     "SecurityReport":        SecurityReport,
+    "DiscoveryQA":           DiscoveryQA,
+    "DiscoveryContext":      DiscoveryContext,
 }
 
 
