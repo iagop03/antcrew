@@ -1,9 +1,13 @@
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent
 from antcrew.agents.coherence import CoherenceAgent
+from antcrew.agents.conflict import ConflictAgent
+from antcrew.agents.cost import CostAgent
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.direct_agent import DirectAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
+from antcrew.agents.retro import RetroAgent
+from antcrew.agents.security import SecurityAgent
 from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.core.artifacts import (
     ARTIFACT_REGISTRY,
@@ -12,13 +16,18 @@ from antcrew.core.artifacts import (
     CodeArtifact,
     CodebaseAnalysis,
     CodeReview,
+    ConflictItem,
+    ConflictReport,
     ContentPiece,
     ContractError,
     DesignTokens,
     DevOpsArtifact,
     DocumentationArtifact,
     ResearchDocument,
+    RetroReport,
     Screen,
+    SecurityFinding,
+    SecurityReport,
     TestArtifact,
     Ticket,
     UIDesignSpec,
@@ -216,6 +225,10 @@ __all__ = [
     "FeatureAgent",
     "FeatureTeam",
     "DirectAgent",
+    "ConflictAgent",
+    "RetroAgent",
+    "CostAgent",
+    "SecurityAgent",
     # Router
     "Router",
     "RouteClassifier",
@@ -237,6 +250,11 @@ __all__ = [
     "UIDesignSpec",
     "Screen",
     "DesignTokens",
+    "ConflictItem",
+    "ConflictReport",
+    "RetroReport",
+    "SecurityFinding",
+    "SecurityReport",
     "ArtifactContract",
     "ContractError",
     "ARTIFACT_REGISTRY",

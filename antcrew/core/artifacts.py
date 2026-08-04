@@ -48,6 +48,7 @@ class PRD(BaseModel):
     # Phase 1 extension point — validated against WorkspaceContractSchema when
     # one is registered.  Built-in operators never read this field.
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 class Ticket(BaseModel):
@@ -59,6 +60,7 @@ class Ticket(BaseModel):
     acceptance_criteria: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 class CodeArtifact(BaseModel):
@@ -69,6 +71,7 @@ class CodeArtifact(BaseModel):
     language: Optional[str] = None
     created_at_run: int = 0
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 # ── QA artifacts ─────────────────────────────────────────────────────────────
@@ -82,6 +85,7 @@ class TestArtifact(BaseModel):
     coverage_areas: list[str] = Field(default_factory=list)
     created_at_run: int = 0
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 # ── Code-review artifacts ─────────────────────────────────────────────────────
@@ -102,6 +106,7 @@ class CodeReview(BaseModel):
     summary: str
     findings: list[ReviewFinding] = Field(default_factory=list)
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
     @field_validator("verdict", mode="before")
     @classmethod
@@ -127,6 +132,7 @@ class ResearchDocument(BaseModel):
     sections: list[ResearchSection] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 # ── DevOps artifacts ─────────────────────────────────────────────────────────
@@ -139,6 +145,7 @@ class DevOpsArtifact(BaseModel):
     content: str
     created_at_run: int = 0
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 # ── Documentation artifacts ──────────────────────────────────────────────────
@@ -152,6 +159,7 @@ class DocumentationArtifact(BaseModel):
     content: str
     created_at_run: int = 0
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 # ── Content artifacts ─────────────────────────────────────────────────────────
@@ -164,6 +172,7 @@ class ContentPiece(BaseModel):
     body: str = ""
     word_count: Optional[int] = None
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
 
 
 # ── UI design artifacts ───────────────────────────────────────────────────────
@@ -195,6 +204,48 @@ class UIDesignSpec(BaseModel):
     tokens: DesignTokens
     design_system: str = ""
     custom_fields: dict[str, Any] = Field(default_factory=dict)
+    rationale: Optional[str] = None
+
+
+# ── Analysis / meta artifacts ────────────────────────────────────────────────
+
+class ConflictItem(BaseModel):
+    artifact_a: str
+    artifact_b: str
+    description: str
+    severity: Literal["low", "medium", "high"] = "medium"
+
+
+class ConflictReport(BaseModel):
+    conflicts: list[ConflictItem] = Field(default_factory=list)
+    summary: str = ""
+    rationale: Optional[str] = None
+
+
+class RetroReport(BaseModel):
+    sprint_number: int = 1
+    what_went_well: list[str] = Field(default_factory=list)
+    what_could_improve: list[str] = Field(default_factory=list)
+    action_items: list[str] = Field(default_factory=list)
+    velocity_note: str = ""
+    rationale: Optional[str] = None
+
+
+class SecurityFinding(BaseModel):
+    rule_id: str = ""
+    severity: Severity = "warning"
+    file_path: str = ""
+    line: Optional[int] = None
+    message: str
+    fix_suggestion: Optional[str] = None
+
+
+class SecurityReport(BaseModel):
+    findings: list[SecurityFinding] = Field(default_factory=list)
+    scanned_files: int = 0
+    tool: str = "llm"  # "semgrep" | "llm"
+    summary: str = ""
+    rationale: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +512,11 @@ ARTIFACT_REGISTRY: dict[str, type[BaseModel]] = {
     "DesignTokens":          DesignTokens,
     "Screen":                Screen,
     "UIDesignSpec":          UIDesignSpec,
+    "ConflictItem":          ConflictItem,
+    "ConflictReport":        ConflictReport,
+    "RetroReport":           RetroReport,
+    "SecurityFinding":       SecurityFinding,
+    "SecurityReport":        SecurityReport,
 }
 
 

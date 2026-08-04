@@ -11,10 +11,13 @@ from antcrew.core.artifacts import (
     CodeArtifact,
     CodebaseAnalysis,
     CodeReview,
+    ConflictReport,
     ContentPiece,
     DevOpsArtifact,
     DocumentationArtifact,
     ResearchDocument,
+    RetroReport,
+    SecurityReport,
     TestArtifact,
     Ticket,
     UIDesignSpec,
@@ -49,6 +52,11 @@ class TeamState(TypedDict):
 
     # UI design artifacts (produced by UIDesignAgent, consumed by FrontendDevAgent)
     ui_design_spec: Optional[UIDesignSpec]
+
+    # Analysis / meta outputs
+    conflict_report: Optional[ConflictReport]
+    retro_report: Optional[RetroReport]
+    security_report: Optional[SecurityReport]
 
     # Populated post-pipeline by SandboxRunner when injected into a team
     test_results: Optional[Any]

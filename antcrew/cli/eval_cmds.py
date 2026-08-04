@@ -65,6 +65,10 @@ def interactive(
             "Multi: --project-dir frontend:./fe --project-dir backend:./be"
         ),
     ),
+    stream: bool = typer.Option(
+        True, "--stream/--no-stream",
+        help="Print tokens as they are generated. Disabled automatically when HITL prompts are shown.",
+    ),
 ) -> None:
     """Run a pipeline with human-in-the-loop review after each agent.
 
@@ -108,7 +112,15 @@ def interactive(
                 labels = ", ".join(f"[cyan]{k}[/]" for k in parsed)
                 console.print(f"[dim]Scanning components: {labels}[/dim]\n")
 
-        state = active_team.run_interactive(request, thread_id=thread)
+        _llm_ref = getattr(active_team, "llm", None)
+        if stream and _llm_ref is not None and hasattr(_llm_ref, "on_token"):
+            _llm_ref.on_token = lambda t: console.print(t, end="", highlight=False)
+
+        try:
+            state = active_team.run_interactive(request, thread_id=thread)
+        finally:
+            if _llm_ref is not None and hasattr(_llm_ref, "on_token"):
+                _llm_ref.on_token = None
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted.[/]")
