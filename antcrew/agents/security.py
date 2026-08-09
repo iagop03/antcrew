@@ -1,3 +1,16 @@
+"""SecurityAgent — LLM-based OWASP security review for Layer 1 team pipelines.
+
+Use this agent inside a Supervisor / DevTeam workflow where code artifacts live
+in TeamState. It applies OWASP Top 10 analysis using the LLM and (optionally)
+static tools like semgrep, producing a SecurityReport artifact.
+
+For standalone goal-directed security analysis over a full source tree, prefer
+SecurityAuditor from antcrew-engine, which performs cross-file consistency
+reasoning and runs as a Capability inside an EngineLoop.
+
+Layer 1 (antcrew teams) → SecurityAgent
+Layer 2 (antcrew-engine loops) → SecurityAuditor + SecurityScanner
+"""
 from __future__ import annotations
 
 import json
@@ -15,36 +28,17 @@ from antcrew.core.artifacts import (
 )
 from antcrew.core.state import TeamState
 
-_LLM_SYSTEM = """\
-You are a security code reviewer specializing in OWASP Top 10 and common vulnerability patterns.
-Analyze the provided code for security issues.
-
-Respond ONLY with a valid JSON object (no markdown fences, no prose):
-{
-  "findings": [
-    {
-      "rule_id": "<short identifier, e.g. 'sql-injection', 'hardcoded-secret'>",
-      "severity": "<info|warning|error|critical>",
-      "file_path": "<file path>",
-      "line": <line number or null>,
-      "message": "<description of the vulnerability>",
-      "fix_suggestion": "<concrete fix in 1-2 sentences>"
-    }
-  ],
-  "summary": "<overall security posture in 1-2 sentences>",
-  "rationale": "<brief explanation of your analysis approach>"
+_AUDITOR_SEVERITY: dict[str, str] = {
+    "critical": "critical",
+    "high":     "error",
+    "medium":   "warning",
+    "low":      "info",
+    "info":     "info",
 }
 
-Focus on:
-- Injection flaws (SQL, command, LDAP)
-- Authentication / session management issues
-- Hardcoded secrets, tokens, passwords
-- Insecure deserialization
-- Missing input validation
-- Exposed sensitive data in logs or responses
-- Insecure direct object references
-- Cross-site scripting (XSS) in frontend code
-"""
+
+def _map_auditor_severity(s: str) -> str:
+    return _AUDITOR_SEVERITY.get(s.lower(), "warning")
 
 
 def _run_semgrep(code_artifacts: list[CodeArtifact]) -> SecurityReport | None:
@@ -146,46 +140,38 @@ class SecurityAgent(BaseAgent):
         report = _run_semgrep(code_artifacts)
 
         if report is None:
-            # Fallback: LLM-based analysis
-            code_summary = json.dumps(
-                [
-                    {
-                        "file_path": a.file_path,
-                        "language": a.language,
-                        "content": a.content[:3000],  # truncate large files
-                    }
-                    for a in code_artifacts
-                ],
-                indent=2,
-            )
-            data: dict = self.system_parsed(
-                _LLM_SYSTEM,
-                f"Code to analyze ({len(code_artifacts)} file(s)):\n{code_summary}",
-                dict,
-            )
+            from antcrew_engine.capabilities.security_auditor import analyze_sources
+
+            sources = {a.file_path: a.content for a in code_artifacts}
+
+            def _call_json(system: str, user: str) -> str:
+                return self.system(system, user, json_mode=True)
+
+            data = analyze_sources(sources, _call_json)
             try:
                 findings = [
                     SecurityFinding(
-                        rule_id=f.get("rule_id", ""),
-                        severity=f.get("severity", "warning"),
+                        rule_id=f.get("pattern_class", ""),
+                        severity=_map_auditor_severity(f.get("severity", "medium")),
                         file_path=f.get("file_path", ""),
-                        line=f.get("line"),
-                        message=f.get("message", ""),
-                        fix_suggestion=f.get("fix_suggestion"),
+                        line=f.get("line_number"),
+                        message=(
+                            f"{f.get('title', '')} — {f.get('evidence', '')}".strip(" —")
+                        ),
+                        fix_suggestion=f.get("reference_fix"),
                     )
                     for f in (data.get("findings") or [])
                 ]
                 report = SecurityReport(
                     findings=findings,
                     scanned_files=len(code_artifacts),
-                    tool="llm",
+                    tool="llm-two-phase",
                     summary=data.get("summary", ""),
-                    rationale=data.get("rationale"),
                 )
             except Exception:
                 report = SecurityReport(
                     scanned_files=len(code_artifacts),
-                    tool="llm",
+                    tool="llm-two-phase",
                     summary="Analysis incomplete.",
                 )
 
