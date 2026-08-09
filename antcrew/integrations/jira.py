@@ -1,6 +1,15 @@
 """
 Jira integration — syncs Ticket objects from PMAgent to a Jira project.
 
+Scope: one-way sync antcrew tickets → Jira issues. The integration uses
+deterministic issue IDs so repeated syncs are idempotent (update existing
+issues rather than creating duplicates).
+
+Out of scope (closed, not planned): deep bidirectional Jira↔GitHub linking
+(LinkedWorkflow, JiraGitHubLinkerOperator, automatic ticket↔PR correlation).
+GitHub's native PR references cover the common case. Use the GitHub App
+integration in antcrew-platform for PR write-back from engine runs.
+
 Requires: httpx (core dependency, already installed).
 
 Usage:
