@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from antcrew.core.artifacts import (
     PRD,
+    APISpec,
     CodeArtifact,
     CodeReview,
     ContentPiece,
@@ -26,6 +27,7 @@ from antcrew.core.artifacts import (
     ResearchDocument,
     TestArtifact,
     Ticket,
+    UIDesignSpec,
 )
 from antcrew.core.events import bus, new_run_id
 
@@ -56,6 +58,8 @@ def _sync_run(coro):
 AGENT_ARTIFACT: dict[str, tuple[str, type | None]] = {
     "business_analyst": ("prd",               PRD),
     "pm":               ("tickets",           Ticket),
+    "api_design":       ("api_spec",          APISpec),
+    "ui_designer":      ("ui_design_spec",    UIDesignSpec),
     "backend_dev":      ("code_artifacts",    CodeArtifact),
     "frontend_dev":     ("code_artifacts",    CodeArtifact),
     "qa":               ("test_artifacts",    TestArtifact),
@@ -71,15 +75,21 @@ AGENT_ARTIFACT: dict[str, tuple[str, type | None]] = {
 
 # Friendly labels shown in the progress panel instead of raw agent names.
 _AGENT_LABEL = {
-    "business_analyst": "Business Analyst",
-    "pm":               "Product Manager",
-    "sprint_planner":   "Sprint Planner",
-    "backend_dev":      "Backend Dev",
-    "frontend_dev":     "Frontend Dev",
-    "qa":               "QA",
-    "reviewer":         "Reviewer",
-    "devops":           "DevOps",
-    "doc_writer":       "Doc Writer",
+    "business_analyst":   "Business Analyst",
+    "requirements_gate":  "Requirements Review",
+    "pm":                 "Product Manager",
+    "ticket_gate":        "Ticket Review",
+    "api_design":         "API Design",
+    "api_gate":           "API Review",
+    "ui_designer":        "UI Designer",
+    "ui_gate":            "UI Review",
+    "sprint_planner":     "Sprint Planner",
+    "backend_dev":        "Backend Dev",
+    "frontend_dev":       "Frontend Dev",
+    "qa":                 "QA",
+    "reviewer":           "Reviewer",
+    "devops":             "DevOps",
+    "doc_writer":         "Doc Writer",
 }
 
 
@@ -315,12 +325,26 @@ class InteractiveMixin:
             artifact = snapshot.values.get(state_key) if state_key else None
 
             options = getattr(agent, "response_options", None) or ["approve", "edit", "reject"]
+
+            # Read review_type / item_schema from the next gate node (if any).
+            _next_node = snapshot.next[0] if snapshot.next else None
+            _gate_agent = self._agents.get(_next_node) if _next_node else None
+            _review_type: str = getattr(_gate_agent, "review_type", "approval")
+            _item_schema: "str | None" = getattr(_gate_agent, "item_schema", None)
+
+            # Fall back to gate agent's channel when the producer has none.
+            if channel is None and _gate_agent is not None:
+                channel = getattr(_gate_agent, "channel", None)
+
             pipeline_stopped = False
 
             while True:
                 if channel is not None:
                     result = _sync_run(
-                        channel.send_for_review(artifact, prev_agent_name, thread_id, options)
+                        channel.send_for_review(
+                            artifact, prev_agent_name, thread_id, options,
+                            review_type=_review_type, item_schema=_item_schema,
+                        )
                     )
                 else:
                     _display_artifact(artifact, prev_agent_name)

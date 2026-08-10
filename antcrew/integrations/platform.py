@@ -113,6 +113,9 @@ class PlatformChannel(BaseChannel):
         agent_name: str,
         session_id: str,
         response_options: Optional[list[str]] = None,
+        *,
+        review_type: str = "approval",
+        item_schema: Optional[str] = None,
     ) -> dict:
         """Register the review on the platform and poll for a decision."""
         try:
@@ -124,7 +127,8 @@ class PlatformChannel(BaseChannel):
             )
             from antcrew.integrations.console import ConsoleChannel
             return await ConsoleChannel().send_for_review(
-                artifact, agent_name, session_id, response_options
+                artifact, agent_name, session_id, response_options,
+                review_type=review_type, item_schema=item_schema,
             )
 
         review_id = str(uuid.uuid4())
@@ -141,7 +145,10 @@ class PlatformChannel(BaseChannel):
                     "agent_name": agent_name,
                     "artifact_json": artifact_json,
                     "options": options,
+                    "review_type": review_type,
                 }
+                if item_schema is not None:
+                    payload["item_schema"] = item_schema
                 if self._workspace_id is not None:
                     payload["workspace_id"] = self._workspace_id
                 r = await client.post(f"{self._url}/reviews/", json=payload)
@@ -150,7 +157,8 @@ class PlatformChannel(BaseChannel):
             log.warning("platform: failed to register review (%s) — falling back to console", exc)
             from antcrew.integrations.console import ConsoleChannel
             return await ConsoleChannel().send_for_review(
-                artifact, agent_name, session_id, response_options
+                artifact, agent_name, session_id, response_options,
+                review_type=review_type, item_schema=item_schema,
             )
 
         print(

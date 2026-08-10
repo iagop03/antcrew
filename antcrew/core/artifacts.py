@@ -207,6 +207,24 @@ class UIDesignSpec(BaseModel):
     rationale: Optional[str] = None
 
 
+# ── API design artifacts ─────────────────────────────────────────────────────
+
+class Endpoint(BaseModel):
+    """A single REST API endpoint in the design spec."""
+    method: str  # GET | POST | PUT | DELETE | PATCH
+    path: str
+    description: str
+    request_schema: Optional[dict[str, Any]] = None
+    response_schema: Optional[dict[str, Any]] = None
+
+
+class APISpec(BaseModel):
+    """Full API specification produced by APIDesignAgent."""
+    endpoints: list[Endpoint] = Field(default_factory=list)
+    base_path: str = "/api/v1"
+    rationale: Optional[str] = None
+
+
 # ── Discovery artifacts (produced by DiscoveryAgent) ────────────────────────
 
 class DiscoveryQA(BaseModel):
@@ -534,6 +552,8 @@ ARTIFACT_REGISTRY: dict[str, type[BaseModel]] = {
     "DesignTokens":          DesignTokens,
     "Screen":                Screen,
     "UIDesignSpec":          UIDesignSpec,
+    "Endpoint":              Endpoint,
+    "APISpec":               APISpec,
     "ConflictItem":          ConflictItem,
     "ConflictReport":        ConflictReport,
     "RetroReport":           RetroReport,

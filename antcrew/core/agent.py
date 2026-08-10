@@ -145,6 +145,8 @@ class BaseAgent(ABC):
     name: str = "base"
     role_description: str = ""
     conversational: bool = False  # True in agents that implement refine()
+    review_type: str = "approval"       # "approval" or "structured_list" (for gate agents)
+    item_schema: Optional[str] = None   # "requirements"|"tickets"|"screens"|"endpoints"
     memory: Optional["BaseMemory"] = None           # set by team after construction
     repo_index: Optional["RepoIndex"] = None        # set by team after construction
     symbol_index: Optional["SymbolIndex"] = None    # set by team after construction

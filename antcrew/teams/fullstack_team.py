@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Optional
 
+from antcrew.agents.api_design import APIDesignAgent
+from antcrew.agents.api_gate import APIGateAgent
 from antcrew.agents.backend_dev import BackendDevAgent
 from antcrew.agents.business import BusinessAnalystAgent
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent
@@ -12,8 +14,12 @@ from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.frontend_dev import FrontendDevAgent
 from antcrew.agents.pm import PMAgent
 from antcrew.agents.qa import QAAgent
+from antcrew.agents.requirements_gate import RequirementsGateAgent
 from antcrew.agents.reviewer import ReviewerAgent
 from antcrew.agents.sprint_planner import SprintPlannerAgent
+from antcrew.agents.ticket_gate import TicketGateAgent
+from antcrew.agents.ui_design import UIDesignAgent
+from antcrew.agents.ui_gate import UIGateAgent
 from antcrew.core.events import bus, new_run_id
 from antcrew.core.run_result import RunResult
 from antcrew.core.state import TeamState
@@ -34,8 +40,14 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_FLOW = [
     ("codebase_scanner",  "business_analyst"),
-    ("business_analyst",  "pm"),
-    ("pm",                "sprint_planner"),
+    ("business_analyst",  "requirements_gate"),   # HITL: validate requirements before PM
+    ("requirements_gate", "pm"),
+    ("pm",                "ticket_gate"),          # HITL: validate tickets before design
+    ("ticket_gate",       "api_design"),           # propose API endpoints
+    ("api_design",        "api_gate"),             # HITL: validate API before backend
+    ("api_gate",          "ui_designer"),          # propose UI screens
+    ("ui_designer",       "ui_gate"),             # HITL: validate UI before frontend
+    ("ui_gate",           "sprint_planner"),
     ("sprint_planner",    "backend_dev"),
     ("backend_dev",       "frontend_dev"),
     ("frontend_dev",      "qa"),
@@ -134,17 +146,23 @@ class FullStackTeam(InteractiveMixin):
 
         _am = agent_models or {}
         defaults = {
-            "codebase_scanner": CodebaseScannerAgent(_am.get("codebase_scanner", self.llm)),
-            "coherence":        CoherenceAgent(_am.get("coherence", self.llm)),
-            "business_analyst": BusinessAnalystAgent(_am.get("business_analyst", self.llm)),
-            "pm":               PMAgent(_am.get("pm", self.llm)),
-            "sprint_planner":   SprintPlannerAgent(_am.get("sprint_planner", self.llm), sprint_size=sprint_size),
-            "backend_dev":      BackendDevAgent(_am.get("backend_dev", self.llm)),
-            "frontend_dev":     FrontendDevAgent(_am.get("frontend_dev", self.llm)),
-            "qa":               QAAgent(_am.get("qa", self.llm)),
-            "reviewer":         ReviewerAgent(_am.get("reviewer", self.llm)),
-            "devops":           DevOpsAgent(_am.get("devops", self.llm)),
-            "doc_writer":       DocWriterAgent(_am.get("doc_writer", self.llm)),
+            "codebase_scanner":   CodebaseScannerAgent(_am.get("codebase_scanner", self.llm)),
+            "coherence":          CoherenceAgent(_am.get("coherence", self.llm)),
+            "business_analyst":   BusinessAnalystAgent(_am.get("business_analyst", self.llm)),
+            "requirements_gate":  RequirementsGateAgent(_am.get("requirements_gate", self.llm), approval_required=True),
+            "pm":                 PMAgent(_am.get("pm", self.llm)),
+            "ticket_gate":        TicketGateAgent(_am.get("ticket_gate", self.llm), approval_required=True),
+            "api_design":         APIDesignAgent(_am.get("api_design", self.llm)),
+            "api_gate":           APIGateAgent(_am.get("api_gate", self.llm), approval_required=True),
+            "ui_designer":        UIDesignAgent(_am.get("ui_designer", self.llm)),
+            "ui_gate":            UIGateAgent(_am.get("ui_gate", self.llm), approval_required=True),
+            "sprint_planner":     SprintPlannerAgent(_am.get("sprint_planner", self.llm), sprint_size=sprint_size),
+            "backend_dev":        BackendDevAgent(_am.get("backend_dev", self.llm)),
+            "frontend_dev":       FrontendDevAgent(_am.get("frontend_dev", self.llm)),
+            "qa":                 QAAgent(_am.get("qa", self.llm)),
+            "reviewer":           ReviewerAgent(_am.get("reviewer", self.llm)),
+            "devops":             DevOpsAgent(_am.get("devops", self.llm)),
+            "doc_writer":         DocWriterAgent(_am.get("doc_writer", self.llm)),
         }
         if agents:
             defaults.update(agents)
@@ -215,6 +233,8 @@ class FullStackTeam(InteractiveMixin):
             "doc_artifacts": None,
             "research_document": None,
             "content_piece": None,
+            "ui_design_spec": None,
+            "api_spec": None,
             "current_agent": "",
             "errors": [],
             "metadata": {},

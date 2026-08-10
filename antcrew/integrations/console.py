@@ -161,6 +161,9 @@ class ConsoleChannel(BaseChannel):
         agent_name: str,
         session_id: str,
         response_options: Optional[list[str]] = None,
+        *,
+        review_type: str = "approval",
+        item_schema: Optional[str] = None,
     ) -> dict:
         options = response_options or ["approve", "edit", "reject"]
         _display_artifact(artifact, agent_name)

@@ -8,6 +8,7 @@ from typing_extensions import TypedDict
 
 from antcrew.core.artifacts import (
     PRD,
+    APISpec,
     CodeArtifact,
     CodebaseAnalysis,
     CodeReview,
@@ -53,6 +54,9 @@ class TeamState(TypedDict):
 
     # UI design artifacts (produced by UIDesignAgent, consumed by FrontendDevAgent)
     ui_design_spec: Optional[UIDesignSpec]
+
+    # API design artifacts (produced by APIDesignAgent, consumed by BackendDevAgent)
+    api_spec: Optional[APISpec]
 
     # Analysis / meta outputs
     conflict_report: Optional[ConflictReport]

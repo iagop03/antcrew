@@ -49,6 +49,9 @@ class BaseChannel(ABC):
         agent_name: str,
         session_id: str,
         response_options: Optional[list[str]] = None,
+        *,
+        review_type: str = "approval",
+        item_schema: Optional[str] = None,
     ) -> dict:
         """
         Present ``artifact`` to a human reviewer and wait for their decision.
@@ -58,6 +61,8 @@ class BaseChannel(ABC):
             agent_name:       Name of the agent that produced the artifact.
             session_id:       Unique identifier for this pipeline run.
             response_options: Allowed choices (default: ["approve","edit","reject"]).
+            review_type:      "approval" or "structured_list" for item-by-item proposals.
+            item_schema:      "requirements"|"tickets"|"screens"|"endpoints" — hint for UI rendering.
 
         Returns:
             {"decision": "approve" | "reject" | <custom>, "edited": str | None}
