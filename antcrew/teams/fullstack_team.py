@@ -260,7 +260,11 @@ class FullStackTeam(InteractiveMixin):
         bus.emit("pipeline.start", {"team": type(self).__name__, "request": request},
                  run_id=_run_id, thread_id=thread_id)
         try:
-            app = self._supervisor.build(self._build_agent_map(), checkpointer=self._checkpointer)
+            app = self._supervisor.build(
+                self._build_agent_map(),
+                checkpointer=self._checkpointer,
+                interrupt_before=[],  # gate agents auto-approve in non-interactive run()
+            )
             config = {"configurable": {"thread_id": thread_id}}
             initial = self._initial_state(request)
             initial["_run_id"] = _run_id

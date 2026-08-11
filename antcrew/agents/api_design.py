@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import APISpec, Endpoint
+from antcrew.core.artifacts import APISpec
 from antcrew.core.state import TeamState
 
 log = logging.getLogger(__name__)

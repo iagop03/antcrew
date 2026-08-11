@@ -185,7 +185,10 @@ def test_fullstack_team_has_all_agents():
     expected = {
         "codebase_scanner", "business_analyst", "pm", "sprint_planner",
         "backend_dev", "frontend_dev", "qa", "reviewer", "devops", "doc_writer",
-        "coherence",  # added in v0.13.0 as optional post-pipeline pass
+        "coherence",
+        # proposals/gate system added in v0.33.11
+        "requirements_gate", "ticket_gate", "api_design", "api_gate",
+        "ui_designer", "ui_gate",
     }
     assert set(team._agents.keys()) == expected
 
