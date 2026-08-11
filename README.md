@@ -114,8 +114,54 @@ from antcrew import (
     FeatureTeam, CustomTeam,
     Router, DirectAgent,
     LLMClassifier, RuleClassifier,
+    # New specialized agents (0.33.11)
+    DiscoveryAgent, UIDesignAgent, ConflictAgent,
+    RetroAgent, CostAgent, SecurityAgent,
 )
 ```
+
+### Specialized agents
+
+New agent types added in 0.33.11. All can be composed into any `CustomTeam` pipeline or added to `FullStackTeam` via `agents={}`:
+
+| Agent | Consumes | Produces | Notes |
+|---|---|---|---|
+| `DiscoveryAgent` | — | `discovery_context` | Conversational requirements interview — use via `antcrew discover` or in any pipeline |
+| `UIDesignAgent` | `prd`, `tickets` | `ui_design_spec` | Screens, navigation flow, design tokens, design system — `conversational=True` |
+| `ConflictAgent` | `prd`, `tickets`, `code_artifacts` | `conflict_report` | Detects contradictions between artifacts before implementation |
+| `RetroAgent` | `tickets`, `code_artifacts` | `retro_report` | Sprint retrospective — what was built, blockers, improvement actions |
+| `CostAgent` | `prd`, `tickets` | `cost_estimate` | Infrastructure cost estimate with monthly projection |
+| `SecurityAgent` | `code_artifacts` | `security_report` | OWASP audit with severity ratings — cross-file consistency check |
+
+```python
+from antcrew import CustomTeam, UIDesignAgent, ConflictAgent
+from antcrew.models import AnthropicModel
+
+# Add UI design to any pipeline
+team = CustomTeam(
+    steps=[pm_agent, backend_dev, UIDesignAgent(llm=AnthropicModel())],
+    llm=AnthropicModel(),
+)
+result = team.run("Build a task management app")
+spec = result["ui_design_spec"]
+print(spec.screens)          # list of screen descriptions
+print(spec.navigation_flow)  # page-to-page graph
+print(spec.tokens)           # color palette, spacing, typography
+```
+
+### FullStackTeam — proposals and gate agents
+
+`FullStackTeam` includes human-in-the-loop gate agents between pipeline stages. Each gate emits a proposal artifact; the pipeline pauses for approval before proceeding:
+
+| Gate agent | Runs after | Proposal type | Blocks on |
+|---|---|---|---|
+| `RequirementsGateAgent` | `BusinessAnalyst` | `requirements_proposal` | PRD approval |
+| `TicketGateAgent` | `PMAgent` | `ticket_proposal` | Ticket plan approval |
+| `APIDesignAgent` | `PMAgent` | `api_spec` | `APISpec` (endpoints, schemas) |
+| `APIGateAgent` | `APIDesignAgent` | `api_proposal` | API contract approval |
+| `UIGateAgent` | `UIDesignAgent` | `ui_proposal` | UI spec approval |
+
+In interactive mode each gate checkpoint shows the proposal and waits for `approve / reject / edit`. In autonomous `antcrew run` all gates auto-approve unless `--interactive` is set.
 
 ### Custom teams
 
@@ -456,6 +502,50 @@ artifacts = coerce_list(state, "code_artifacts", CodeArtifact)  # → list[CodeA
 review = coerce_model(state["review"], CodeReview)   # dict or instance → CodeReview
 ```
 
+### WorkspaceContractSchema — per-workspace artifact validation
+
+`WorkspaceContractSchema` lets you register Pydantic models (or JSON schemas) for custom artifact fields, enforced across all runs in a workspace. Every built-in artifact type has a `custom_fields: dict` slot for per-workspace metadata. All structured artifact types also carry a `rationale: Optional[str]` field — a 1–2 sentence explanation of why the agent produced this output.
+
+```python
+from antcrew.core.artifacts import WorkspaceContractSchema, PRD, CodeArtifact
+
+# Register a custom schema for the "prd" artifact
+schema = WorkspaceContractSchema()
+schema.register("prd", {
+    "properties": {
+        "compliance_scope": {"type": "string", "enum": ["gdpr", "hipaa", "none"]},
+        "stakeholder": {"type": "string"},
+    },
+    "required": ["compliance_scope"],
+})
+
+team = DevTeam(model=llm, contract_schema=schema)
+result = team.run("Build a medical records API")
+
+prd = result["prd"]
+print(prd.rationale)                        # "Chose REST over GraphQL because..."
+print(prd.custom_fields["compliance_scope"])  # "hipaa"
+```
+
+**YAML:**
+
+```yaml
+team: dev
+model: claude
+contract_schema:
+  prd:
+    compliance_scope:
+      type: string
+      enum: [gdpr, hipaa, none]
+    stakeholder:
+      type: string
+  tickets:
+    squad:
+      type: string
+```
+
+When a run produces an artifact whose `custom_fields` violates the registered schema, the pipeline raises `ContractError` before saving state — the same exception surface as `ArtifactContract`.
+
 ---
 
 ### validate_agent_dag — DAG validation
@@ -672,6 +762,7 @@ team = DevTeam(model=llm)
 antcrew setup        Interactive wizard — generate agentteam.yaml from scratch
 antcrew run          Run a pipeline autonomously
 antcrew interactive  Run with human-in-the-loop review after every agent
+antcrew discover     Conversational requirements gathering — build a PRD through dialogue
 antcrew describe     Show pipeline agents, data contracts, historical cost (no API key)
 antcrew agents       List all built-in agent types and their role descriptions
 antcrew replay       Resume a pipeline from its last SqliteSaver checkpoint
@@ -789,6 +880,7 @@ Pauses after every agent and prompts for a decision:
 
 ```bash
 antcrew interactive "Build a login module" --team dev
+antcrew interactive "Build a login module" --team dev --no-stream  # spinner only
 ```
 
 At each pause you can:
@@ -796,6 +888,48 @@ At each pause you can:
 - `reject` — stop the pipeline
 - `edit` — open the artifact in `$EDITOR` as JSON
 - *any other text* — send as feedback; agents with `conversational = True` revise their output in-place
+
+### `antcrew discover`
+
+Conversational requirements gathering. `DiscoveryAgent` interviews you through a structured Q&A to build a `DiscoveryContext` artifact, then generates a draft PRD. Useful before starting a pipeline when the feature spec isn't well-defined.
+
+```bash
+antcrew discover                                  # interactive Q&A, saves discovery_context.json
+antcrew discover --project auth-service           # name the project
+antcrew discover --model claude                   # choose model for the interview
+antcrew discover --save ctx.json                  # custom output file
+antcrew discover --run                            # immediately run the pipeline after PRD is drafted
+antcrew discover --team fullstack                 # which team to run (requires --run)
+antcrew discover --max-rounds 8                   # Q&A round limit (default 6)
+```
+
+Example session:
+
+```
+$ antcrew discover --project auth-service
+
+ What problem are you trying to solve? > Users can't reset their password without contacting support
+ Who are the primary users? > End users of our SaaS product
+ What does success look like? > Users reset passwords in < 2 minutes, zero support tickets
+ Any constraints I should know about? > Must integrate with our existing Postgres + FastAPI stack
+ Anything else? > Hit Enter to skip > 
+
+✅ Discovery complete — 4 rounds
+📋 PRD draft saved to discovery_context.json
+   Run `antcrew run --context discovery_context.json` to start the pipeline
+```
+
+To use programmatically:
+
+```python
+from antcrew import DiscoveryAgent
+from antcrew.models import AnthropicModel
+
+agent = DiscoveryAgent(AnthropicModel())
+ctx = agent.run_interactive(project_name="auth-service")  # returns DiscoveryContext
+print(ctx.prd_draft.title)
+print(ctx.prd_draft.summary)
+```
 
 ### `antcrew project`
 

@@ -29,10 +29,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **`--stream/--no-stream` flag on `antcrew interactive`** — prints tokens to the console as they are generated. Uses direct `console.print(token, end="")` rather than a Rich Live panel to avoid conflicts with HITL prompts. Defaults to `True`.
 
+- **`UIDesignAgent`** — converts `prd` + `tickets` into a `UIDesignSpec` (screens, navigation_flow, tokens, design_system). `conversational=True` — supports in-place revision during interactive mode. Registered as `"ui_design"`. Added to `FullStackTeam` between `PMAgent` and `BackendDevAgent`.
+
+- **`APIDesignAgent`** — generates a typed `APISpec` (list of `Endpoint` objects: path, method, summary, request schema, response schema) from PRD and tickets. Produces `api_spec` in state; `BackendDevAgent` uses this as an additional context input. Added to `FullStackTeam`.
+
+- **Proposals / gate agents** — `RequirementsGateAgent`, `TicketGateAgent`, `APIGateAgent`, `UIGateAgent` added to `FullStackTeam`. Each wraps the preceding pipeline stage in an HITL checkpoint: emits a `*_proposal` artifact and pauses the pipeline in interactive mode for `approve / reject / edit`. In `antcrew run` (non-interactive) all gates auto-approve.
+
+- **`APISpec`, `Endpoint`** — new typed artifact models in `core/artifacts.py` for the `APIDesignAgent` output. `APISpec` contains `endpoints: list[Endpoint]`, `base_path`, `version`, `auth_scheme`.
+
+- **`WorkspaceContractSchema`** — per-workspace custom-field registry. Register Pydantic models or JSON schemas against artifact keys (`"prd"`, `"tickets"`, etc.); the pipeline validates `custom_fields` on every produced artifact and raises `ContractError` on violations. Pass `contract_schema=` to any team class or configure via YAML `contract_schema:` block. All structured artifact types carry a `custom_fields: dict` slot (default `{}`).
+
 ### Changed
 
-- `AGENT_REGISTRY` now contains 20 built-in agent types (was 16).
-- `TeamState` gains `conflict_report`, `retro_report`, `security_report`, `discovery_context` keys.
+- `AGENT_REGISTRY` now contains 26 built-in agent types (was 16).
+- `TeamState` gains `conflict_report`, `retro_report`, `security_report`, `discovery_context`, `api_spec`, `ui_design_spec`, `ui_proposal`, `api_proposal`, `ticket_proposal`, `requirements_proposal` keys.
+- `FullStackTeam` pipeline extended: BA → RequirementsGate → PM → TicketGate → APIDesign → APIGate → Backend → Frontend → UIDesign → UIGate → QA → Reviewer → DevOps → DocWriter.
 
 ---
 
