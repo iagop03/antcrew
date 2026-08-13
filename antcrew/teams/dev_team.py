@@ -41,6 +41,14 @@ class _KBProxy:
     def approval_required(self) -> bool:
         return bool(getattr(self._agent, "approval_required", False))
 
+    @property
+    def hitl_channel(self) -> str:
+        return getattr(self._agent, "hitl_channel", "default")
+
+    @property
+    def feedback_schema(self):
+        return getattr(self._agent, "feedback_schema", None)
+
     def run(self, state: "TeamState") -> dict:
         return self._agent.run({**state, "_kb_context": self._kb_ctx})
 
@@ -186,6 +194,7 @@ class DevTeam(InteractiveMixin):
             "errors": [],
             "metadata": {},
             "_kb_context": "",
+            "_memory_context": "",
         }
 
     def _get_telegram(self) -> "TelegramChannel":
@@ -199,11 +208,82 @@ class DevTeam(InteractiveMixin):
         return tg
 
     # ------------------------------------------------------------------
+    # Knowledge-base helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def kb(self):
+        """Return the ProjectKB instance, or None if not configured."""
+        return self._project_kb
+
+    def record_decision(
+        self,
+        decision: str,
+        *,
+        rationale: str = "",
+        date: str = "",
+        status="accepted",
+        tags=None,
+    ):
+        """Convenience shorthand for ``team.kb.record_decision(...); team.kb.save()``."""
+        if self._project_kb is None:
+            raise RuntimeError("No project_kb_path configured on this team.")
+        rec = self._project_kb.record_decision(
+            decision, rationale=rationale, date=date, status=status, tags=tags,
+        )
+        self._project_kb.save()
+        return rec
+
+    def _apply_org_context(self, ctx: dict) -> None:
+        """Merge *ctx* into the live ProjectKB (does not save — run() saves at end)."""
+        kb = self._project_kb
+        if not kb:
+            return
+        for item in ctx.get("decisions") or []:
+            if isinstance(item, dict) and "decision" in item:
+                kb.record_decision(
+                    item["decision"],
+                    rationale=item.get("rationale", ""),
+                    date=item.get("date", ""),
+                    status=item.get("status", "accepted"),
+                    tags=item.get("tags") or [],
+                )
+        if stack := ctx.get("tech_stack"):
+            kb.set_tech_stack(list(kb.tech_stack) + list(stack))
+        if deps := ctx.get("dependencies"):
+            kb.update_dependencies(deps)
+
+    # ------------------------------------------------------------------
     # Level 1 — automated run
     # ------------------------------------------------------------------
 
-    def run(self, request: str, *, thread_id: str = "default") -> RunResult:
-        """Execute the full pipeline without human interaction."""
+    def run(
+        self,
+        request: str,
+        *,
+        thread_id: str = "default",
+        org_context: "Optional[dict]" = None,
+        dry_run: bool = False,
+        replay_run_id: "Optional[str]" = None,
+    ) -> RunResult:
+        """Execute the full pipeline without human interaction.
+
+        *org_context* pre-populates the ProjectKB before running.  Accepted keys:
+        ``"decisions"``, ``"tech_stack"``, ``"dependencies"``.
+
+        *dry_run=True* runs all LLM agents normally but suppresses side effects:
+        no file writes (``write_back``), no test execution (``SandboxRunner``),
+        and no git/GitHub integration actions.  The returned state contains all
+        artifacts; integrations see ``state["_dry_run"] = True`` and should
+        no-op their external calls.
+
+        *replay_run_id* injects the exact artifacts of a past run as context for
+        BA and PM.  Requires ``memory`` to be configured.  Complements the
+        automatic semantic search already done via ``_recall()``; use this when
+        you want precision (a specific run) rather than breadth (fuzzy search).
+        """
+        if org_context and self._project_kb:
+            self._apply_org_context(org_context)
         from antcrew.core.events import Event, bus, new_run_id
         _llms = self._unique_llms()
         if self.llm.max_cost_usd is not None:
@@ -229,10 +309,27 @@ class DevTeam(InteractiveMixin):
             initial = self._initial_state(request)
             initial["_run_id"] = _run_id
             initial["_thread_id"] = thread_id
+            if dry_run:
+                initial["_dry_run"] = True
+            if replay_run_id and self.memory:
+                try:
+                    snap = self.memory.retrieve_run(replay_run_id)
+                    initial["_memory_context"] = snap.as_context()
+                except Exception as exc:
+                    log.warning("replay_run_id %s: retrieve failed — %s", replay_run_id, exc)
             state = app.invoke(initial, config=config)
             if self._project_kb:
                 try:
                     self._project_kb.update_from_state(state)
+                    # Auto-record persistent feedback failures as rejected decisions.
+                    feedback_error = (state.get("_feedback_error") or "").strip()
+                    if feedback_error and not state.get("feedback_ok"):
+                        self._project_kb.record_decision(
+                            feedback_error[:200],
+                            rationale="Auto-recorded: feedback loop exhausted all retries",
+                            status="rejected",
+                            tags=["auto", "feedback-failure"],
+                        )
                     self._project_kb.save()
                     bus.emit(Event(
                         "kb.updated",
@@ -265,8 +362,8 @@ class DevTeam(InteractiveMixin):
                 except Exception as exc:
                     log.warning("CoherenceAgent failed: %s", exc)
             if self.memory:
-                self.memory.store_run(state)
-            if self._work_dir and state.get("code_artifacts"):
+                self.memory.store_run(state, run_id=_run_id, project=thread_id)
+            if not dry_run and self._work_dir and state.get("code_artifacts"):
                 try:
                     from antcrew.core.writeback import write_back
                     wb = write_back(state, project_root=Path(self._work_dir), yes=True)
@@ -280,7 +377,7 @@ class DevTeam(InteractiveMixin):
                         log.info("write_back: %d file(s) written to %s", wb.total_written, wb.project_root)
                 except Exception as exc:
                     log.warning("write_back failed: %s", exc)
-            if self._runner and state.get("test_artifacts"):
+            if not dry_run and self._runner and state.get("test_artifacts"):
                 try:
                     state["test_results"] = self._runner.run(
                         state["test_artifacts"],

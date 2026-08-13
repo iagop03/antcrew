@@ -165,3 +165,99 @@ def test_backend_dev_skips_done_tickets():
     result = agent.run(state)
 
     assert result.get("code_artifacts") is None
+
+
+# ---------------------------------------------------------------------------
+# AN-P01 — BusinessAnalystAgent: retry on malformed LLM JSON
+# ---------------------------------------------------------------------------
+
+def test_system_parsed_retries_on_malformed_json():
+    """system_parsed(max_retries=1) must recover when the first LLM call returns bad JSON.
+
+    `BusinessAnalystAgent.run()` uses max_retries=0 (one-shot); this test exercises
+    the retry path of the shared framework method, which is what AN-P01 covers.
+    """
+    from unittest.mock import patch
+    from antcrew.core.artifacts import PRD
+    from antcrew.models.simulated import SimulatedLLM
+
+    agent = BusinessAnalystAgent(SimulatedLLM())
+    calls: list[str] = []
+
+    def _two_shot(*args, **kwargs) -> str:
+        calls.append("called")
+        if len(calls) == 1:
+            return "this is not json {{{"    # first call: garbage
+        return json.dumps(_VALID_PRD)        # second (retry) call: valid PRD
+
+    with patch.object(agent, "system", side_effect=_two_shot):
+        prd = agent.system_parsed("sys", "user", PRD, max_retries=1)
+
+    assert prd.title == "Auth Module"
+    assert len(calls) == 2, "system must be called twice (initial + one retry)"
+
+
+def test_system_parsed_raises_after_all_retries_exhausted():
+    """system_parsed raises after max_retries+1 attempts all return invalid JSON."""
+    import pytest
+    from unittest.mock import patch
+    from antcrew.core.artifacts import PRD
+    from antcrew.models.simulated import SimulatedLLM
+
+    agent = BusinessAnalystAgent(SimulatedLLM())
+
+    with pytest.raises((json.JSONDecodeError, ValueError)):
+        with patch.object(agent, "system", return_value="not json at all"):
+            agent.system_parsed("sys", "user", PRD, max_retries=2)
+
+
+# ---------------------------------------------------------------------------
+# AN-P02 — BackendDev + FrontendDev: no artifact duplication
+# ---------------------------------------------------------------------------
+
+def test_backend_and_frontend_dev_do_not_duplicate_artifacts():
+    """Artifacts produced by BackendDev are preserved when FrontendDev runs next."""
+    from antcrew.agents.frontend_dev import FrontendDevAgent
+    from antcrew.core.artifacts import PRD, Ticket
+
+    prd = PRD.model_validate(_VALID_PRD)
+    tickets = [
+        Ticket(
+            id="TICKET-001",
+            title="Login endpoint",
+            description="POST /login",
+            priority=Priority.HIGH,
+            status=TicketStatus.OPEN,
+        )
+    ]
+    # BackendDev runs first
+    backend_result = BackendDevAgent(_mock_llm(json.dumps(_VALID_ARTIFACTS))).run(
+        _state(prd=prd, tickets=tickets)
+    )
+    assert len(backend_result["code_artifacts"]) == 1
+
+    # FrontendDev runs on state that already has BackendDev artifacts
+    _FRONTEND_ARTIFACT = [
+        {
+            "file_path": "src/Login.tsx",
+            "description": "Login form",
+            "language": "typescript",
+            "content": "export const Login = () => <form />;",
+        }
+    ]
+    frontend_state = _state(
+        prd=prd,
+        tickets=backend_result["tickets"],
+        code_artifacts=backend_result["code_artifacts"],
+    )
+    frontend_result = FrontendDevAgent(_mock_llm(json.dumps(_FRONTEND_ARTIFACT))).run(
+        frontend_state
+    )
+
+    paths = [a.file_path for a in frontend_result["code_artifacts"]]
+    # Backend artifact must still be present
+    assert "src/auth/login.py" in paths, "BackendDev artifact must be preserved"
+    # Frontend artifact must be added, not replacing backend
+    assert "src/Login.tsx" in paths, "FrontendDev artifact must be added"
+    # No duplicates: each path appears exactly once
+    assert len(paths) == len(set(paths)), "No artifact path should appear twice"

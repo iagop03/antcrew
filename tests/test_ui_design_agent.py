@@ -263,3 +263,50 @@ def test_ui_design_spec_validates_from_dict():
     spec = UIDesignSpec.model_validate(_VALID_SPEC)
     assert len(spec.screens) == 2
     assert spec.tokens.font_family == "Inter, system-ui, sans-serif"
+
+
+# ---------------------------------------------------------------------------
+# AN-P04 — UIDesignAgent: zero-screen spec is accepted without error
+# ---------------------------------------------------------------------------
+
+_ZERO_SCREEN_SPEC: dict = {
+    "screens": [],
+    "navigation_flow": [],
+    "tokens": {
+        "color_primary": "#000000",
+        "color_secondary": "#ffffff",
+        "color_background": "#f5f5f5",
+        "color_text": "#111111",
+        "font_family": "Inter",
+    },
+    "design_system": "Bare",
+}
+
+
+def test_ui_designer_zero_screens_returns_empty_spec():
+    """UIDesignAgent must not crash when LLM returns a spec with zero screens."""
+    agent = UIDesignAgent(_mock_llm(json.dumps(_ZERO_SCREEN_SPEC)))
+    result = agent.run(_state())
+
+    # Either a valid spec or an error — no uncaught exception
+    assert isinstance(result, dict)
+    if result.get("ui_design_spec"):
+        spec = result["ui_design_spec"]
+        if isinstance(spec, UIDesignSpec):
+            assert spec.screens == []
+        else:
+            assert spec.get("screens") == []
+
+
+def test_frontend_dev_zero_screen_spec_does_not_crash():
+    """FrontendDev receiving an empty screens spec must not raise."""
+    llm = _mock_llm(json.dumps(_FRONTEND_FILE))
+    agent = FrontendDevAgent(llm)
+    empty_spec = UIDesignSpec.model_validate(_ZERO_SCREEN_SPEC)
+    state = _state(ui_design_spec=empty_spec)
+
+    result = agent.run(state)
+    assert isinstance(result, dict)
+    # code_artifacts may be empty list or None, but not an unhandled exception
+    arts = result.get("code_artifacts") or []
+    assert isinstance(arts, list)

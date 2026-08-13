@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from antcrew.memory.store import BaseMemory, MemoryResult
+from antcrew.memory.store import BaseMemory, MemoryResult, RunSnapshot
 
 
 class ChromaMemory(BaseMemory):
@@ -80,6 +80,51 @@ class ChromaMemory(BaseMemory):
 
     def count(self) -> int:
         return self._col.count()
+
+    def get_by_filter(self, filter: dict) -> list[MemoryResult]:
+        """Pure metadata filter using ChromaDB's get() — no semantic ranking."""
+        if self._col.count() == 0:
+            return []
+        result = self._col.get(where=filter, include=["documents", "metadatas"])
+        items: list[MemoryResult] = []
+        for doc, meta in zip(result.get("documents") or [], result.get("metadatas") or []):
+            items.append(MemoryResult(text=doc, metadata=meta, score=1.0))
+        return items
+
+    def list_runs(
+        self,
+        *,
+        project: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Enumerate stored runs, newest metadata first.
+
+        Returns a list of dicts with keys:
+        ``run_id``, ``project``, ``artifact_count``, ``artifact_types``.
+        """
+        if self._col.count() == 0:
+            return []
+        kwargs: dict = {"include": ["metadatas"]}
+        if project is not None:
+            kwargs["where"] = {"project": project}
+        result = self._col.get(**kwargs)
+        seen: dict[str, dict] = {}
+        for meta in (result.get("metadatas") or []):
+            rid = meta.get("run_id", "")
+            if not rid:
+                continue
+            if rid not in seen:
+                seen[rid] = {
+                    "run_id": rid,
+                    "project": meta.get("project", ""),
+                    "artifact_count": 0,
+                    "artifact_types": [],
+                }
+            seen[rid]["artifact_count"] += 1
+            at = meta.get("artifact_type", "")
+            if at and at not in seen[rid]["artifact_types"]:
+                seen[rid]["artifact_types"].append(at)
+        return list(seen.values())[:limit]
 
     def clear(self) -> None:
         name = self._col.name

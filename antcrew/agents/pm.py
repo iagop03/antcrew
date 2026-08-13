@@ -74,8 +74,9 @@ class PMAgent(BaseAgent):
 
         kb_ctx = str(state.get("_kb_context") or "")
         context = self._recall(prd.title + " " + prd.summary)
+        replay_ctx = str(state.get("_memory_context") or "")
         raw_tickets: list[dict] = self.system_parsed(
-            _SYSTEM + kb_ctx + context,
+            _SYSTEM + kb_ctx + context + replay_ctx,
             f"PRD:\n{prd.model_dump_json(indent=2)}",
             list[dict],
             max_tokens=16384,

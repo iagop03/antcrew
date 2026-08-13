@@ -147,6 +147,8 @@ class BaseAgent(ABC):
     conversational: bool = False  # True in agents that implement refine()
     review_type: str = "approval"       # "approval" or "structured_list" (for gate agents)
     item_schema: Optional[str] = None   # "requirements"|"tickets"|"screens"|"endpoints"
+    hitl_channel: str = "default"       # routing hint for the platform's HITL dispatcher
+    feedback_schema: Optional[Any] = None  # optional Pydantic model for structured feedback
     memory: Optional["BaseMemory"] = None           # set by team after construction
     repo_index: Optional["RepoIndex"] = None        # set by team after construction
     symbol_index: Optional["SymbolIndex"] = None    # set by team after construction

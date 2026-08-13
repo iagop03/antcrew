@@ -56,6 +56,7 @@ from antcrew.core.tools import (
 )
 from antcrew.integrations.confluence import ConfluenceIntegration
 from antcrew.models.fallback import FallbackLLM
+from antcrew.models.comparison import ComparisonLLM
 from antcrew.models.gemini_model import GeminiModel
 from antcrew.models.simulated import SimulatedLLM
 from antcrew.teams.async_teams import (
@@ -180,7 +181,7 @@ from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResu
 from antcrew.integrations.slack import SlackChannel
 from antcrew.memory.chroma import ChromaMemory
 from antcrew.memory.repo_index import RepoIndex
-from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult
+from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult, RunSnapshot
 from antcrew.presets import CAREFUL, CONCISE, STRICT, VERBOSE, AgentPreset, get_preset
 from antcrew.teams.base import AGENT_ARTIFACT
 from antcrew.teams.custom_team import CustomTeam
@@ -273,6 +274,7 @@ __all__ = [
     "OpenAIModel",
     "AzureOpenAIModel",
     "FallbackLLM",
+    "ComparisonLLM",
     "LLMCache",
     "FileLLMCache",
     # Project & config
@@ -323,6 +325,7 @@ __all__ = [
     "ChromaMemory",
     "InMemoryMemory",
     "MemoryResult",
+    "RunSnapshot",
     "RepoIndex",
     # Eval
     "AgentScore",

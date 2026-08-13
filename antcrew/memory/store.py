@@ -1,18 +1,71 @@
 """Semantic memory store — abstract base + in-memory backend."""
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from pydantic import BaseModel
+
+_log = logging.getLogger(__name__)
 
 
 class MemoryResult(BaseModel):
     text: str
     metadata: dict
     score: float = 0.0  # higher = more relevant
+
+
+@dataclass
+class RunSnapshot:
+    """Structured view of all artifacts stored for one past run.
+
+    Obtain via ``memory.retrieve_run(run_id)``.
+    """
+
+    run_id: str
+    project: str
+    entries: list[MemoryResult] = field(default_factory=list)
+
+    def _of_type(self, artifact_type: str) -> list[MemoryResult]:
+        return [e for e in self.entries if e.metadata.get("artifact_type") == artifact_type]
+
+    @property
+    def request(self) -> str:
+        results = self._of_type("request")
+        return results[0].text if results else ""
+
+    @property
+    def prd_text(self) -> str:
+        results = self._of_type("prd")
+        return results[0].text if results else ""
+
+    @property
+    def tickets(self) -> list[MemoryResult]:
+        return self._of_type("ticket")
+
+    @property
+    def code_artifacts(self) -> list[MemoryResult]:
+        return self._of_type("code")
+
+    def as_context(self, max_chars: int = 2000) -> str:
+        """Format as an LLM-ready context block for injection into a system prompt."""
+        if not self.entries:
+            return ""
+        lines = [f"\n\nContext from previous run (run_id={self.run_id}):"]
+        chars = 0
+        for entry in self.entries:
+            at = entry.metadata.get("artifact_type", "?")
+            snippet = entry.text[:300].replace("\n", " ")
+            line = f"[{at}] {snippet}"
+            if chars + len(line) > max_chars:
+                break
+            lines.append(line)
+            chars += len(line)
+        return "\n".join(lines) + "\n"
 
 
 def _get(obj: Any, key: str, default=None):
@@ -53,6 +106,24 @@ class BaseMemory(ABC):
     def clear(self) -> None:
         """Remove all entries (override in subclasses)."""
 
+    def get_by_filter(self, filter: dict) -> list[MemoryResult]:
+        """Return all entries matching the metadata filter (no semantic ranking).
+
+        The default implementation logs a warning and returns an empty list.
+        Subclasses should override this for efficient filtering.
+        """
+        _log.warning(
+            "%s does not implement get_by_filter(); returning []",
+            type(self).__name__,
+        )
+        return []
+
+    def retrieve_run(self, run_id: str) -> RunSnapshot:
+        """Return a structured snapshot of all artifacts stored for *run_id*."""
+        entries = self.get_by_filter({"run_id": run_id})
+        project = entries[0].metadata.get("project", "") if entries else ""
+        return RunSnapshot(run_id=run_id, project=project, entries=entries)
+
     # ------------------------------------------------------------------
     # High-level helpers
     # ------------------------------------------------------------------
@@ -72,6 +143,12 @@ class BaseMemory(ABC):
         count = 0
         run_id = run_id or uuid.uuid4().hex[:8]
         base = {"run_id": run_id, "project": project}
+
+        # Original request
+        req = _get(state, "request")
+        if req:
+            self.add(str(req), {**base, "artifact_type": "request"})
+            count += 1
 
         # PRD
         prd = _get(state, "prd")
@@ -214,6 +291,13 @@ class InMemoryMemory(BaseMemory):
 
     def count(self) -> int:
         return len(self._entries)
+
+    def get_by_filter(self, filter: dict) -> list[MemoryResult]:
+        results = []
+        for entry in self._entries:
+            if all(entry["metadata"].get(k) == v for k, v in filter.items()):
+                results.append(MemoryResult(text=entry["text"], metadata=entry["metadata"]))
+        return results
 
     def clear(self) -> None:
         self._entries.clear()

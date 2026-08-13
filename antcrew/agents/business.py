@@ -44,6 +44,7 @@ class BusinessAnalystAgent(BaseAgent):
     def run(self, state: TeamState) -> dict:
         kb_ctx = str(state.get("_kb_context") or "")
         memory_ctx = self._recall(state["request"])
+        replay_ctx = str(state.get("_memory_context") or "")
 
         # Collect analyses — multi-component list takes priority over single alias.
         analyses = coerce_list(state, "codebase_analyses", CodebaseAnalysis)
@@ -75,7 +76,7 @@ class BusinessAnalystAgent(BaseAgent):
             user_msg = codebase_ctx + f"\nREQUEST (extend the existing project):\n{state['request']}"
         else:
             user_msg = state["request"]
-        prd = self.system_parsed(_SYSTEM + kb_ctx + memory_ctx, user_msg, PRD)
+        prd = self.system_parsed(_SYSTEM + kb_ctx + memory_ctx + replay_ctx, user_msg, PRD)
         return {
             "prd": prd,
             "current_agent": self.name,

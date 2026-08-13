@@ -122,3 +122,31 @@ class TestCoherenceAgent:
 
         assert result["coherence_issues"] == []
         assert "No issues" in result["messages"][0]["content"]
+
+
+# ---------------------------------------------------------------------------
+# AN-P03 — CoherenceAgent: graceful handling of None / empty code_artifacts
+# ---------------------------------------------------------------------------
+
+class TestCoherenceAgentEdgeCases:
+    def test_none_code_artifacts_does_not_raise(self):
+        """State with code_artifacts=None must be handled without raising."""
+        agent = CoherenceAgent(SimulatedLLM())
+        result = agent.run({"code_artifacts": None})
+        # No exception — result must be a dict
+        assert isinstance(result, dict)
+        assert result.get("coherence_issues", []) == []
+
+    def test_empty_list_code_artifacts_skips_review(self):
+        """Empty list is treated as a single/skip case — no LLM call, no issues reported."""
+        agent = CoherenceAgent(SimulatedLLM())
+        result = agent.run({"code_artifacts": []})
+        assert isinstance(result, dict)
+        assert result.get("coherence_issues", []) == []
+
+    def test_single_artifact_skips_cross_file_review(self):
+        """One artifact → coherence pass is skipped (no cross-file issues possible)."""
+        agent = CoherenceAgent(SimulatedLLM())
+        result = agent.run({"code_artifacts": [_artifact("only.py", "x=1")]})
+        assert result.get("coherence_issues") == []
+        assert "skipped" in result["messages"][0]["content"].lower()

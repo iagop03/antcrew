@@ -232,3 +232,64 @@ def test_inject_wrong_type_raises():
     contract = ArtifactContract("prd", PRD)
     with pytest.raises(ContractError, match="inject()"):
         contract.inject(_ticket())  # type: ignore[arg-type]
+
+
+# ── AN-P09: Registry thread-safety ───────────────────────────────────────────
+
+def test_registry_concurrent_register_does_not_corrupt_state():
+    """Concurrent register() calls from many threads must not corrupt the registry."""
+    import threading
+
+    reg = WorkspaceContractSchema()
+    errors: list[Exception] = []
+
+    class SchemaA(BaseModel):
+        x: int = 0
+
+    class SchemaB(BaseModel):
+        y: str = ""
+
+    def _register(name: str, schema: type) -> None:
+        try:
+            reg.register(name, schema)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_register, args=(f"prd_{i}", SchemaA)) for i in range(20)]
+    threads += [threading.Thread(target=_register, args=(f"ticket_{i}", SchemaB)) for i in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Thread errors: {errors}"
+    for i in range(20):
+        assert reg.has(f"prd_{i}"), f"prd_{i} missing after concurrent writes"
+        assert reg.has(f"ticket_{i}"), f"ticket_{i} missing after concurrent writes"
+
+
+def test_get_set_workspace_schema_concurrent():
+    """set_workspace_schema / get_workspace_schema must be race-free under concurrent access."""
+    import threading
+
+    results: list[object] = []
+    errors: list[Exception] = []
+
+    def _set_and_get() -> None:
+        try:
+            reg = WorkspaceContractSchema()
+            set_workspace_schema(reg)
+            got = get_workspace_schema()
+            results.append(got)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_set_and_get) for _ in range(30)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Thread errors: {errors}"
+    # All results must be WorkspaceContractSchema instances (not None, not mixed types)
+    assert all(isinstance(r, WorkspaceContractSchema) for r in results)

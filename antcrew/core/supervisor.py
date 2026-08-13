@@ -363,10 +363,11 @@ class Supervisor:
         from antcrew.core.events import _make_evented_run
         for name in all_nodes:
             if name in agents:
-                run_fn = agents[name].run
+                agent = agents[name]
+                run_fn = agent.run
                 if name in self._gates:
                     run_fn = _make_gated_run(run_fn, self._gates[name], name)
-                run_fn = _make_evented_run(run_fn, name)
+                run_fn = _make_evented_run(run_fn, name, agent=agent)
                 graph.add_node(name, run_fn)
 
         # ── Entry / exit wiring ───────────────────────────────────────

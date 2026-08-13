@@ -25,7 +25,7 @@ import logging
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +58,15 @@ class ServiceRecord:
     description: str = ""
 
 
+@dataclass
+class ArchitectureDecision:
+    decision: str
+    rationale: str = ""
+    date: str = ""
+    status: Literal["accepted", "rejected", "superseded"] = "accepted"
+    tags: list[str] = field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # ProjectKB
 # ---------------------------------------------------------------------------
@@ -72,6 +81,7 @@ class ProjectKB:
         self.services: list[ServiceRecord] = []
         self.dependencies: dict[str, str] = {}
         self.tech_stack: list[str] = []
+        self.decisions: list[ArchitectureDecision] = []
 
     # ------------------------------------------------------------------
     # Persistence
@@ -89,6 +99,7 @@ class ProjectKB:
             "services": [asdict(s) for s in self.services],
             "dependencies": self.dependencies,
             "tech_stack": self.tech_stack,
+            "decisions": [asdict(d) for d in self.decisions],
         }
         target.write_text(json.dumps(data, indent=2), encoding="utf-8")
         log.debug("project_kb saved to %s", target)
@@ -110,6 +121,7 @@ class ProjectKB:
         kb.services = [ServiceRecord(**s) for s in data.get("services") or []]
         kb.dependencies = data.get("dependencies") or {}
         kb.tech_stack = data.get("tech_stack") or []
+        kb.decisions = [ArchitectureDecision(**d) for d in data.get("decisions") or []]
         return kb
 
     # ------------------------------------------------------------------
@@ -142,6 +154,26 @@ class ProjectKB:
 
     def set_tech_stack(self, stack: list[str]) -> None:
         self.tech_stack = list(dict.fromkeys(stack))  # deduplicate, preserve order
+
+    def record_decision(
+        self,
+        decision: str,
+        *,
+        rationale: str = "",
+        date: str = "",
+        status: Literal["accepted", "rejected", "superseded"] = "accepted",
+        tags: list[str] | None = None,
+    ) -> ArchitectureDecision:
+        """Append an architecture decision and return it."""
+        rec = ArchitectureDecision(
+            decision=decision,
+            rationale=rationale,
+            date=date,
+            status=status,
+            tags=tags or [],
+        )
+        self.decisions.append(rec)
+        return rec
 
     # ------------------------------------------------------------------
     # Querying
@@ -177,6 +209,29 @@ class ProjectKB:
         ):
             svc_lines = [f"  {s.name}: {', '.join(s.methods[:4])}" for s in self.services[:8]]
             sections.append("Services:\n" + "\n".join(svc_lines))
+
+        if self.decisions and agent_name in ("business_analyst", "pm", "reviewer"):
+            rejected = [d for d in self.decisions if d.status == "rejected"]
+            accepted = [d for d in self.decisions if d.status == "accepted"]
+            lines: list[str] = []
+            if rejected:
+                lines.append("Rejected approaches (DO NOT re-propose):")
+                for d in rejected[-5:]:
+                    line = f"  ✗ {d.decision}"
+                    if d.rationale:
+                        line += f" — {d.rationale}"
+                    if d.date:
+                        line += f" ({d.date})"
+                    lines.append(line)
+            if accepted:
+                lines.append("Established decisions:")
+                for d in accepted[-5:]:
+                    line = f"  ✓ {d.decision}"
+                    if d.rationale:
+                        line += f" — {d.rationale}"
+                    lines.append(line)
+            if lines:
+                sections.append("\n".join(lines))
 
         if not sections:
             return ""

@@ -25,9 +25,9 @@ class TestDevTeamMemory:
         mem = InMemoryMemory()
         called = []
         original = mem.store_run
-        def _spy(state):
+        def _spy(state, **kwargs):
             called.append(state)
-            return original(state)
+            return original(state, **kwargs)
         mem.store_run = _spy
         team = DevTeam(model=SimulatedLLM(), memory=mem)
         result = team.run("Add auth module")
@@ -111,9 +111,9 @@ class TestFullStackTeamMemory:
         mem = InMemoryMemory()
         called = []
         original = mem.store_run
-        def _spy(state):
+        def _spy(state, **kwargs):
             called.append(state)
-            return original(state)
+            return original(state, **kwargs)
         mem.store_run = _spy
         team = FullStackTeam(model=SimulatedLLM(), memory=mem)
         result = team.run("Add billing endpoint")

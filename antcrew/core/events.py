@@ -31,7 +31,8 @@ Event catalogue
 pipeline.start  — {request, thread_id, team, run_id}
 pipeline.end    — {thread_id, run_id, cost_usd, success, artifact_summary: dict}
 agent.start     — {agent_name, thread_id, run_id}
-agent.end       — {agent_name, thread_id, run_id, duration_s, produced_keys: list[str]}
+agent.end       — {agent_name, thread_id, run_id, duration_s, produced_keys: list[str], tokens_in: int, tokens_out: int, cost_usd: float}
+hitl.pending    — {agent_name, channel, feedback_schema: dict|None, review_type, thread_id, run_id}
 artifact.created— {artifact_type, count, file_paths: list[str], thread_id, run_id}
 feedback.round  — {round_num, max_rounds, success, thread_id, run_id}
 kb.updated      — {summary, thread_id, run_id}
@@ -226,8 +227,39 @@ def capture(*event_types: str) -> Iterator[list[Event]]:
 # Node wrapper used by Supervisor.build()
 # ---------------------------------------------------------------------------
 
-def _make_evented_run(run_fn: Callable, agent_name: str) -> Callable:
-    """Wrap a LangGraph node function to emit agent.start and agent.end events."""
+def _schema_json(agent) -> Optional[dict]:
+    """Return feedback_schema as a JSON Schema dict, or None."""
+    schema_cls = getattr(agent, "feedback_schema", None)
+    if schema_cls is None:
+        return None
+    try:
+        return schema_cls.model_json_schema()  # Pydantic v2
+    except AttributeError:
+        try:
+            return schema_cls.schema()  # Pydantic v1
+        except Exception:
+            return None
+
+
+def _llm_usage_totals(agent) -> dict:
+    """Return current cumulative token/cost totals from the agent's LLM, or zeros."""
+    try:
+        summary = agent._llm.get_usage_summary()  # type: ignore[union-attr]
+        return {
+            "tokens_in":  summary.get("total_input_tokens", 0),
+            "tokens_out": summary.get("total_output_tokens", 0),
+            "cost_usd":   summary.get("total_cost_usd", 0.0),
+        }
+    except Exception:
+        return {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
+
+
+def _make_evented_run(run_fn: Callable, agent_name: str, agent=None) -> Callable:
+    """Wrap a LangGraph node function to emit agent.start and agent.end events.
+
+    When *agent* is provided its LLM usage is sampled before and after the call
+    so per-agent token/cost deltas are included in the agent.end payload.
+    """
 
     def _evented(state: dict) -> dict:
         run_id = state.get("_run_id")
@@ -239,18 +271,41 @@ def _make_evented_run(run_fn: Callable, agent_name: str) -> Callable:
             thread_id=thread_id,
         ))
         t0 = time.monotonic()
+        before = _llm_usage_totals(agent) if agent is not None else None
         result = run_fn(state)
         duration = round(time.monotonic() - t0, 3)
         produced = [
             k for k, v in result.items()
             if v is not None and not k.startswith("_") and k not in ("current_agent", "errors", "messages", "metadata")
         ]
+        if before is not None:
+            after = _llm_usage_totals(agent)
+            usage = {
+                "tokens_in":  after["tokens_in"]  - before["tokens_in"],
+                "tokens_out": after["tokens_out"] - before["tokens_out"],
+                "cost_usd":   round(after["cost_usd"] - before["cost_usd"], 6),
+            }
+        else:
+            usage = {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
         bus.emit(Event(
             "agent.end",
-            {"agent_name": agent_name, "duration_s": duration, "produced_keys": produced},
+            {"agent_name": agent_name, "duration_s": duration,
+             "produced_keys": produced, **usage},
             run_id=run_id,
             thread_id=thread_id,
         ))
+        if agent is not None and getattr(agent, "approval_required", False):
+            bus.emit(Event(
+                "hitl.pending",
+                {
+                    "agent_name":      agent_name,
+                    "channel":         getattr(agent, "hitl_channel", "default"),
+                    "feedback_schema": _schema_json(agent),
+                    "review_type":     getattr(agent, "review_type", "approval"),
+                },
+                run_id=run_id,
+                thread_id=thread_id,
+            ))
         return result
 
     _evented.__name__ = f"evented_{agent_name}"
