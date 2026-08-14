@@ -29,10 +29,7 @@ Usage::
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from antcrew.core.tools import BaseTool, ToolResult
-
 
 # ---------------------------------------------------------------------------
 # BigQuery
@@ -217,7 +214,7 @@ def gemini_via_vertex(
     *,
     project_id: str,
     region: str = "us-central1",
-) -> "antcrew.models.gemini_model.GeminiModel":  # type: ignore[name-defined]
+) -> "GeminiModel":  # type: ignore[return-value]
     """Return a :class:`~antcrew.models.gemini_model.GeminiModel` backed by Vertex AI.
 
     Requires ``google-cloud-aiplatform`` and that ``GOOGLE_APPLICATION_CREDENTIALS``

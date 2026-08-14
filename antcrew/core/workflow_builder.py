@@ -20,8 +20,6 @@ LangGraph is never mentioned in user-facing code.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 
 class Workflow:
     """Compiled workflow returned by :meth:`WorkflowBuilder.build`.
@@ -33,9 +31,10 @@ class Workflow:
         self._app = app
         self._llm = llm
 
-    def run(self, request: str, *, thread_id: Optional[str] = None) -> dict:
+    def run(self, request: str, *, thread_id: str | None = None) -> dict:
         """Execute the workflow and return the final state dict."""
         import uuid
+
         from antcrew.core.state import TeamState
 
         tid = thread_id or str(uuid.uuid4())
@@ -44,9 +43,10 @@ class Workflow:
         result = self._app.invoke(initial, config)
         return dict(result)
 
-    def stream(self, request: str, *, thread_id: Optional[str] = None):
+    def stream(self, request: str, *, thread_id: str | None = None):
         """Yield (node_name, partial_state) tuples as each step completes."""
         import uuid
+
         from antcrew.core.state import TeamState
 
         tid = thread_id or str(uuid.uuid4())
@@ -94,7 +94,7 @@ class WorkflowBuilder:
         agent_class: type,
         *,
         after: "str | list[str] | None" = None,
-        when: "Optional[str]" = None,
+        when: "str | None" = None,
         **agent_kwargs,
     ) -> "WorkflowBuilder":
         """Add a single-agent step.
@@ -158,7 +158,9 @@ class WorkflowBuilder:
             checkpointer: Optional LangGraph checkpoint saver.  Defaults to in-memory.
         """
         import copy
-        from antcrew.core.supervisor import Supervisor, parallel as _parallel
+
+        from antcrew.core.supervisor import Supervisor
+        from antcrew.core.supervisor import parallel as _parallel
 
         agents: dict[str, object] = {}
         flow: list[tuple] = []

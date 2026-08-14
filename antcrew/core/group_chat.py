@@ -27,8 +27,7 @@ string ``"CONSENSUS:"`` at the start of its summary to detect agreement.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass

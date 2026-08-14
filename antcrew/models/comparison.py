@@ -27,7 +27,6 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Optional
 
 from antcrew_engine.models.base import BaseLLM, Message  # type: ignore[import]
 

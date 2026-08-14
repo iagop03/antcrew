@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from antcrew.memory.store import BaseMemory, MemoryResult, RunSnapshot
+from antcrew.memory.store import BaseMemory, MemoryResult
 
 
 class ChromaMemory(BaseMemory):
