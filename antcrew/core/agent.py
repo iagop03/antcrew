@@ -189,6 +189,9 @@ class BaseAgent(ABC):
             self.output_schema = output_schema
         # Per-agent cost cap: raises CostLimitExceeded when exceeded
         self.max_cost_usd: Optional[float] = max_cost_usd
+        # Run context — set by _make_evented_run before each run so _tracelog can correlate
+        self._run_id: Optional[str] = None
+        self._thread_id: Optional[str] = None
 
     @abstractmethod
     def run(self, state: TeamState) -> dict:
@@ -214,6 +217,7 @@ class BaseAgent(ABC):
         if self.max_tokens and "max_tokens" not in kwargs:
             kwargs["max_tokens"] = self.max_tokens
         self.llm.current_agent = self.name
+        self._tracelog("llm.call", prompt_chars=len(system_prompt) + len(user))
         result = self.llm.system(system_prompt, user, **kwargs)
         self._check_agent_cost()
         return result
@@ -529,8 +533,29 @@ class BaseAgent(ABC):
         return "\n\nRelevant context from previous runs:\n" + "\n".join(lines) + "\n"
 
     def _tracelog(self, event: str, **kwargs) -> None:
-        """No-op stub. Replaced by TraceLog PR (roadmap #5)."""
-        log.debug("tracelog:%s %s", event, kwargs)
+        """Emit a structured trace event to the global EventBus.
+
+        Events are correlated with the current run via ``_run_id`` and
+        ``_thread_id`` (set automatically by the team runner before each agent
+        invocation). Subscribers on the platform side persist them as
+        ``agent.tracelog`` rows in the event log.
+
+        Built-in events emitted by BaseAgent:
+
+        - ``parse_failure`` — JSON parse error after all retries exhausted
+        - ``llm.call`` — every LLM invocation via :meth:`system`
+
+        Custom agents can call ``self._tracelog("my.event", key=value)`` to
+        record domain-specific trace points.
+        """
+        from antcrew.core.events import Event, bus
+        bus.emit(Event(
+            "agent.tracelog",
+            {"agent": self.name, "stage": self.stage, "event": event, **kwargs},
+            run_id=self._run_id,
+            thread_id=self._thread_id,
+        ))
+        log.debug("tracelog agent=%s event=%s %s", self.name, event, kwargs)
 
     @property
     def governance_hash(self) -> str:

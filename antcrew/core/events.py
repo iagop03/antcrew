@@ -275,9 +275,13 @@ def _make_evented_run(run_fn: Callable, agent_name: str, agent=None) -> Callable
     def _evented(state: dict) -> dict:
         run_id = state.get("_run_id")
         thread_id = state.get("_thread_id", "default")
+        # Inject run context so agent._tracelog() can correlate events to the run
+        if agent is not None:
+            agent._run_id = run_id
+            agent._thread_id = thread_id
         bus.emit(Event(
             "agent.start",
-            {"agent_name": agent_name},
+            {"agent_name": agent_name, "stage": getattr(agent, "stage", "")},
             run_id=run_id,
             thread_id=thread_id,
         ))
@@ -300,8 +304,14 @@ def _make_evented_run(run_fn: Callable, agent_name: str, agent=None) -> Callable
             usage = {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
         bus.emit(Event(
             "agent.end",
-            {"agent_name": agent_name, "duration_s": duration,
-             "produced_keys": produced, **usage},
+            {
+                "agent_name": agent_name,
+                "stage": getattr(agent, "stage", ""),
+                "governance_hash": getattr(agent, "governance_hash", ""),
+                "duration_s": duration,
+                "produced_keys": produced,
+                **usage,
+            },
             run_id=run_id,
             thread_id=thread_id,
         ))
