@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.17] — 2026-08-14
+
+### Added
+
+- **`QAAgent` — Playwright E2E tests for React components** — when a `.tsx` or `.jsx` source file contains JSX (`return (<...)`), the agent now generates an additional Playwright E2E test file (in `e2e/`) alongside the regular Vitest unit + integration test. The E2E test navigates to the component's inferred route and exercises a user interaction.
+- **`_E2E_SYSTEM` prompt** — internal system prompt for E2E generation; produces `@playwright/test` files ≤60 lines covering the golden path only.
+
+---
+
 ## [0.33.16] — 2026-08-14
 
 ### Added

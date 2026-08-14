@@ -10,6 +10,10 @@ from antcrew.core.artifacts import CodeArtifact, TestArtifact, Ticket, coerce_li
 from antcrew.core.state import TeamState
 
 _TS_EXTS = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
+_REACT_EXTS = {".tsx", ".jsx"}
+
+# Heuristic: a file is a React component when it exports JSX (contains angle-bracket tags).
+_JSX_RE = re.compile(r"return\s*\(?\s*<[A-Za-z]", re.MULTILINE)
 
 
 def _extract_symbols_context(source: str, file_path: str) -> str:
@@ -105,6 +109,35 @@ Rules:
 - DO NOT test names that are not exported by the source file.
 """
 
+_E2E_SYSTEM = """\
+You are a QA Engineer writing end-to-end tests with Playwright for a React component.
+Given one React component source file, write a Playwright test file that:
+1. Navigates to the component's likely route (infer from filename; default to "/")
+2. Asserts key UI elements are visible
+3. Exercises at least one user interaction (click, fill, or submit)
+4. Verifies the expected result
+
+Respond ONLY with a valid JSON array containing EXACTLY ONE test artifact object \
+(no markdown fences, no prose):
+[
+  {
+    "ticket_id": "TICKET-001",
+    "file_path": "e2e/test_....spec.ts",
+    "description": "Playwright E2E test for the component",
+    "language": "typescript",
+    "content": "...full Playwright test...",
+    "coverage_areas": ["e2e"]
+  }
+]
+
+Rules:
+- Import only from @playwright/test.
+- Assume the app runs at http://localhost:3000.
+- Keep the file under 60 lines.
+- Test the golden path only — no edge cases.
+- Do NOT import the component directly; test through the browser URL.
+"""
+
 _BUG_DETECTOR_SYSTEM = """\
 You are a QA Engineer reviewing code for critical bugs.
 Given code artifacts, determine if any CRITICAL bugs exist.
@@ -185,6 +218,20 @@ class QAAgent(BaseAgent):
                 TestArtifact(**{k: v for k, v in t.items() if k in TestArtifact.model_fields})
                 for t in raw_tests
             )
+
+            # For React components (.tsx/.jsx with JSX content) also generate Playwright E2E tests.
+            suffix = Path(a.file_path).suffix.lower()
+            if suffix in _REACT_EXTS and _JSX_RE.search(a.content):
+                e2e_raw = self.system(_E2E_SYSTEM, f"Source file:\n{art_json}")
+                e2e_stripped = _strip_fences(e2e_raw)
+                try:
+                    e2e_dicts: list[dict] = _json_loads(e2e_stripped) if e2e_stripped else []
+                except Exception:
+                    e2e_dicts = []
+                new_tests.extend(
+                    TestArtifact(**{k: v for k, v in t.items() if k in TestArtifact.model_fields})
+                    for t in e2e_dicts
+                )
 
         # Preserve tests from previous sprints; replace current sprint's.
         existing_tests = coerce_list(state, "test_artifacts", TestArtifact)
