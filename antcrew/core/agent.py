@@ -236,6 +236,80 @@ class BaseAgent(ABC):
         context_block = "\n".join(context_lines)
         return f"{context_block}\n\n{user}"
 
+    def system_with_images(
+        self,
+        system_prompt: str,
+        user: str,
+        images: "list[str]",
+        *,
+        schema: "Optional[type]" = None,
+        **kwargs,
+    ) -> "str | dict":
+        """Call LLM with a system prompt, user message, and one or more images.
+
+        Requires a multi-modal-capable model (e.g. :class:`~antcrew.models.gemini_model.GeminiModel`
+        or GPT-4V via :class:`~antcrew.models.openai_model.OpenAIModel`).  Models that do not
+        implement ``system_multimodal()`` raise :class:`NotImplementedError`.
+
+        Args:
+            system_prompt: The agent's system prompt (same as in :meth:`system`).
+            user:          User message text.
+            images:        List of local file paths or public URLs to include in the
+                           request.  Paths are read and base64-encoded; URLs are passed
+                           through to the model as-is when the model supports URL references.
+            schema:        Optional Pydantic ``BaseModel`` class.  When set the LLM response
+                           is parsed and validated against it (same as :meth:`system_structured`).
+            **kwargs:      Extra kwargs forwarded to the underlying LLM call.
+
+        Returns:
+            Raw string response, or a validated *schema* instance when *schema* is given.
+
+        Example::
+
+            class UIAnalysis(BaseModel):
+                issues: list[str]
+                suggestions: list[str]
+
+            class UIDesignAgent(BaseAgent):
+                def run(self, state):
+                    screenshots = state.get("screenshot_paths", [])
+                    analysis = self.system_with_images(
+                        "You are a UX expert.",
+                        "Analyse these UI screenshots for accessibility issues.",
+                        images=screenshots,
+                        schema=UIAnalysis,
+                    )
+                    return {"ui_analysis": analysis.model_dump()}
+        """
+        if not hasattr(self.llm, "system_multimodal"):
+            raise NotImplementedError(
+                f"{type(self.llm).__name__} does not support multi-modal input. "
+                "Use GeminiModel or a vision-capable OpenAIModel."
+            )
+
+        if self.preset is not None:
+            system_prompt = self.preset.apply(system_prompt)
+        user = self._inject_memory(user)
+        if self.system_prompt_suffix:
+            system_prompt = system_prompt + "\n\n" + self.system_prompt_suffix
+
+        self.llm.current_agent = self.name
+        response = self.llm.system_multimodal(system_prompt, user, images, **kwargs)
+        self._check_agent_cost()
+
+        if schema is None:
+            return response
+        return self._extract_schema(response, schema)
+
+    def _extract_schema(self, response: str, schema: type):
+        """Parse *response* as JSON and coerce to *schema* (Pydantic BaseModel)."""
+        try:
+            data = _json_loads(response)
+        except Exception:
+            stripped = _strip_fences(response)
+            data = _json_loads(stripped)
+        return schema(**data) if isinstance(data, dict) else data
+
     def system_with_tools(
         self,
         system_prompt: str,

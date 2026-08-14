@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import json as _json
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any, Generic, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
@@ -630,3 +634,164 @@ def resolve_artifact_schema(name: str) -> type[BaseModel]:
         f"Built-in schemas: {sorted(ARTIFACT_REGISTRY)}. "
         "For custom schemas use the fully-qualified path: 'mypackage.models.MyModel'."
     )
+
+
+# ---------------------------------------------------------------------------
+# Artifact version history
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ArtifactVersion:
+    """A single snapshot in an artifact's version history.
+
+    Attributes:
+        run_id:         Run that produced this version.
+        version:        Monotonically increasing version number (1-based).
+        content:        Artifact content (dict or string).
+        summary:        Human-readable narrative of what changed, e.g.
+                        ``"Removed JWT auth requirement"`` (set by the caller or
+                        left empty for the initial version).
+        diff_lines:     Unified diff lines vs the previous version.
+        ts:             UTC timestamp when this version was recorded.
+    """
+    run_id:     str
+    version:    int
+    content:    "dict | str"
+    summary:    str = ""
+    diff_lines: list[str] = field(default_factory=list)
+    ts:         datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ArtifactHistory:
+    """Persist artifact versions to a JSON file across runs.
+
+    Stores a version history for each artifact ID so you can see how an
+    artifact evolved across multiple pipeline runs.
+
+    Usage::
+
+        from antcrew.core.artifacts import ArtifactHistory
+
+        history = ArtifactHistory(".antcrew/artifact_history.json")
+
+        # After a run produces a PRD:
+        history.record("prd", run_id=run_id, content=prd.model_dump(),
+                       summary="Initial PRD for auth service")
+
+        # After a second run revises it:
+        history.record("prd", run_id=run_id2, content=revised_prd.model_dump(),
+                       summary="Removed OAuth, simplified to API keys")
+
+        # Inspect history:
+        for v in history.timeline("prd"):
+            print(v.version, v.summary, len(v.diff_lines), "diff lines")
+
+    Args:
+        path: File path for the JSON history store.  Created on first write.
+    """
+
+    def __init__(self, path: "str | Path") -> None:
+        self._path = Path(path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._store: dict[str, list[dict]] = (
+            _json.loads(self._path.read_text(encoding="utf-8"))
+            if self._path.exists()
+            else {}
+        )
+
+    def record(
+        self,
+        artifact_id: str,
+        *,
+        run_id: str,
+        content: "dict | str",
+        summary: str = "",
+    ) -> ArtifactVersion:
+        """Record a new version of *artifact_id*.
+
+        Computes a unified diff vs the previous version automatically.
+        Persists the updated history to disk immediately.
+
+        Args:
+            artifact_id: Logical identifier for the artifact (e.g. ``"prd"``).
+            run_id:      Identifier of the run that produced this version.
+            content:     New artifact content — a dict or string.
+            summary:     Human-readable narrative of what changed.
+
+        Returns:
+            The newly created :class:`ArtifactVersion`.
+        """
+        import difflib as _dl
+
+        prev_versions = self._store.get(artifact_id, [])
+        prev_text = (
+            _json.dumps(prev_versions[-1]["content"], indent=2, ensure_ascii=False)
+            if prev_versions
+            else ""
+        )
+        curr_text = (
+            _json.dumps(content, indent=2, ensure_ascii=False)
+            if isinstance(content, dict)
+            else str(content)
+        )
+
+        diff_lines = list(
+            _dl.unified_diff(
+                prev_text.splitlines(),
+                curr_text.splitlines(),
+                fromfile=f"v{len(prev_versions)}",
+                tofile=f"v{len(prev_versions) + 1}",
+                lineterm="",
+            )
+        )
+
+        ts = datetime.now(timezone.utc)
+        version = ArtifactVersion(
+            run_id=run_id,
+            version=len(prev_versions) + 1,
+            content=content,
+            summary=summary,
+            diff_lines=diff_lines,
+            ts=ts,
+        )
+
+        row = {
+            "run_id":     run_id,
+            "version":    version.version,
+            "content":    content,
+            "summary":    summary,
+            "diff_lines": diff_lines,
+            "ts":         ts.isoformat(),
+        }
+        self._store.setdefault(artifact_id, []).append(row)
+        self._path.write_text(
+            _json.dumps(self._store, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return version
+
+    def timeline(self, artifact_id: str) -> list[ArtifactVersion]:
+        """Return all versions of *artifact_id*, oldest first.
+
+        Returns an empty list if no versions have been recorded.
+        """
+        return [
+            ArtifactVersion(
+                run_id=row["run_id"],
+                version=row["version"],
+                content=row["content"],
+                summary=row.get("summary", ""),
+                diff_lines=row.get("diff_lines", []),
+                ts=datetime.fromisoformat(row["ts"]) if row.get("ts") else datetime.now(timezone.utc),
+            )
+            for row in self._store.get(artifact_id, [])
+        ]
+
+    def latest(self, artifact_id: str) -> "ArtifactVersion | None":
+        """Return the most recent version of *artifact_id*, or ``None``."""
+        versions = self.timeline(artifact_id)
+        return versions[-1] if versions else None
+
+    def artifact_ids(self) -> list[str]:
+        """Return all artifact IDs that have recorded history."""
+        return list(self._store.keys())

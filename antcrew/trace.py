@@ -417,6 +417,103 @@ class TraceLog:
             raise ReplayError(f"No agent_calls found for run_id {run_id!r}")
         return [self.replay(c["id"], llm) for c in calls]
 
+    def replay_with_mutation(
+        self,
+        run_id: str,
+        agent_name: str,
+        new_system_prompt: str,
+        llm,
+    ) -> dict:
+        """Replay a run but substitute the system prompt for one specific agent.
+
+        All other agents are replayed unchanged (using their original stored
+        ``prompt_full`` and ``user_full``).  The target agent uses
+        *new_system_prompt* instead of its stored ``prompt_full``.
+
+        This enables prompt A/B testing without re-running the full pipeline:
+        "What changes if I make the BA agent more concise?"
+
+        Args:
+            run_id:            Run to replay (all calls must have been recorded
+                               with ``full_trace=True``).
+            agent_name:        Name of the agent whose system prompt to replace.
+            new_system_prompt: Replacement system prompt for *agent_name*.
+            llm:               LLM to use for all replay calls.
+
+        Returns:
+            A dict with keys:
+            - ``agent_name``:    The mutated agent's name.
+            - ``runs``:         List of per-call result dicts (same format as
+                                :meth:`replay`), with a ``mutated`` flag set to
+                                ``True`` for the target agent's calls.
+            - ``total_changed``: Count of calls where ``matched`` was ``False``.
+
+        Raises:
+            :class:`ReplayError` if the run has no calls or any call lacks
+            ``prompt_full`` (requires ``full_trace=True``).
+        """
+        import time as _time
+
+        calls = self.get_calls(run_id)
+        if not calls:
+            raise ReplayError(f"No agent_calls found for run_id {run_id!r}")
+
+        results: list[dict] = []
+
+        for c in calls:
+            call_id = c["id"]
+            is_target = c["agent_name"] == agent_name
+
+            if is_target:
+                # Use the new prompt but stored user message
+                if not c.get("prompt_full") and not new_system_prompt:
+                    raise ReplayError(
+                        "prompt_full is empty — TraceLog must be created with full_trace=True to enable replay"
+                    )
+                user_msg = c.get("user_full") or ""
+                usage_before = llm.get_usage_summary()
+                t0 = _time.monotonic()
+                replayed_output = llm.system(new_system_prompt, user_msg)
+                duration_ms = (_time.monotonic() - t0) * 1000
+                usage_after = llm.get_usage_summary()
+
+                tokens_in  = usage_after.get("total_input_tokens",  0) - usage_before.get("total_input_tokens",  0)
+                tokens_out = usage_after.get("total_output_tokens", 0) - usage_before.get("total_output_tokens", 0)
+                cost_usd   = round(usage_after.get("total_cost_usd", 0.0) - usage_before.get("total_cost_usd", 0.0), 6)
+
+                import difflib as _diff
+                original_lines = (c.get("response_full") or "").splitlines()
+                mutated_lines  = replayed_output.splitlines()
+                diff_lines = list(_diff.unified_diff(original_lines, mutated_lines, lineterm=""))
+                diff_pct   = round(len(diff_lines) / max(len(original_lines), 1), 3)
+
+                results.append({
+                    "call_id":    call_id,
+                    "agent_name": agent_name,
+                    "mutated":    True,
+                    "original":   c.get("response_full") or "",
+                    "replayed":   replayed_output,
+                    "matched":    (c.get("response_full") or "") == replayed_output,
+                    "diff_lines": diff_lines,
+                    "diff_pct":   diff_pct,
+                    "tokens_in":  tokens_in,
+                    "tokens_out": tokens_out,
+                    "cost_usd":   cost_usd,
+                    "duration_ms": round(duration_ms, 2),
+                })
+            else:
+                result = self.replay(call_id, llm)
+                result["mutated"] = False
+                results.append(result)
+
+        total_changed = sum(1 for r in results if not r.get("matched", True))
+        return {
+            "agent_name":    agent_name,
+            "run_id":        run_id,
+            "runs":          results,
+            "total_changed": total_changed,
+        }
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._conn.close()
