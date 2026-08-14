@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.16] — 2026-08-14
+
+### Added
+
+- **`APIDesignAgent`, `PMAgent`, `ResearcherAgent`, `ReviewerAgent`** — four prebuilt agents that existed internally but were not exported; now available from `antcrew` directly. Brings total exported prebuilt agents to 22.
+- **`QAAgent` — unit + integration test generation** — system prompt now explicitly requests both unit tests (mocked externals) and integration tests (real objects, minimal mocks) in a single test file, structured as two labelled sections.
+- **`LocalRunner.run(with_coverage=True)`** — optional `pytest-cov` integration. When `with_coverage=True` is passed, adds `--cov --cov-report=term-missing` flags and parses the TOTAL line to populate `RunResult.coverage_pct`.
+- **`RunResult.coverage_pct`** — new optional field (float, 0–100) on `RunResult`; populated only when `with_coverage=True`.
+
+---
+
 ## [0.33.15] — 2026-08-14
 
 ### Added

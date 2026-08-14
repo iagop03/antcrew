@@ -57,6 +57,7 @@ class RunResult:
     duration_ms: float
     output: str        # full pytest stdout + stderr
     returncode: int
+    coverage_pct: Optional[float] = None   # line coverage % when with_coverage=True
 
     @property
     def success(self) -> bool:
@@ -77,7 +78,7 @@ class RunResult:
         return f"{', '.join(parts)} in {self.duration_ms:.0f}ms"
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "passed":      self.passed,
             "failed":      self.failed,
             "errors":      self.errors,
@@ -87,6 +88,9 @@ class RunResult:
             "output":      self.output,
             "returncode":  self.returncode,
         }
+        if self.coverage_pct is not None:
+            d["coverage_pct"] = self.coverage_pct
+        return d
 
 
 @dataclass
@@ -189,7 +193,18 @@ class LocalRunner(SandboxRunner):
         test_artifacts: "list[TestArtifact]",
         *,
         code_artifacts: "Optional[list[CodeArtifact]]" = None,
+        with_coverage: bool = False,
     ) -> RunResult:
+        """Run pytest on *test_artifacts*.
+
+        Args:
+            test_artifacts:  Test files to execute.
+            code_artifacts:  Source files to write alongside the tests.
+            with_coverage:   Add ``--cov --cov-report=term-missing`` flags and
+                             parse the TOTAL coverage percentage into
+                             ``RunResult.coverage_pct``.  Requires
+                             ``pytest-cov`` to be installed in the interpreter.
+        """
         if not test_artifacts:
             return RunResult(
                 passed=0, failed=0, errors=0, total=0,
@@ -198,6 +213,8 @@ class LocalRunner(SandboxRunner):
                 returncode=0,
             )
 
+        extra_flags = ["--cov", "--cov-report=term-missing"] if with_coverage else []
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_artifacts(root, test_artifacts, code_artifacts or [])
@@ -205,7 +222,7 @@ class LocalRunner(SandboxRunner):
             t0 = time.time()
             try:
                 proc = subprocess.run(
-                    [self._python, "-m", "pytest", "."] + _PYTEST_FLAGS,
+                    [self._python, "-m", "pytest", "."] + _PYTEST_FLAGS + extra_flags,
                     cwd=str(root),
                     capture_output=True,
                     text=True,
@@ -214,6 +231,7 @@ class LocalRunner(SandboxRunner):
                 elapsed_ms = (time.time() - t0) * 1000
                 output = proc.stdout + (proc.stderr or "")
                 passed, failed, errors = _parse_counts(output)
+                coverage_pct = _parse_coverage(output) if with_coverage else None
                 return RunResult(
                     passed=passed,
                     failed=failed,
@@ -222,6 +240,7 @@ class LocalRunner(SandboxRunner):
                     duration_ms=round(elapsed_ms, 1),
                     output=output,
                     returncode=proc.returncode,
+                    coverage_pct=coverage_pct,
                 )
 
             except subprocess.TimeoutExpired:
@@ -525,3 +544,15 @@ def _parse_counts(output: str) -> tuple[int, int, int]:
         elif kind == "error":
             errors = n
     return passed, failed, errors
+
+
+def _parse_coverage(output: str) -> Optional[float]:
+    """Extract total line-coverage % from pytest-cov output.
+
+    Looks for the ``TOTAL ... NN%`` line emitted by ``--cov-report=term-missing``.
+    Returns ``None`` when the line is absent (pytest-cov not installed, no sources).
+    """
+    m = re.search(r"^TOTAL\s+\d+\s+\d+\s+(\d+)%", output, re.MULTILINE)
+    if m:
+        return float(m.group(1))
+    return None

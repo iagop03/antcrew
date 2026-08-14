@@ -74,9 +74,9 @@ _TESTABLE_EXTS = {
 
 _SYSTEM = """\
 You are a QA Engineer on a software development team.
-Given ONE source file, write a focused test file that tests the ACTUAL
-implementation — the functions, classes, and behaviours present in the code,
-not a hypothetical spec.
+Given ONE source file, write a comprehensive test file covering BOTH unit and
+integration scenarios for the ACTUAL implementation — the functions, classes,
+and behaviours present in the code, not a hypothetical spec.
 
 Respond ONLY with a valid JSON array containing EXACTLY ONE test artifact object \
 (no markdown fences, no prose):
@@ -94,10 +94,13 @@ Respond ONLY with a valid JSON array containing EXACTLY ONE test artifact object
 Rules:
 - One test file per source file — do NOT combine multiple source files.
 - Import EXACTLY the names visible in the source (functions, classes, constants).
-- Cover the 3-5 most important behaviours: happy path, key edge cases, one error path.
-- Keep the test file under 120 lines.
+- Structure tests in TWO sections separated by a comment:
+    ## Unit tests — test individual functions/methods in isolation with mocks
+    ## Integration tests — test how components work together (real objects, minimal mocks)
+- Cover: happy path, key edge cases, one error path, one integration scenario.
+- Keep the test file under 200 lines.
 - Use pytest for Python, Vitest/Jest for TypeScript/JavaScript.
-- Mock external services and databases.
+- Mock only external services (HTTP, DB, filesystem) in unit tests; use real objects in integration tests.
 - Each test must be independently runnable.
 - DO NOT test names that are not exported by the source file.
 """

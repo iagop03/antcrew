@@ -1,3 +1,4 @@
+from antcrew.agents.api_design import APIDesignAgent
 from antcrew.agents.cloud_architect import CloudArchitectAgent
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent
 from antcrew.agents.coherence import CoherenceAgent
@@ -12,7 +13,10 @@ from antcrew.agents.discovery import DiscoveryAgent
 from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.email_campaign import EmailCampaignAgent
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
+from antcrew.agents.pm import PMAgent
+from antcrew.agents.researcher import ResearcherAgent
 from antcrew.agents.retro import RetroAgent
+from antcrew.agents.reviewer import ReviewerAgent
 from antcrew.agents.security import SecurityAgent
 from antcrew.agents.seo_analyst import SEOAnalystAgent
 from antcrew.agents.social_media import SocialMediaAgent
@@ -247,6 +251,7 @@ __all__ = [
     "DevOpsArtifact",
     "DocumentationArtifact",
     # Agents (commonly used standalone)
+    "APIDesignAgent",
     "CloudArchitectAgent",
     "CodebaseScannerAgent",
     "ConflictAgent",
@@ -261,7 +266,10 @@ __all__ = [
     "EmailCampaignAgent",
     "FeatureAgent",
     "FeatureTeam",
+    "PMAgent",
+    "ResearcherAgent",
     "RetroAgent",
+    "ReviewerAgent",
     "SecurityAgent",
     "SEOAnalystAgent",
     "SocialMediaAgent",
