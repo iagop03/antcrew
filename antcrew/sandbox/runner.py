@@ -89,6 +89,31 @@ class RunResult:
         }
 
 
+@dataclass
+class ExecutionResult:
+    """Outcome of an arbitrary code snippet executed via execute_code()."""
+
+    code: str
+    stdout: str
+    stderr: str
+    returncode: int
+    duration_ms: float
+
+    @property
+    def success(self) -> bool:
+        return self.returncode == 0
+
+    def to_dict(self) -> dict:
+        return {
+            "code":        self.code,
+            "stdout":      self.stdout,
+            "stderr":      self.stderr,
+            "returncode":  self.returncode,
+            "duration_ms": self.duration_ms,
+            "success":     self.success,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
@@ -213,6 +238,55 @@ class LocalRunner(SandboxRunner):
                     duration_ms=0.0,
                     output=f"Could not start pytest: {exc}",
                     returncode=-1,
+                )
+
+    def execute_code(self, code: str, *, timeout: Optional[int] = None) -> ExecutionResult:
+        """Execute an arbitrary Python snippet and return stdout/stderr.
+
+        The snippet runs in a temporary file via a subprocess using the same
+        interpreter as the runner.  No test framework is involved.
+
+        Args:
+            code:    Python source code to execute.
+            timeout: Override the runner's default timeout for this call.
+        """
+        t_limit = timeout if timeout is not None else self._timeout
+
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "_snippet.py"
+            script.write_text(code, encoding="utf-8")
+
+            t0 = time.time()
+            try:
+                proc = subprocess.run(
+                    [self._python, str(script)],
+                    capture_output=True,
+                    text=True,
+                    timeout=t_limit,
+                )
+                elapsed_ms = round((time.time() - t0) * 1000, 1)
+                return ExecutionResult(
+                    code=code,
+                    stdout=proc.stdout,
+                    stderr=proc.stderr,
+                    returncode=proc.returncode,
+                    duration_ms=elapsed_ms,
+                )
+            except subprocess.TimeoutExpired:
+                return ExecutionResult(
+                    code=code,
+                    stdout="",
+                    stderr=f"Execution timed out after {t_limit}s.",
+                    returncode=-1,
+                    duration_ms=float(t_limit * 1000),
+                )
+            except FileNotFoundError as exc:
+                return ExecutionResult(
+                    code=code,
+                    stdout="",
+                    stderr=f"Could not start interpreter: {exc}",
+                    returncode=-1,
+                    duration_ms=0.0,
                 )
 
 

@@ -1,19 +1,28 @@
+from antcrew.agents.cloud_architect import CloudArchitectAgent
 from antcrew.agents.codebase_scanner import CodebaseScannerAgent
 from antcrew.agents.coherence import CoherenceAgent
 from antcrew.agents.conflict import ConflictAgent
 from antcrew.agents.cost import CostAgent
+from antcrew.agents.data_analyst import DataAnalystAgent
+from antcrew.agents.db_schema import DBSchemaAgent
+from antcrew.agents.design_system import DesignSystemAgent
 from antcrew.agents.devops import DevOpsAgent
 from antcrew.agents.direct_agent import DirectAgent
 from antcrew.agents.discovery import DiscoveryAgent
 from antcrew.agents.doc_writer import DocWriterAgent
+from antcrew.agents.email_campaign import EmailCampaignAgent
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
 from antcrew.agents.retro import RetroAgent
 from antcrew.agents.security import SecurityAgent
+from antcrew.agents.seo_analyst import SEOAnalystAgent
+from antcrew.agents.social_media import SocialMediaAgent
 from antcrew.agents.sprint_planner import SprintPlannerAgent
 from antcrew.core.artifacts import (
     ARTIFACT_REGISTRY,
     PRD,
     ArtifactContract,
+    CloudArchSpec,
+    CloudService,
     CodeArtifact,
     CodebaseAnalysis,
     CodeReview,
@@ -21,16 +30,26 @@ from antcrew.core.artifacts import (
     ConflictReport,
     ContentPiece,
     ContractError,
+    DataAnalysisReport,
+    DatabaseSchema,
+    DataInsight,
+    DBColumn,
+    DBTable,
+    DesignSystemComponent,
+    DesignSystemDoc,
     DesignTokens,
     DevOpsArtifact,
     DiscoveryContext,
     DiscoveryQA,
     DocumentationArtifact,
+    EmailCampaign,
     ResearchDocument,
     RetroReport,
     Screen,
     SecurityFinding,
     SecurityReport,
+    SEOAnalysis,
+    SocialMediaPlan,
     TestArtifact,
     Ticket,
     UIDesignSpec,
@@ -97,6 +116,7 @@ from antcrew.core.gates import (
     parse_gate,
 )
 from antcrew.core.group_chat import GroupChat, GroupChatResult
+from antcrew.core.hitl import FlexibleHITL, HITLAction, HITLDecision
 from antcrew.core.run_result import RunResult
 from antcrew.core.workflow_builder import Workflow, WorkflowBuilder
 from antcrew.flow import format_flow, load_flow, validate_flow
@@ -107,7 +127,7 @@ from antcrew.integrations.jira import JiraIntegration
 from antcrew.models.cache import FileLLMCache, LLMCache
 from antcrew.project import Project
 from antcrew.quickstart import QuickStart
-from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
+from antcrew.sandbox import DockerRunner, ExecutionResult, LocalRunner, SandboxRunner
 from antcrew.sandbox import RunResult as SandboxRunResult
 from antcrew.trace import ReplayError, TraceLog
 
@@ -227,18 +247,25 @@ __all__ = [
     "DevOpsArtifact",
     "DocumentationArtifact",
     # Agents (commonly used standalone)
-    "DevOpsAgent",
-    "DocWriterAgent",
+    "CloudArchitectAgent",
     "CodebaseScannerAgent",
-    "SprintPlannerAgent",
+    "ConflictAgent",
+    "CostAgent",
+    "DataAnalystAgent",
+    "DBSchemaAgent",
+    "DesignSystemAgent",
+    "DevOpsAgent",
+    "DirectAgent",
+    "DiscoveryAgent",
+    "DocWriterAgent",
+    "EmailCampaignAgent",
     "FeatureAgent",
     "FeatureTeam",
-    "DirectAgent",
-    "ConflictAgent",
     "RetroAgent",
-    "CostAgent",
     "SecurityAgent",
-    "DiscoveryAgent",
+    "SEOAnalystAgent",
+    "SocialMediaAgent",
+    "SprintPlannerAgent",
     # Router
     "Router",
     "RouteClassifier",
@@ -268,7 +295,19 @@ __all__ = [
     "DiscoveryQA",
     "DiscoveryContext",
     "ArtifactContract",
+    "CloudArchSpec",
+    "CloudService",
     "ContractError",
+    "DataAnalysisReport",
+    "DataInsight",
+    "DatabaseSchema",
+    "DBColumn",
+    "DBTable",
+    "DesignSystemComponent",
+    "DesignSystemDoc",
+    "EmailCampaign",
+    "SEOAnalysis",
+    "SocialMediaPlan",
     "ARTIFACT_REGISTRY",
     "resolve_artifact_schema",
     "coerce_model",
@@ -292,6 +331,7 @@ __all__ = [
     "SandboxRunner",
     "LocalRunner",
     "DockerRunner",
+    "ExecutionResult",
     "RunResult",
     "SandboxRunResult",
     "SqliteSaver",
@@ -317,6 +357,10 @@ __all__ = [
     # Group chat
     "GroupChat",
     "GroupChatResult",
+    # HITL
+    "FlexibleHITL",
+    "HITLAction",
+    "HITLDecision",
     # Artifact history
     "ArtifactHistory",
     "ArtifactVersion",

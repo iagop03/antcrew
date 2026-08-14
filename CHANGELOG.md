@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.15] — 2026-08-14
+
+### Added
+
+- **7 new prebuilt agents** — `SEOAnalystAgent`, `SocialMediaAgent`, `EmailCampaignAgent`, `DataAnalystAgent`, `CloudArchitectAgent`, `DBSchemaAgent`, `DesignSystemAgent`. Each produces a typed artifact and is exported from `antcrew`.
+- **12 new artifact types** — `SEOAnalysis`, `SocialMediaPlan`, `EmailCampaign`, `DataInsight`, `DataAnalysisReport`, `CloudService`, `CloudArchSpec`, `DBColumn`, `DBTable`, `DatabaseSchema`, `DesignSystemComponent`, `DesignSystemDoc`. All exported from `antcrew.core.artifacts` and the top-level `antcrew` namespace.
+- **`LocalRunner.execute_code()`** — run an arbitrary Python snippet in a subprocess and get back an `ExecutionResult` (stdout, stderr, returncode, duration_ms). No test framework involved — ideal for sandboxed code evaluation.
+- **`ExecutionResult`** — new dataclass for snippet execution outcomes; exported from `antcrew.sandbox`.
+- **`FlexibleHITL`** — callback-based human-in-the-loop gate. Register an `ApprovalCallback`, call `.gate(checkpoint, state)` at any workflow step; supports auto-approve, checkpoint filtering, state mutation on MODIFY decisions, and full decision history.
+- **`HITLDecision` / `HITLAction`** — decision type and approve/reject/modify/skip enum for `FlexibleHITL`.
+
+---
+
 ## [0.33.14] — 2026-08-14
 
 ### Added

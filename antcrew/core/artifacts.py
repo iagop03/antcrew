@@ -292,6 +292,128 @@ class SecurityReport(BaseModel):
     rationale: Optional[str] = None
 
 
+# ── SEO artifacts ─────────────────────────────────────────────────────────────
+
+class SEOAnalysis(BaseModel):
+    title: str = ""
+    meta_description: str = ""
+    primary_keyword: str = ""
+    secondary_keywords: list[str] = Field(default_factory=list)
+    score: int = 0
+    readability_score: int = 0
+    recommendations: list[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+    rationale: Optional[str] = None
+
+
+# ── Social media artifacts ────────────────────────────────────────────────────
+
+class SocialMediaPlan(BaseModel):
+    topic: str = ""
+    twitter: str = ""
+    linkedin: str = ""
+    instagram: str = ""
+    hashtags: list[str] = Field(default_factory=list)
+    best_posting_times: list[str] = Field(default_factory=list)
+    rationale: Optional[str] = None
+
+
+# ── Email campaign artifacts ──────────────────────────────────────────────────
+
+class EmailCampaign(BaseModel):
+    subject: str = ""
+    preview_text: str = ""
+    body_html: str = ""
+    body_text: str = ""
+    cta_text: str = ""
+    cta_url: str = ""
+    target_segments: list[str] = Field(default_factory=list)
+    rationale: Optional[str] = None
+
+
+# ── Data analysis artifacts ───────────────────────────────────────────────────
+
+class DataInsight(BaseModel):
+    title: str
+    finding: str
+    metric: str = ""
+
+
+class DataAnalysisReport(BaseModel):
+    title: str = "Data Analysis"
+    summary: str = ""
+    insights: list[DataInsight] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    data_quality_notes: str = ""
+    rationale: Optional[str] = None
+
+
+# ── Cloud architecture artifacts ──────────────────────────────────────────────
+
+class CloudService(BaseModel):
+    name: str
+    service_type: str = "compute"
+    purpose: str = ""
+    estimated_monthly_cost_usd: float = 0.0
+
+
+class CloudArchSpec(BaseModel):
+    title: str = "Cloud Architecture"
+    provider: str = "aws"
+    services: list[CloudService] = Field(default_factory=list)
+    architecture_diagram: str = ""
+    estimated_monthly_cost_usd: float = 0.0
+    security_notes: list[str] = Field(default_factory=list)
+    rationale: Optional[str] = None
+
+
+# ── Database schema artifacts ─────────────────────────────────────────────────
+
+class DBColumn(BaseModel):
+    name: str
+    type: str
+    nullable: bool = True
+    primary_key: bool = False
+    foreign_key: Optional[str] = None
+    unique: bool = False
+    description: str = ""
+
+
+class DBTable(BaseModel):
+    name: str
+    description: str = ""
+    columns: list[DBColumn] = Field(default_factory=list)
+    indexes: list[str] = Field(default_factory=list)
+
+
+class DatabaseSchema(BaseModel):
+    title: str = "Database Schema"
+    db_type: str = "postgresql"
+    tables: list[DBTable] = Field(default_factory=list)
+    relationships: list[str] = Field(default_factory=list)
+    migration_notes: str = ""
+    rationale: Optional[str] = None
+
+
+# ── Design system artifacts ───────────────────────────────────────────────────
+
+class DesignSystemComponent(BaseModel):
+    name: str
+    description: str = ""
+    variants: list[str] = Field(default_factory=list)
+    props: list[str] = Field(default_factory=list)
+
+
+class DesignSystemDoc(BaseModel):
+    title: str = "Design System"
+    description: str = ""
+    principles: list[str] = Field(default_factory=list)
+    components: list[DesignSystemComponent] = Field(default_factory=list)
+    tokens: dict[str, str] = Field(default_factory=dict)
+    usage_guidelines: list[str] = Field(default_factory=list)
+    rationale: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Workspace contract schema registry
 # ---------------------------------------------------------------------------

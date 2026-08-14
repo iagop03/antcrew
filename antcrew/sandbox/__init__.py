@@ -1,3 +1,3 @@
-from antcrew.sandbox.runner import DockerRunner, LocalRunner, RunResult, SandboxRunner
+from antcrew.sandbox.runner import DockerRunner, ExecutionResult, LocalRunner, RunResult, SandboxRunner
 
-__all__ = ["DockerRunner", "LocalRunner", "RunResult", "SandboxRunner"]
+__all__ = ["DockerRunner", "ExecutionResult", "LocalRunner", "RunResult", "SandboxRunner"]
