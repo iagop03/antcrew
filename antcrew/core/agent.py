@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib as _hashlib
 import json as _json
 import logging
 import re
@@ -144,6 +145,7 @@ class BaseAgent(ABC):
 
     name: str = "base"
     role_description: str = ""
+    stage: str = ""                      # pipeline stage label, e.g. "planning", "implementation"
     conversational: bool = False  # True in agents that implement refine()
     review_type: str = "approval"       # "approval" or "structured_list" (for gate agents)
     item_schema: Optional[str] = None   # "requirements"|"tickets"|"screens"|"endpoints"
@@ -530,6 +532,26 @@ class BaseAgent(ABC):
         """No-op stub. Replaced by TraceLog PR (roadmap #5)."""
         log.debug("tracelog:%s %s", event, kwargs)
 
+    @property
+    def governance_hash(self) -> str:
+        """16-char SHA-256 prefix over this agent's immutable configuration.
+
+        Covers name, role_description, stage, system_prompt_suffix, and tool
+        names (sorted).  Two agents with identical configs produce the same
+        hash, enabling run-level provenance checks::
+
+            if agent_a.governance_hash == agent_b.governance_hash:
+                # configs are identical; comparison is apples-to-apples
+        """
+        components = [
+            f"name:{self.name}",
+            f"role:{self.role_description}",
+            f"stage:{self.stage}",
+            f"suffix:{self.system_prompt_suffix or ''}",
+            f"tools:{','.join(sorted(t.name for t in self.tools))}",
+        ]
+        return _hashlib.sha256("|".join(components).encode()).hexdigest()[:16]
+
     def refine(self, state: TeamState, artifact, feedback: str) -> dict:
         """
         Refine the last artifact based on human feedback (conversational mode).
@@ -541,3 +563,20 @@ class BaseAgent(ABC):
         Default: no-op (empty dict → artifact unchanged).
         """
         return {}
+
+
+def compute_team_hash(agents: "list[BaseAgent]") -> str:
+    """Stable 16-char hash for a team's full agent configuration.
+
+    Combines each agent's :attr:`~BaseAgent.governance_hash` (sorted by name)
+    so two runs with the same team hash used exactly the same prompts, tools,
+    and stage layout::
+
+        hash_a = compute_team_hash(team.agents)
+        # ... deploy new prompt ...
+        hash_b = compute_team_hash(team.agents)
+        if hash_a != hash_b:
+            print("Config changed — baseline comparison invalid")
+    """
+    components = sorted(f"{a.name}:{a.governance_hash}" for a in agents)
+    return _hashlib.sha256("|".join(components).encode()).hexdigest()[:16]

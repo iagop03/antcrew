@@ -250,6 +250,26 @@ class EvalSuite:
         ]
         return cls(data.get("name", "unnamed"), cases)
 
+    def feedback(
+        self,
+        reports: list[EvalReport],
+        llm: Any,
+    ) -> "ImprovementPlan":
+        """Analyse *reports* with an LLM and return a structured improvement plan.
+
+        Shorthand for::
+
+            from antcrew.eval import EvalFeedbackAgent
+            plan = EvalFeedbackAgent(llm=llm).analyse(reports)
+
+        Args:
+            reports: Eval reports produced by :meth:`run`.
+            llm:     Any :class:`~antcrew.models.base.BaseLLM` instance.
+        """
+        from antcrew.eval.feedback import EvalFeedbackAgent, ImprovementPlan  # noqa: F401
+        agent = EvalFeedbackAgent(llm=llm)
+        return agent.analyse(reports)
+
     # ------------------------------------------------------------------
     # Dunder
     # ------------------------------------------------------------------

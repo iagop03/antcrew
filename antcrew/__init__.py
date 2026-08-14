@@ -206,8 +206,19 @@ from antcrew.engine import (
     Validator,
     ValidatorResult,
 )
-from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, EvalSuite, JudgeResult
-from antcrew.tools.mcp import MCPTool, MCPToolset
+from antcrew.core.agent import compute_team_hash
+from antcrew.eval import (
+    AgentImprovement,
+    AgentScore,
+    EvalCase,
+    EvalFeedbackAgent,
+    EvalReport,
+    EvalRunner,
+    EvalSuite,
+    ImprovementPlan,
+    JudgeResult,
+)
+from antcrew.tools.mcp import MCPRegistry, MCPTool, MCPToolset
 
 try:
     from antcrew.models.litellm_model import LiteLLMModel
@@ -406,15 +417,21 @@ __all__ = [
     "RunSnapshot",
     "RepoIndex",
     # Eval
+    "AgentImprovement",
     "AgentScore",
     "EvalCase",
+    "EvalFeedbackAgent",
     "EvalReport",
     "EvalRunner",
     "EvalSuite",
+    "ImprovementPlan",
     "JudgeResult",
+    # Governance
+    "compute_team_hash",
     # Models (optional)
     "LiteLLMModel",
     # MCP tools
+    "MCPRegistry",
     "MCPTool",
     "MCPToolset",
     # Presets
