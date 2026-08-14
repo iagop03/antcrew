@@ -214,7 +214,7 @@ def gemini_via_vertex(
     *,
     project_id: str,
     region: str = "us-central1",
-) -> "GeminiModel":  # type: ignore[return-value]
+):
     """Return a :class:`~antcrew.models.gemini_model.GeminiModel` backed by Vertex AI.
 
     Requires ``google-cloud-aiplatform`` and that ``GOOGLE_APPLICATION_CREDENTIALS``
