@@ -206,7 +206,13 @@ from antcrew.engine import (
     Validator,
     ValidatorResult,
 )
-from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, JudgeResult
+from antcrew.eval import AgentScore, EvalCase, EvalReport, EvalRunner, EvalSuite, JudgeResult
+from antcrew.tools.mcp import MCPTool, MCPToolset
+
+try:
+    from antcrew.models.litellm_model import LiteLLMModel
+except ImportError:
+    LiteLLMModel = None  # type: ignore[assignment,misc]
 from antcrew.integrations.slack import SlackChannel
 from antcrew.memory.chroma import ChromaMemory
 from antcrew.memory.repo_index import RepoIndex
@@ -404,7 +410,13 @@ __all__ = [
     "EvalCase",
     "EvalReport",
     "EvalRunner",
+    "EvalSuite",
     "JudgeResult",
+    # Models (optional)
+    "LiteLLMModel",
+    # MCP tools
+    "MCPTool",
+    "MCPToolset",
     # Presets
     "AgentPreset",
     "get_preset",

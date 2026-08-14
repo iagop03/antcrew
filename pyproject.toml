@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "antcrew"
-version = "0.33.17"
+version = "0.33.18"
 description = "Multi-agent framework for software development teams, built on LangGraph"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -53,12 +53,14 @@ memory    = ["chromadb>=0.5"]
 dashboard = ["uvicorn[standard]>=0.30"]  # deprecated alias for serve
 watch     = ["watchdog>=4.0"]
 contracts = ["jsonschema>=4.0"]
+litellm   = ["litellm>=1.40"]   # LiteLLMModel: 100+ providers via one interface
+mcp       = []                   # MCPTool uses httpx (already in core deps)
 dev       = ["pytest", "pytest-asyncio", "ruff", "httpx", "aiofiles>=23.0", "watchdog>=4.0", "jsonschema>=4.0"]
 all       = ["python-telegram-bot>=20.0", "openai>=1.30",
              "slack-sdk>=3.19", "slack-bolt>=1.18",
              "uvicorn[standard]>=0.30", "aiofiles>=23.0",
              "chromadb>=0.5", "aiosqlite>=0.19", "langgraph-checkpoint-sqlite>=2.0",
-             "watchdog>=4.0"]
+             "watchdog>=4.0", "litellm>=1.40"]
 
 [project.scripts]
 antcrew = "antcrew.cli:app"

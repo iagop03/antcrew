@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.18] — 2026-08-14
+
+### Added
+
+- **`LiteLLMModel`** — new LLM backend wrapping [LiteLLM](https://github.com/BerriAI/litellm); supports 100+ providers (Bedrock, Together AI, Vertex AI, Groq, Ollama, Azure, Fireworks, …) with a single class. Use via `model: litellm:bedrock/claude-3-5-sonnet-20241022` in YAML or `LiteLLMModel("openai/gpt-4o")` in code. Install: `pip install antcrew[litellm]`.
+- **`MCPTool` / `MCPToolset`** — wrap any MCP (Model Context Protocol) server as an AntCrew `BaseTool`. `MCPTool` calls a single named tool on a server; `MCPToolset.from_server()` auto-discovers all tools from `GET /tools/list`. Compatible with the ReAct tool-use loop (`agent.system_with_tools()`). Uses `httpx` (already in core deps — no extra install).
+- **`BaseAgent.focused_state(state)`** — returns a trimmed copy of `TeamState` containing only the agent's declared `consumes` keys plus pass-through keys (`request`, `messages`, `thread_id`, `metadata`, `_kb_context`). Reduces prompt token usage for agents with large shared states. Falls back to full state for agents without a `consumes` declaration.
+- **`EvalSuite`** — reusable, named collection of `EvalCase` instances for regression testing. New methods: `from_requests()`, `from_eval_reports()`, `run(team)`, `regression_check(baseline, current, threshold=0.02)`, `compare()`, `save()` / `load()`, `save_reports()` / `load_reports()`. Exported from `antcrew.eval` and `antcrew`.
+- **Optional dependency groups** — `pip install antcrew[litellm]` and `pip install antcrew[mcp]` documented in `pyproject.toml`; `litellm` also included in `antcrew[all]`.
+
+---
+
 ## [0.33.17] — 2026-08-14
 
 ### Added

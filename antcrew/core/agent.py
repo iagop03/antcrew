@@ -464,6 +464,31 @@ class BaseAgent(ABC):
             system_prompt, user, effective_schema, max_retries=max_retries, **kwargs
         )
 
+    def focused_state(self, state: TeamState) -> dict:
+        """Return a trimmed copy of *state* containing only keys this agent needs.
+
+        Includes the agent's declared ``consumes`` keys plus a fixed set of
+        pass-through keys (``request``, ``messages``, ``thread_id``, ``metadata``,
+        ``_kb_context``) that most agents implicitly rely on.
+
+        If the agent has no ``consumes`` attribute (older agents), the full state
+        is returned unchanged so behaviour is never regressed.
+
+        Using this in ``run()`` reduces prompt size for agents that only need a
+        slice of a large TeamState::
+
+            def run(self, state):
+                local = self.focused_state(state)
+                raw = self.system(SYSTEM_PROMPT, json.dumps(local))
+                ...
+        """
+        consumes: list[str] = getattr(self, "consumes", [])
+        if not consumes:
+            return dict(state)
+        _ALWAYS_INCLUDE = {"request", "messages", "thread_id", "metadata", "_kb_context"}
+        keep = set(consumes) | _ALWAYS_INCLUDE
+        return {k: v for k, v in state.items() if k in keep and v is not None}
+
     def _check_agent_cost(self) -> None:
         """Raise CostLimitExceeded if this agent's accumulated cost exceeds max_cost_usd."""
         if self.max_cost_usd is None:

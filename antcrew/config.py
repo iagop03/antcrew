@@ -57,7 +57,7 @@ _KNOWN_MODEL_PREFIXES = (
     "claude", "anthropic", "gpt", "o1", "o3",
     "openai:", "ollama:", "groq:", "azure:", "gemini", "simulated",
     "moonshot:", "deepseek:", "mistral:", "xai:", "together:", "fireworks:", "cerebras:",
-    "lmstudio:", "vllm:",
+    "lmstudio:", "vllm:", "litellm:",
 )
 
 
@@ -68,15 +68,19 @@ def build_llm(
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> BaseLLM:
-    """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'simulated'."""
+    """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'litellm:bedrock/...', 'simulated'."""
     from antcrew_engine.config import build_llm as _build_llm
     s = model_str.strip().lower()
     if not any(s.startswith(p) for p in _KNOWN_MODEL_PREFIXES):
         raise ValueError(
             f"Unknown model: {model_str!r}. "
             "Supported prefixes: claude, gpt, o1, o3, openai:, ollama:, groq:, azure:, gemini:, "
-            "moonshot:, deepseek:, mistral:, xai:, together:, fireworks:, cerebras:, lmstudio:, vllm:, simulated."
+            "moonshot:, deepseek:, mistral:, xai:, together:, fireworks:, cerebras:, lmstudio:, vllm:, litellm:, simulated."
         )
+    if s.startswith("litellm:"):
+        from antcrew.models.litellm_model import LiteLLMModel
+        litellm_model_str = model_str[len("litellm:"):]
+        return LiteLLMModel(litellm_model_str, api_key=api_key, api_base=base_url)
     _kw: dict = {}
     if api_key is not None:
         _kw["api_key"] = api_key
