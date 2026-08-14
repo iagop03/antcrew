@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from antcrew.core.agent import BaseAgent
-from antcrew.core.artifacts import DBColumn, DBTable, DatabaseSchema, Ticket, coerce_list
+from antcrew.core.artifacts import DatabaseSchema, DBColumn, DBTable, Ticket, coerce_list
 from antcrew.core.state import TeamState
 
 _SYSTEM = """\
