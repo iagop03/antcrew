@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.12] — 2026-08-13
+
+### Added
+
+- **`ComparisonLLM`** — composite model that runs the primary and N comparison models concurrently (one thread per model). Returns the primary model's output to the caller; records every model's output, cost, tokens, and latency in `comparison_log()`. `get_usage_summary()` covers the primary only (cost guards apply to primary spend); `full_usage_summary()` aggregates all models. `comparison_summary()` returns per-model averages: error rate, avg cost, avg latency.
+
+- **Per-agent token/cost tracking in `agent.end`** — `_make_evented_run()` now samples LLM usage before and after each agent call and includes `tokens_in`, `tokens_out`, `cost_usd` deltas in the `agent.end` event payload. The platform uses this to populate the `agent_event` table.
+
+- **`hitl.pending` event** — emitted immediately after `agent.end` when an agent has `approval_required = True`. Payload includes `agent_name`, `channel`, `feedback_schema` (Pydantic JSON Schema dict or `None`), and `review_type`.
+
+- **`hitl_channel` and `feedback_schema` on `BaseAgent`** — agents can declare a preferred HITL routing channel (`hitl_channel = "slack"`) and a typed Pydantic model for structured reviewer feedback (`feedback_schema = MyFeedbackModel`). Both are forwarded through `_KBProxy` and into the event bus.
+
+- **`ArchitectureDecision` dataclass in `ProjectKB`** — records architecture decisions with `decision`, `rationale`, `date`, `status` (`accepted`/`rejected`/`superseded`), and `tags`. Persisted to `decisions[]` in the KB JSON file via `record_decision()`.
+
+- **`RunSnapshot` in `memory/store.py`** — structured view of all ChromaMemory artifacts for one past run. Typed accessors: `.request`, `.prd_text`, `.tickets`, `.code_artifacts`. `as_context(max_chars)` formats a concise LLM-ready context block for injection into system prompts.
+
+- **`BaseMemory.get_by_filter()` and `retrieve_run()`** — `get_by_filter(filter: dict)` returns all entries matching a metadata filter (no semantic ranking). `retrieve_run(run_id)` wraps it into a `RunSnapshot`. `ChromaMemory` implements `get_by_filter()` via a ChromaDB `where` clause.
+
+- **`DevTeam.run()` gains `org_context`, `dry_run`, `replay_run_id`** — `org_context` pre-populates `ProjectKB` with decisions, tech stack, and dependencies before the run. `dry_run=True` sets `state["_dry_run"] = True` so integrations (write-back, sandbox, GitHub) can no-op their side effects. `replay_run_id` fetches a `RunSnapshot` from `ChromaMemory` and injects it as context for BA and PM agents.
+
+- **`DevTeam.kb` property and `record_decision()` shorthand** — `team.kb` exposes the live `ProjectKB` instance; `team.record_decision(...)` calls `kb.record_decision()` + `kb.save()` in one step.
+
+---
+
 ## [0.33.11] — 2026-08-04
 
 ### Added
