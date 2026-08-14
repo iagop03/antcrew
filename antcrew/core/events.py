@@ -242,9 +242,20 @@ def _schema_json(agent) -> Optional[dict]:
 
 
 def _llm_usage_totals(agent) -> dict:
-    """Return current cumulative token/cost totals from the agent's LLM, or zeros."""
+    """Return current cumulative token/cost totals from the agent's LLM, or zeros.
+
+    Resolution order: agent.llm (BaseAgent), agent._llm (legacy naming),
+    agent._agent.llm (_KBProxy wrapping a BaseAgent).
+    """
     try:
-        summary = agent._llm.get_usage_summary()  # type: ignore[union-attr]
+        llm = (
+            getattr(agent, "llm", None)
+            or getattr(agent, "_llm", None)
+            or getattr(getattr(agent, "_agent", None), "llm", None)
+        )
+        if llm is None:
+            return {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0}
+        summary = llm.get_usage_summary()
         return {
             "tokens_in":  summary.get("total_input_tokens", 0),
             "tokens_out": summary.get("total_output_tokens", 0),

@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.13] — 2026-08-14
+
+### Fixed
+
+- **`_llm_usage_totals` always returned zeros** — the helper in `core/events.py` read `agent._llm`, which never exists (BaseAgent uses `self.llm`; `_KBProxy` has no LLM attribute at all). Resolution order is now `agent.llm → agent._llm → agent._agent.llm`, which correctly covers both direct agents and KB-proxied agents.
+- **`TraceLog` replay support** — added `replay(call_id, llm)` and `replay_all(run_id, llm)` methods. `record_call()` now accepts `user_full` (stored when `full_trace=True`); `BaseLLM.system()` passes `user_full=user` so the user message is available for replay. New `ReplayError` exception is exported from `antcrew`.
+
+---
+
 ## [0.33.12] — 2026-08-13
 
 ### Added

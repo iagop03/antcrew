@@ -104,7 +104,7 @@ from antcrew.models.cache import FileLLMCache, LLMCache
 from antcrew.project import Project
 from antcrew.sandbox import DockerRunner, LocalRunner, SandboxRunner
 from antcrew.sandbox import RunResult as SandboxRunResult
-from antcrew.trace import TraceLog
+from antcrew.trace import TraceLog, ReplayError
 
 try:
     from antcrew.integrations.telegram.integration import (
@@ -303,6 +303,7 @@ __all__ = [
     "AnyGate",
     "parse_gate",
     "TraceLog",
+    "ReplayError",
     # Flow
     "load_flow",
     "validate_flow",

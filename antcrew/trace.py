@@ -33,6 +33,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+
+class ReplayError(RuntimeError):
+    """Raised when a TraceLog call cannot be replayed."""
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     id          TEXT PRIMARY KEY,
@@ -57,7 +61,8 @@ CREATE TABLE IF NOT EXISTS agent_calls (
     prompt_snippet   TEXT NOT NULL DEFAULT '',
     response_snippet TEXT NOT NULL DEFAULT '',
     prompt_full      TEXT NOT NULL DEFAULT '',
-    response_full    TEXT NOT NULL DEFAULT ''
+    response_full    TEXT NOT NULL DEFAULT '',
+    user_full        TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -65,7 +70,7 @@ CREATE TABLE IF NOT EXISTS agent_calls (
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after the initial schema (idempotent)."""
     existing = {r[1] for r in conn.execute("PRAGMA table_info(agent_calls)").fetchall()}
-    for col in ("prompt_full", "response_full"):
+    for col in ("prompt_full", "response_full", "user_full"):
         if col not in existing:
             conn.execute(f"ALTER TABLE agent_calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
     conn.commit()
@@ -130,14 +135,15 @@ class TraceLog:
         response_snippet: str = "",
         prompt_full: str = "",
         response_full: str = "",
+        user_full: str = "",
     ) -> int:
         """Insert one agent_calls row (one per llm.system() invocation).
 
         Returns the integer primary key of the inserted row.
 
-        When ``self.full_trace`` is True the complete prompt and response are
-        stored in ``prompt_full`` / ``response_full``; otherwise those columns
-        remain empty (snippets are always stored).
+        When ``self.full_trace`` is True the complete prompt, user message, and
+        response are stored; otherwise those columns remain empty (snippets are
+        always stored). ``user_full`` is required for :meth:`replay`.
         """
         _psnip = prompt_snippet or (prompt_full[:300] if prompt_full else "")
         _rsnip = response_snippet or (response_full[:300] if response_full else "")
@@ -146,14 +152,15 @@ class TraceLog:
                (run_id, agent_name, started_at, duration_ms,
                 input_tokens, output_tokens, cost_usd,
                 prompt_snippet, response_snippet,
-                prompt_full, response_full)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                prompt_full, response_full, user_full)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 run_id, agent_name, _now_iso(), round(duration_ms, 2),
                 input_tokens, output_tokens, round(cost_usd, 6),
                 _psnip[:300], _rsnip[:300],
                 prompt_full if self.full_trace else "",
                 response_full if self.full_trace else "",
+                user_full if self.full_trace else "",
             ),
         )
         self._conn.commit()
@@ -337,6 +344,78 @@ class TraceLog:
         cur = self._conn.execute("DELETE FROM runs WHERE started_at < ?", (cutoff,))
         self._conn.commit()
         return cur.rowcount
+
+    # ------------------------------------------------------------------
+    # Replay API
+    # ------------------------------------------------------------------
+
+    def replay(self, call_id: int, llm) -> dict:
+        """Re-run a single recorded agent call with *llm* and return a diff.
+
+        The TraceLog must have been created with ``full_trace=True`` —
+        otherwise ``prompt_full`` and ``user_full`` are empty and this raises
+        ``ReplayError``.
+
+        Returns a dict with:
+            call_id        — the replayed row id
+            agent_name     — agent that made the original call
+            original       — original response text
+            replayed       — new response text from *llm*
+            matched        — True when original == replayed
+            tokens_in      — tokens consumed by the replay call
+            tokens_out     — tokens produced by the replay call
+            cost_usd       — cost of the replay call
+            duration_ms    — wall-clock time of the replay call (ms)
+        """
+        import time as _time
+
+        row = self.get_call_detail(call_id)
+        if row is None:
+            raise ReplayError(f"call_id {call_id} not found in TraceLog")
+        if not row.get("prompt_full"):
+            raise ReplayError(
+                "prompt_full is empty — TraceLog must be created with full_trace=True to enable replay"
+            )
+
+        system_prompt = row["prompt_full"]
+        user_msg = row.get("user_full") or ""
+
+        usage_before = llm.get_usage_summary()
+        t0 = _time.monotonic()
+        replayed_output = llm.system(system_prompt, user_msg)
+        duration_ms = (_time.monotonic() - t0) * 1000
+
+        usage_after = llm.get_usage_summary()
+        tokens_in  = usage_after.get("total_input_tokens",  0) - usage_before.get("total_input_tokens",  0)
+        tokens_out = usage_after.get("total_output_tokens", 0) - usage_before.get("total_output_tokens", 0)
+        cost_usd   = round(usage_after.get("total_cost_usd", 0.0) - usage_before.get("total_cost_usd", 0.0), 6)
+
+        return {
+            "call_id":    call_id,
+            "agent_name": row["agent_name"],
+            "original":   row["response_full"],
+            "replayed":   replayed_output,
+            "matched":    row["response_full"] == replayed_output,
+            "tokens_in":  tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd":   cost_usd,
+            "duration_ms": round(duration_ms, 2),
+        }
+
+    def replay_all(self, run_id: str, llm) -> list[dict]:
+        """Re-run every agent call in *run_id* sequentially and return results.
+
+        Calls :meth:`replay` for each row in insertion order.  Stops and
+        re-raises ``ReplayError`` on the first call that cannot be replayed
+        (e.g. ``full_trace=False`` rows).
+
+        Useful for regression testing: run the same pipeline request again and
+        compare each agent output to the original to detect model drift.
+        """
+        calls = self.get_calls(run_id)
+        if not calls:
+            raise ReplayError(f"No agent_calls found for run_id {run_id!r}")
+        return [self.replay(c["id"], llm) for c in calls]
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
