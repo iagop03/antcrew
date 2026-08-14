@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.14] — 2026-08-14
+
+### Added
+
+- **`WorkflowBuilder`** — fluent API for defining multi-step agent workflows (`step()`, `parallel()`, `build()`). Compiles to Supervisor/LangGraph internally; users never see StateGraph or flow tuples. Exports: `WorkflowBuilder`, `Workflow`.
+- **`QuickStart`** — one-liner team factory: `QuickStart.dev()`, `.research()`, `.content()`, `.fullstack()`, `.custom(agents)`. Accepts model name or LLM object.
+- **`GroupChat`** — multi-agent debate with consensus detection. `GroupChat(agents).run(topic)` returns `GroupChatResult(rounds, consensus, agreed)`.
+- **`ArtifactHistory`** — JSON-file-backed version history for artifacts. `record()` computes unified diffs; `timeline()` / `latest()` / `artifact_ids()` for queries.
+- **`BigQueryTool` / `GCSTool`** — Google Cloud integration tools for agents (`antcrew.integrations.google_cloud`). BigQueryTool wraps BQ queries; GCSTool wraps GCS upload/download.
+- **`TraceLog.replay_with_mutation()`** — replay a full run with a new system prompt for a specific agent; returns per-call diff metrics (diff_lines, diff_pct, matched).
+- **`BaseAgent.system_with_images()`** — multimodal LLM calls from any agent. Delegates to `llm.system_multimodal()`; raises `NotImplementedError` for non-vision models.
+- **`SecurityAgent`** — now also runs Bandit (Python-specific SAST) and TruffleHog (secret detection) when installed, merging findings from all static tools.
+
+---
+
 ## [0.33.13] — 2026-08-14
 
 ### Fixed
