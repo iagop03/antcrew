@@ -19,6 +19,7 @@ from antcrew.cli import (
     ops_cmds,  # noqa: F401
     project_cmds,  # noqa: F401
     publish_cmd,  # noqa: F401
+    quick_cmd,  # noqa: F401
     review_cmd,  # noqa: F401
     run_cmd,  # noqa: F401
     scan_cmd,  # noqa: F401

@@ -154,6 +154,7 @@ class BaseAgent(ABC):
     memory: Optional["BaseMemory"] = None           # set by team after construction
     repo_index: Optional["RepoIndex"] = None        # set by team after construction
     symbol_index: Optional["SymbolIndex"] = None    # set by team after construction
+    kv_memory: Optional[Any] = None                 # BaseKVMemory — injected by platform runner
 
     def __init__(
         self,
@@ -531,6 +532,17 @@ class BaseAgent(ABC):
             for r in results
         ]
         return "\n\nRelevant context from previous runs:\n" + "\n".join(lines) + "\n"
+
+    def _mem_get(self, key: str) -> Optional[Any]:
+        """Read a persistent key from KV memory (None when not set or memory not wired)."""
+        if self.kv_memory is None:
+            return None
+        return self.kv_memory.get(key)
+
+    def _mem_set(self, key: str, value: Any) -> None:
+        """Write a persistent key to KV memory (no-op when memory not wired)."""
+        if self.kv_memory is not None:
+            self.kv_memory.set(key, value)
 
     def _tracelog(self, event: str, **kwargs) -> None:
         """Emit a structured trace event to the global EventBus.
