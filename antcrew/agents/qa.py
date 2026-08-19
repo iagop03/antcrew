@@ -231,6 +231,7 @@ class QAAgent(BaseAgent):
                 new_tests.extend(
                     TestArtifact(**{k: v for k, v in t.items() if k in TestArtifact.model_fields})
                     for t in e2e_dicts
+                    if isinstance(t, dict)
                 )
 
         # Preserve tests from previous sprints; replace current sprint's.

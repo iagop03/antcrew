@@ -330,6 +330,8 @@ class _SingleAgentTeam:
             thread_id=thread_id,
         ))
         bus.emit(Event("agent.start", {"agent_name": agent_name}, run_id=run_id, thread_id=thread_id))
+        self._agent._run_id = run_id
+        self._agent._thread_id = thread_id
         t0 = time.monotonic()
         result = self._agent.run(initial)
         duration = round(time.monotonic() - t0, 3)
