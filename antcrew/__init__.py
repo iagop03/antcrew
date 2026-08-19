@@ -163,6 +163,7 @@ from antcrew.capabilities import (
     TestGenerator,
     TestRunner,
 )
+from antcrew.core.agent import compute_team_hash
 from antcrew.core.operators import (
     BaseOperator,
     CopyOp,
@@ -206,7 +207,6 @@ from antcrew.engine import (
     Validator,
     ValidatorResult,
 )
-from antcrew.core.agent import compute_team_hash
 from antcrew.eval import (
     AgentImprovement,
     AgentScore,
