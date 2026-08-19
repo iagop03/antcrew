@@ -127,7 +127,8 @@ _BUG_RESULT_CRITICAL = json.dumps(
 
 def test_qa_generates_test_artifacts():
     llm = MagicMock()
-    llm.system.side_effect = [json.dumps(_VALID_TESTS), _BUG_RESULT_CLEAN]
+    # 3 calls: unit tests, e2e tests (login.tsx has JSX → triggers E2E branch), bug detector
+    llm.system.side_effect = [json.dumps(_VALID_TESTS), "[]", _BUG_RESULT_CLEAN]
     state = _state(code_artifacts=[_code_artifact()])
     result = QAAgent(llm).run(state)
 
@@ -139,7 +140,7 @@ def test_qa_generates_test_artifacts():
 
 def test_qa_flags_critical_bugs():
     llm = MagicMock()
-    llm.system.side_effect = [json.dumps(_VALID_TESTS), _BUG_RESULT_CRITICAL]
+    llm.system.side_effect = [json.dumps(_VALID_TESTS), "[]", _BUG_RESULT_CRITICAL]
     state = _state(code_artifacts=[_code_artifact()])
     result = QAAgent(llm).run(state)
 
