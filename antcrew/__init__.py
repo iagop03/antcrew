@@ -14,6 +14,7 @@ from antcrew.agents.doc_writer import DocWriterAgent
 from antcrew.agents.email_campaign import EmailCampaignAgent
 from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
 from antcrew.agents.pm import PMAgent
+from antcrew.agents.registry import instantiate_agent
 from antcrew.agents.researcher import ResearcherAgent
 from antcrew.agents.retro import RetroAgent
 from antcrew.agents.reviewer import ReviewerAgent
@@ -21,6 +22,7 @@ from antcrew.agents.security import SecurityAgent
 from antcrew.agents.seo_analyst import SEOAnalystAgent
 from antcrew.agents.social_media import SocialMediaAgent
 from antcrew.agents.sprint_planner import SprintPlannerAgent
+from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
 from antcrew.core.artifacts import (
     ARTIFACT_REGISTRY,
     PRD,
@@ -145,8 +147,6 @@ except ImportError:
     TelegramChannel = None  # type: ignore[assignment,misc]
     TelegramIntegration = None  # type: ignore[assignment,misc]
     AgentBotConfig = None  # type: ignore[assignment,misc]
-from antcrew.agents.registry import instantiate_agent
-from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
 from antcrew.capabilities import (
     Architect,
     BugFixer,

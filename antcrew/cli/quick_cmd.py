@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Optional
 
 import typer
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
 
 from antcrew.cli._app import _MODEL_HELP, app, console
 
@@ -56,8 +56,8 @@ def quick(
         _push_quick_run(push, api_key, request, agents, model)
         return
 
-    from antcrew.agents.quick_agent import QuickTeam
     from antcrew import build_llm
+    from antcrew.agents.quick_agent import QuickTeam
 
     llm = build_llm(model)
     team = QuickTeam(specs=agents, llm=llm)

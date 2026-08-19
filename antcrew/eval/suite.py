@@ -28,10 +28,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from antcrew.eval.case import EvalCase, EvalReport
 from antcrew.eval.runner import EvalRunner
+
+if TYPE_CHECKING:
+    from antcrew.eval.feedback import ImprovementPlan
 
 
 class EvalSuite:
@@ -266,7 +269,7 @@ class EvalSuite:
             reports: Eval reports produced by :meth:`run`.
             llm:     Any :class:`~antcrew.models.base.BaseLLM` instance.
         """
-        from antcrew.eval.feedback import EvalFeedbackAgent, ImprovementPlan  # noqa: F401
+        from antcrew.eval.feedback import EvalFeedbackAgent
         agent = EvalFeedbackAgent(llm=llm)
         return agent.analyse(reports)
 

@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.20] — 2026-08-19
+
+### Added
+
+- **`QuickAgent` / `QuickTeam`** — define agents inline from a `"Role: description"` string, no subclass required. `QuickTeam` chains them sequentially. CLI: `antcrew quick "request" "Researcher: ..." "Writer: ..."`.
+- **`antcrew quick` CLI command** — zero-config agent pipelines from the terminal. Accepts `--model`, `--json`, and `--push <platform-url>` to dispatch remotely.
+- **`InMemoryKVMemory`** — persistent KV store for agent teams; loaded pre-run, snapshotted post-run. CRUD via `get / set / delete / all`.
+
+### Fixed
+
+- `_SingleAgentTeam.run()` now sets `agent._run_id` and `agent._thread_id` before calling `agent.run()` so `_tracelog()` events carry the correct run_id (was emitting `None`).
+- `QAAgent` E2E test generation: non-dict entries in the LLM response list are now silently skipped instead of raising `AttributeError`.
+
+---
+
 ## [0.33.18] — 2026-08-14
 
 ### Added

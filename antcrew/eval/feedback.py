@@ -16,8 +16,6 @@ Usage::
 """
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel
 
 from antcrew.core.agent import BaseAgent
