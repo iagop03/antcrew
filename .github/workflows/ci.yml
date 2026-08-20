@@ -46,7 +46,9 @@ jobs:
         # Installs the wheel that users actually get with pip install antcrew.
         # If this fails with ImportError or version mismatches, a release has a
         # defect that the editable install job above would not catch.
-        run: pip install "antcrew[dev]"
+        run: |
+          pip install "antcrew[dev]"
+          pip install hypothesis  # test dep added in 0.33.21; older published wheels omit it
 
       - name: Run tests against installed wheel
         run: pytest --tb=short -q
