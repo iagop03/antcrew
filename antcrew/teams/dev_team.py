@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -318,87 +320,12 @@ class DevTeam(InteractiveMixin):
                 except Exception as exc:
                     log.warning("replay_run_id %s: retrieve failed — %s", replay_run_id, exc)
             state = app.invoke(initial, config=config)
-            if self._project_kb:
-                try:
-                    self._project_kb.update_from_state(state)
-                    # Auto-record persistent feedback failures as rejected decisions.
-                    feedback_error = (state.get("_feedback_error") or "").strip()
-                    if feedback_error and not state.get("feedback_ok"):
-                        self._project_kb.record_decision(
-                            feedback_error[:200],
-                            rationale="Auto-recorded: feedback loop exhausted all retries",
-                            status="rejected",
-                            tags=["auto", "feedback-failure"],
-                        )
-                    self._project_kb.save()
-                    bus.emit(Event(
-                        "kb.updated",
-                        {"summary": self._project_kb.summary()},
-                        run_id=_run_id,
-                        thread_id=thread_id,
-                    ))
-                except Exception as exc:
-                    log.warning("ProjectKB update failed: %s", exc)
-            if self._enable_coherence and "coherence" in self._agents and state.get("code_artifacts"):
-                try:
-                    import time as _time
-                    bus.emit(Event("agent.start", {"agent_name": "coherence"},
-                                  run_id=_run_id, thread_id=thread_id))
-                    _t0 = _time.monotonic()
-                    coherence_result = self._agents["coherence"].run(state)
-                    state.update(coherence_result)
-                    _dur = round(_time.monotonic() - _t0, 3)
-                    files_corrected = len(state.get("coherence_issues") or [])
-                    bus.emit(Event("agent.end",
-                                  {"agent_name": "coherence", "duration_s": _dur,
-                                   "produced_keys": ["coherence_issues"]},
-                                  run_id=_run_id, thread_id=thread_id))
-                    bus.emit(Event(
-                        "coherence.run",
-                        {"files_corrected": files_corrected},
-                        run_id=_run_id,
-                        thread_id=thread_id,
-                    ))
-                except Exception as exc:
-                    log.warning("CoherenceAgent failed: %s", exc)
-            if self.memory:
-                self.memory.store_run(state, run_id=_run_id, project=thread_id)
-            if not dry_run and self._work_dir and state.get("code_artifacts"):
-                try:
-                    from antcrew.core.writeback import write_back
-                    wb = write_back(state, project_root=Path(self._work_dir), yes=True)
-                    if wb.total_written:
-                        bus.emit(Event(
-                            "writeback.done",
-                            {"written": wb.total_written, "project_root": str(wb.project_root)},
-                            run_id=_run_id,
-                            thread_id=thread_id,
-                        ))
-                        log.info("write_back: %d file(s) written to %s", wb.total_written, wb.project_root)
-                except Exception as exc:
-                    log.warning("write_back failed: %s", exc)
-            if not dry_run and self._runner and state.get("test_artifacts"):
-                try:
-                    state["test_results"] = self._runner.run(
-                        state["test_artifacts"],
-                        code_artifacts=state.get("code_artifacts") or [],
-                    )
-                    if (
-                        self._feedback_rounds > 0
-                        and not state["test_results"].success
-                        and "backend_dev" in self._agents
-                    ):
-                        from antcrew.core.feedback import run_test_feedback_loop
-                        state = run_test_feedback_loop(
-                            state,
-                            self._agents["backend_dev"],
-                            self._runner,
-                            max_rounds=self._feedback_rounds,
-                            lint_cmd=self._lint_cmd,
-                            work_dir=self._work_dir,
-                        )
-                except Exception as exc:
-                    log.warning("SandboxRunner failed: %s", exc)
+            if not dry_run:
+                self._handle_kb(state, _run_id, thread_id)
+            self._handle_coherence_bg(state, _run_id, thread_id)
+            self._handle_memory(state, _run_id, thread_id)
+            state = self._handle_sandbox(state, _run_id, thread_id, dry_run)
+            self._handle_writeback(state, _run_id, thread_id, dry_run)
             cost = sum(
                 (llm.get_usage_summary() or {}).get("total_cost_usd") or 0.0
                 for llm in _llms
@@ -434,6 +361,118 @@ class DevTeam(InteractiveMixin):
                 for _llm in _llms:
                     _llm.trace = None
                     _llm._trace_run_id = None
+
+    # ---------------------------------------------------------------------------
+    # Private post-pipeline helpers (extracted from run() for testability)
+    # ---------------------------------------------------------------------------
+
+    def _handle_kb(self, state: dict, run_id: Optional[str], thread_id: str) -> None:
+        """Update and save ProjectKB from pipeline state. Skipped on dry_run."""
+        if not self._project_kb:
+            return
+        from antcrew.core.events import Event, bus
+        try:
+            self._project_kb.update_from_state(state)
+            feedback_error = (state.get("_feedback_error") or "").strip()
+            if feedback_error and not state.get("feedback_ok"):
+                self._project_kb.record_decision(
+                    feedback_error[:200],
+                    rationale="Auto-recorded: feedback loop exhausted all retries",
+                    status="rejected",
+                    tags=["auto", "feedback-failure"],
+                )
+            self._project_kb.save()
+            bus.emit(Event(
+                "kb.updated",
+                {"summary": self._project_kb.summary()},
+                run_id=run_id,
+                thread_id=thread_id,
+            ))
+        except Exception as exc:
+            log.warning("ProjectKB update failed: %s", exc)
+
+    def _handle_coherence_bg(self, state: dict, run_id: Optional[str], thread_id: str) -> None:
+        """Start coherence agent in a background thread and return immediately.
+
+        The pipeline result is already available to the caller; coherence runs
+        asynchronously and emits bus events when done. The returned state dict is
+        NOT mutated from the background thread to avoid races with the caller.
+        Coherence is only started when _enable_coherence=True AND code_artifacts exist.
+        """
+        if not (self._enable_coherence and "coherence" in self._agents and state.get("code_artifacts")):
+            return
+        from antcrew.core.events import Event, bus
+        _agent = self._agents["coherence"]
+        _state_snapshot = dict(state)
+
+        def _run() -> None:
+            try:
+                bus.emit(Event("agent.start", {"agent_name": "coherence"}, run_id=run_id, thread_id=thread_id))
+                t0 = time.monotonic()
+                coherence_result = _agent.run(_state_snapshot)
+                dur = round(time.monotonic() - t0, 3)
+                files_corrected = len(coherence_result.get("coherence_issues") or [])
+                bus.emit(Event("agent.end",
+                               {"agent_name": "coherence", "duration_s": dur,
+                                "produced_keys": ["coherence_issues"]},
+                               run_id=run_id, thread_id=thread_id))
+                bus.emit(Event("coherence.run", {"files_corrected": files_corrected},
+                               run_id=run_id, thread_id=thread_id))
+            except Exception as exc:
+                log.warning("CoherenceAgent (bg) failed: %s", exc)
+
+        threading.Thread(target=_run, daemon=True, name="antcrew-coherence").start()
+
+    def _handle_memory(self, state: dict, run_id: Optional[str], thread_id: str) -> None:
+        """Persist run snapshot to memory store."""
+        if self.memory:
+            self.memory.store_run(state, run_id=run_id, project=thread_id)
+
+    def _handle_writeback(self, state: dict, run_id: Optional[str], thread_id: str, dry_run: bool) -> None:
+        """Write code artifacts to disk. Skipped on dry_run or when work_dir is unset."""
+        if dry_run or not self._work_dir or not state.get("code_artifacts"):
+            return
+        from antcrew.core.events import Event, bus
+        try:
+            from antcrew.core.writeback import write_back
+            wb = write_back(state, project_root=Path(self._work_dir), yes=True)
+            if wb.total_written:
+                bus.emit(Event(
+                    "writeback.done",
+                    {"written": wb.total_written, "project_root": str(wb.project_root)},
+                    run_id=run_id,
+                    thread_id=thread_id,
+                ))
+                log.info("write_back: %d file(s) written to %s", wb.total_written, wb.project_root)
+        except Exception as exc:
+            log.warning("write_back failed: %s", exc)
+
+    def _handle_sandbox(self, state: dict, run_id: Optional[str], thread_id: str, dry_run: bool) -> dict:
+        """Run sandbox tests and optional feedback loop. Skipped on dry_run."""
+        if dry_run or not self._runner or not state.get("test_artifacts"):
+            return state
+        try:
+            state["test_results"] = self._runner.run(
+                state["test_artifacts"],
+                code_artifacts=state.get("code_artifacts") or [],
+            )
+            if (
+                self._feedback_rounds > 0
+                and not state["test_results"].success
+                and "backend_dev" in self._agents
+            ):
+                from antcrew.core.feedback import run_test_feedback_loop
+                state = run_test_feedback_loop(
+                    state,
+                    self._agents["backend_dev"],
+                    self._runner,
+                    max_rounds=self._feedback_rounds,
+                    lint_cmd=self._lint_cmd,
+                    work_dir=self._work_dir,
+                )
+        except Exception as exc:
+            log.warning("SandboxRunner failed: %s", exc)
+        return state
 
     # run_interactive() and _apply_edit() come from InteractiveMixin
 

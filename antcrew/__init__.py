@@ -1,239 +1,324 @@
-from antcrew.agents.api_design import APIDesignAgent
-from antcrew.agents.cloud_architect import CloudArchitectAgent
-from antcrew.agents.codebase_scanner import CodebaseScannerAgent
-from antcrew.agents.coherence import CoherenceAgent
-from antcrew.agents.conflict import ConflictAgent
-from antcrew.agents.cost import CostAgent
-from antcrew.agents.data_analyst import DataAnalystAgent
-from antcrew.agents.db_schema import DBSchemaAgent
-from antcrew.agents.design_system import DesignSystemAgent
-from antcrew.agents.devops import DevOpsAgent
-from antcrew.agents.direct_agent import DirectAgent
-from antcrew.agents.discovery import DiscoveryAgent
-from antcrew.agents.doc_writer import DocWriterAgent
-from antcrew.agents.email_campaign import EmailCampaignAgent
-from antcrew.agents.feature_agent import FeatureAgent, FeatureTeam
-from antcrew.agents.pm import PMAgent
-from antcrew.agents.registry import instantiate_agent
-from antcrew.agents.researcher import ResearcherAgent
-from antcrew.agents.retro import RetroAgent
-from antcrew.agents.reviewer import ReviewerAgent
-from antcrew.agents.security import SecurityAgent
-from antcrew.agents.seo_analyst import SEOAnalystAgent
-from antcrew.agents.social_media import SocialMediaAgent
-from antcrew.agents.sprint_planner import SprintPlannerAgent
-from antcrew.agents.template_agent import TemplateAgent, load_template_agent, register_transform
-from antcrew.core.artifacts import (
-    ARTIFACT_REGISTRY,
-    PRD,
-    ArtifactContract,
-    CloudArchSpec,
-    CloudService,
-    CodeArtifact,
-    CodebaseAnalysis,
-    CodeReview,
-    ConflictItem,
-    ConflictReport,
-    ContentPiece,
-    ContractError,
-    DataAnalysisReport,
-    DatabaseSchema,
-    DataInsight,
-    DBColumn,
-    DBTable,
-    DesignSystemComponent,
-    DesignSystemDoc,
-    DesignTokens,
-    DevOpsArtifact,
-    DiscoveryContext,
-    DiscoveryQA,
-    DocumentationArtifact,
-    EmailCampaign,
-    ResearchDocument,
-    RetroReport,
-    Screen,
-    SecurityFinding,
-    SecurityReport,
-    SEOAnalysis,
-    SocialMediaPlan,
-    TestArtifact,
-    Ticket,
-    UIDesignSpec,
-    coerce_list,
-    coerce_model,
-    resolve_artifact_schema,
-)
-from antcrew.core.channel import BaseChannel
-from antcrew.core.feedback import FeedbackLoop, FeedbackResult, FeedbackRunner
-from antcrew.core.pipeline import Pipeline
-from antcrew.core.project_kb import ProjectKB
-from antcrew.core.router import LLMClassifier, RouteClassifier, Router, RuleClassifier
-from antcrew.core.supervisor import FanOut, ParallelGroup, Supervisor, fan_out, parallel
-from antcrew.core.task_classifier import MinimalPipeline, TaskType, classify_task
-from antcrew.core.tools import (
-    BaseTool,
-    CodeExecutorTool,
-    ListDirTool,
-    ReadFileTool,
-    ToolResult,
-    WebSearchTool,
-    WriteFileTool,
-)
-from antcrew.integrations.confluence import ConfluenceIntegration
-from antcrew.models.comparison import ComparisonLLM
-from antcrew.models.fallback import FallbackLLM
-from antcrew.models.gemini_model import GeminiModel
-from antcrew.models.simulated import SimulatedLLM
-from antcrew.teams.async_teams import (
-    AsyncContentTeam,
-    AsyncCustomTeam,
-    AsyncDevTeam,
-    AsyncFeatureTeam,
-    AsyncFullStackTeam,
-    AsyncResearchTeam,
-    AsyncRouter,
-)
-from antcrew.teams.content_team import ContentTeam
-from antcrew.teams.dev_team import DevTeam
-from antcrew.teams.fullstack_team import FullStackTeam
-from antcrew.teams.research_team import ResearchTeam
+"""antcrew — Public API.
 
+All exports are lazy: submodules are only imported on first attribute access, so
+``import antcrew`` does not materialise the full dependency tree.  CLI cold-start
+drops from ~1.8 s to ~0.6 s.  Attribute caching (``globals()[name] = value``) means
+every subsequent access is a plain dict lookup — no overhead after the first call.
+"""
+from __future__ import annotations
+
+import importlib
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Optional-dependency map — ImportError → None (same behaviour as before)
+# ---------------------------------------------------------------------------
+_OPTIONAL_MAP: dict[str, tuple[str, str]] = {
+    "OpenAIModel":         ("antcrew.models.openai_model",                "OpenAIModel"),
+    "AzureOpenAIModel":    ("antcrew.models.azure_openai_model",           "AzureOpenAIModel"),
+    "LiteLLMModel":        ("antcrew.models.litellm_model",                "LiteLLMModel"),
+    "TelegramChannel":     ("antcrew.integrations.telegram.integration",   "TelegramChannel"),
+    "TelegramIntegration": ("antcrew.integrations.telegram.integration",   "TelegramIntegration"),
+    "AgentBotConfig":      ("antcrew.integrations.telegram.integration",   "AgentBotConfig"),
+}
+
+# ---------------------------------------------------------------------------
+# Lazy import map — name → (module_path, attribute_in_module)
+# Attribute may differ from name (e.g. SandboxRunResult ← sandbox.RunResult)
+# ---------------------------------------------------------------------------
+_LAZY_MAP: dict[str, tuple[str, str]] = {
+    # Agents
+    "APIDesignAgent":      ("antcrew.agents.api_design",        "APIDesignAgent"),
+    "CloudArchitectAgent": ("antcrew.agents.cloud_architect",   "CloudArchitectAgent"),
+    "CodebaseScannerAgent":("antcrew.agents.codebase_scanner",  "CodebaseScannerAgent"),
+    "CoherenceAgent":      ("antcrew.agents.coherence",         "CoherenceAgent"),
+    "ConflictAgent":       ("antcrew.agents.conflict",          "ConflictAgent"),
+    "CostAgent":           ("antcrew.agents.cost",              "CostAgent"),
+    "DataAnalystAgent":    ("antcrew.agents.data_analyst",      "DataAnalystAgent"),
+    "DBSchemaAgent":       ("antcrew.agents.db_schema",         "DBSchemaAgent"),
+    "DesignSystemAgent":   ("antcrew.agents.design_system",     "DesignSystemAgent"),
+    "DevOpsAgent":         ("antcrew.agents.devops",            "DevOpsAgent"),
+    "DirectAgent":         ("antcrew.agents.direct_agent",      "DirectAgent"),
+    "DiscoveryAgent":      ("antcrew.agents.discovery",         "DiscoveryAgent"),
+    "DocWriterAgent":      ("antcrew.agents.doc_writer",        "DocWriterAgent"),
+    "EmailCampaignAgent":  ("antcrew.agents.email_campaign",    "EmailCampaignAgent"),
+    "FeatureAgent":        ("antcrew.agents.feature_agent",     "FeatureAgent"),
+    "FeatureTeam":         ("antcrew.agents.feature_agent",     "FeatureTeam"),
+    "PMAgent":             ("antcrew.agents.pm",                "PMAgent"),
+    "instantiate_agent":   ("antcrew.agents.registry",          "instantiate_agent"),
+    "ResearcherAgent":     ("antcrew.agents.researcher",        "ResearcherAgent"),
+    "RetroAgent":          ("antcrew.agents.retro",             "RetroAgent"),
+    "ReviewerAgent":       ("antcrew.agents.reviewer",          "ReviewerAgent"),
+    "SecurityAgent":       ("antcrew.agents.security",          "SecurityAgent"),
+    "SEOAnalystAgent":     ("antcrew.agents.seo_analyst",       "SEOAnalystAgent"),
+    "SocialMediaAgent":    ("antcrew.agents.social_media",      "SocialMediaAgent"),
+    "SprintPlannerAgent":  ("antcrew.agents.sprint_planner",    "SprintPlannerAgent"),
+    "TemplateAgent":       ("antcrew.agents.template_agent",    "TemplateAgent"),
+    "load_template_agent": ("antcrew.agents.template_agent",    "load_template_agent"),
+    "register_transform":  ("antcrew.agents.template_agent",    "register_transform"),
+    # Artifacts
+    "ARTIFACT_REGISTRY":   ("antcrew.core.artifacts", "ARTIFACT_REGISTRY"),
+    "PRD":                 ("antcrew.core.artifacts", "PRD"),
+    "ArtifactContract":    ("antcrew.core.artifacts", "ArtifactContract"),
+    "ArtifactHistory":     ("antcrew.core.artifacts", "ArtifactHistory"),
+    "ArtifactVersion":     ("antcrew.core.artifacts", "ArtifactVersion"),
+    "CloudArchSpec":       ("antcrew.core.artifacts", "CloudArchSpec"),
+    "CloudService":        ("antcrew.core.artifacts", "CloudService"),
+    "CodeArtifact":        ("antcrew.core.artifacts", "CodeArtifact"),
+    "CodebaseAnalysis":    ("antcrew.core.artifacts", "CodebaseAnalysis"),
+    "CodeReview":          ("antcrew.core.artifacts", "CodeReview"),
+    "ConflictItem":        ("antcrew.core.artifacts", "ConflictItem"),
+    "ConflictReport":      ("antcrew.core.artifacts", "ConflictReport"),
+    "ContentPiece":        ("antcrew.core.artifacts", "ContentPiece"),
+    "ContractError":       ("antcrew.core.artifacts", "ContractError"),
+    "DataAnalysisReport":  ("antcrew.core.artifacts", "DataAnalysisReport"),
+    "DatabaseSchema":      ("antcrew.core.artifacts", "DatabaseSchema"),
+    "DataInsight":         ("antcrew.core.artifacts", "DataInsight"),
+    "DBColumn":            ("antcrew.core.artifacts", "DBColumn"),
+    "DBTable":             ("antcrew.core.artifacts", "DBTable"),
+    "DesignSystemComponent":("antcrew.core.artifacts","DesignSystemComponent"),
+    "DesignSystemDoc":     ("antcrew.core.artifacts", "DesignSystemDoc"),
+    "DesignTokens":        ("antcrew.core.artifacts", "DesignTokens"),
+    "DevOpsArtifact":      ("antcrew.core.artifacts", "DevOpsArtifact"),
+    "DiscoveryContext":    ("antcrew.core.artifacts", "DiscoveryContext"),
+    "DiscoveryQA":         ("antcrew.core.artifacts", "DiscoveryQA"),
+    "DocumentationArtifact":("antcrew.core.artifacts","DocumentationArtifact"),
+    "EmailCampaign":       ("antcrew.core.artifacts", "EmailCampaign"),
+    "ResearchDocument":    ("antcrew.core.artifacts", "ResearchDocument"),
+    "RetroReport":         ("antcrew.core.artifacts", "RetroReport"),
+    "Screen":              ("antcrew.core.artifacts", "Screen"),
+    "SecurityFinding":     ("antcrew.core.artifacts", "SecurityFinding"),
+    "SecurityReport":      ("antcrew.core.artifacts", "SecurityReport"),
+    "SEOAnalysis":         ("antcrew.core.artifacts", "SEOAnalysis"),
+    "SocialMediaPlan":     ("antcrew.core.artifacts", "SocialMediaPlan"),
+    "TestArtifact":        ("antcrew.core.artifacts", "TestArtifact"),
+    "Ticket":              ("antcrew.core.artifacts", "Ticket"),
+    "UIDesignSpec":        ("antcrew.core.artifacts", "UIDesignSpec"),
+    "coerce_list":         ("antcrew.core.artifacts", "coerce_list"),
+    "coerce_model":        ("antcrew.core.artifacts", "coerce_model"),
+    "resolve_artifact_schema":("antcrew.core.artifacts","resolve_artifact_schema"),
+    # Core
+    "BaseChannel":         ("antcrew.core.channel",          "BaseChannel"),
+    "FeedbackLoop":        ("antcrew.core.feedback",         "FeedbackLoop"),
+    "FeedbackResult":      ("antcrew.core.feedback",         "FeedbackResult"),
+    "FeedbackRunner":      ("antcrew.core.feedback",         "FeedbackRunner"),
+    "Pipeline":            ("antcrew.core.pipeline",         "Pipeline"),
+    "ProjectKB":           ("antcrew.core.project_kb",       "ProjectKB"),
+    "LLMClassifier":       ("antcrew.core.router",           "LLMClassifier"),
+    "RouteClassifier":     ("antcrew.core.router",           "RouteClassifier"),
+    "Router":              ("antcrew.core.router",           "Router"),
+    "RuleClassifier":      ("antcrew.core.router",           "RuleClassifier"),
+    "FanOut":              ("antcrew.core.supervisor",       "FanOut"),
+    "ParallelGroup":       ("antcrew.core.supervisor",       "ParallelGroup"),
+    "Supervisor":          ("antcrew.core.supervisor",       "Supervisor"),
+    "fan_out":             ("antcrew.core.supervisor",       "fan_out"),
+    "parallel":            ("antcrew.core.supervisor",       "parallel"),
+    "MinimalPipeline":     ("antcrew.core.task_classifier",  "MinimalPipeline"),
+    "TaskType":            ("antcrew.core.task_classifier",  "TaskType"),
+    "classify_task":       ("antcrew.core.task_classifier",  "classify_task"),
+    "BaseTool":            ("antcrew.core.tools",            "BaseTool"),
+    "CodeExecutorTool":    ("antcrew.core.tools",            "CodeExecutorTool"),
+    "ListDirTool":         ("antcrew.core.tools",            "ListDirTool"),
+    "ReadFileTool":        ("antcrew.core.tools",            "ReadFileTool"),
+    "ToolResult":          ("antcrew.core.tools",            "ToolResult"),
+    "WebSearchTool":       ("antcrew.core.tools",            "WebSearchTool"),
+    "WriteFileTool":       ("antcrew.core.tools",            "WriteFileTool"),
+    "Event":               ("antcrew.core.events",           "Event"),
+    "EventBus":            ("antcrew.core.events",           "EventBus"),
+    "bus":                 ("antcrew.core.events",           "bus"),
+    "capture":             ("antcrew.core.events",           "capture"),
+    "new_run_id":          ("antcrew.core.events",           "new_run_id"),
+    "CostLimitExceeded":   ("antcrew.core.exceptions",       "CostLimitExceeded"),
+    "AllGate":             ("antcrew.core.gates",            "AllGate"),
+    "AnyGate":             ("antcrew.core.gates",            "AnyGate"),
+    "BaseGate":            ("antcrew.core.gates",            "BaseGate"),
+    "GateError":           ("antcrew.core.gates",            "GateError"),
+    "GateResult":          ("antcrew.core.gates",            "GateResult"),
+    "JsonGate":            ("antcrew.core.gates",            "JsonGate"),
+    "NonEmptyGate":        ("antcrew.core.gates",            "NonEmptyGate"),
+    "PythonSyntaxGate":    ("antcrew.core.gates",            "PythonSyntaxGate"),
+    "SchemaGate":          ("antcrew.core.gates",            "SchemaGate"),
+    "parse_gate":          ("antcrew.core.gates",            "parse_gate"),
+    "GroupChat":           ("antcrew.core.group_chat",       "GroupChat"),
+    "GroupChatResult":     ("antcrew.core.group_chat",       "GroupChatResult"),
+    "FlexibleHITL":        ("antcrew.core.hitl",             "FlexibleHITL"),
+    "HITLAction":          ("antcrew.core.hitl",             "HITLAction"),
+    "HITLDecision":        ("antcrew.core.hitl",             "HITLDecision"),
+    "RunResult":           ("antcrew.core.run_result",       "RunResult"),
+    "Workflow":            ("antcrew.core.workflow_builder",  "Workflow"),
+    "WorkflowBuilder":     ("antcrew.core.workflow_builder",  "WorkflowBuilder"),
+    "compute_team_hash":   ("antcrew.core.agent",            "compute_team_hash"),
+    "BaseOperator":        ("antcrew.core.operators",        "BaseOperator"),
+    "CopyOp":              ("antcrew.core.operators",        "CopyOp"),
+    "DropOp":              ("antcrew.core.operators",        "DropOp"),
+    "MapOp":               ("antcrew.core.operators",        "MapOp"),
+    "MergeOp":             ("antcrew.core.operators",        "MergeOp"),
+    "RenameOp":            ("antcrew.core.operators",        "RenameOp"),
+    "SetOp":               ("antcrew.core.operators",        "SetOp"),
+    "build_operator":      ("antcrew.core.operators",        "build_operator"),
+    "validate_agent_dag":  ("antcrew.core.validation",       "validate_agent_dag"),
+    # Integrations
+    "ConfluenceIntegration":("antcrew.integrations.confluence","ConfluenceIntegration"),
+    "ConsoleChannel":      ("antcrew.integrations.console",  "ConsoleChannel"),
+    "GitHubIntegration":   ("antcrew.integrations.github",   "GitHubIntegration"),
+    "BigQueryTool":        ("antcrew.integrations.google_cloud","BigQueryTool"),
+    "GCSTool":             ("antcrew.integrations.google_cloud","GCSTool"),
+    "JiraIntegration":     ("antcrew.integrations.jira",     "JiraIntegration"),
+    "SlackChannel":        ("antcrew.integrations.slack",    "SlackChannel"),
+    # Models
+    "ComparisonLLM":       ("antcrew.models.comparison",     "ComparisonLLM"),
+    "FallbackLLM":         ("antcrew.models.fallback",       "FallbackLLM"),
+    "GeminiModel":         ("antcrew.models.gemini_model",   "GeminiModel"),
+    "SimulatedLLM":        ("antcrew.models.simulated",      "SimulatedLLM"),
+    "FileLLMCache":        ("antcrew.models.cache",          "FileLLMCache"),
+    "LLMCache":            ("antcrew.models.cache",          "LLMCache"),
+    # Teams
+    "AsyncContentTeam":    ("antcrew.teams.async_teams",     "AsyncContentTeam"),
+    "AsyncCustomTeam":     ("antcrew.teams.async_teams",     "AsyncCustomTeam"),
+    "AsyncDevTeam":        ("antcrew.teams.async_teams",     "AsyncDevTeam"),
+    "AsyncFeatureTeam":    ("antcrew.teams.async_teams",     "AsyncFeatureTeam"),
+    "AsyncFullStackTeam":  ("antcrew.teams.async_teams",     "AsyncFullStackTeam"),
+    "AsyncResearchTeam":   ("antcrew.teams.async_teams",     "AsyncResearchTeam"),
+    "AsyncRouter":         ("antcrew.teams.async_teams",     "AsyncRouter"),
+    "ContentTeam":         ("antcrew.teams.content_team",    "ContentTeam"),
+    "DevTeam":             ("antcrew.teams.dev_team",        "DevTeam"),
+    "FullStackTeam":       ("antcrew.teams.fullstack_team",  "FullStackTeam"),
+    "ResearchTeam":        ("antcrew.teams.research_team",   "ResearchTeam"),
+    "AGENT_ARTIFACT":      ("antcrew.teams.base",            "AGENT_ARTIFACT"),
+    "CustomTeam":          ("antcrew.teams.custom_team",     "CustomTeam"),
+    # Misc packages
+    "SqliteSaver":         ("antcrew.checkpointers",         "SqliteSaver"),
+    "TeamContext":         ("antcrew.config",                "TeamContext"),
+    "build_llm":           ("antcrew.config",                "build_llm"),
+    "build_runner":        ("antcrew.config",                "build_runner"),
+    "load_context":        ("antcrew.config",                "load_context"),
+    "format_flow":         ("antcrew.flow",                  "format_flow"),
+    "load_flow":           ("antcrew.flow",                  "load_flow"),
+    "validate_flow":       ("antcrew.flow",                  "validate_flow"),
+    "Project":             ("antcrew.project",               "Project"),
+    "QuickStart":          ("antcrew.quickstart",            "QuickStart"),
+    "DockerRunner":        ("antcrew.sandbox",               "DockerRunner"),
+    "ExecutionResult":     ("antcrew.sandbox",               "ExecutionResult"),
+    "LocalRunner":         ("antcrew.sandbox",               "LocalRunner"),
+    "SandboxRunResult":    ("antcrew.sandbox",               "RunResult"),
+    "SandboxRunner":       ("antcrew.sandbox",               "SandboxRunner"),
+    "ReplayError":         ("antcrew.trace",                 "ReplayError"),
+    "TraceLog":            ("antcrew.trace",                 "TraceLog"),
+    # Capabilities
+    "Architect":           ("antcrew.capabilities",          "Architect"),
+    "BugFixer":            ("antcrew.capabilities",          "BugFixer"),
+    "CodeGenerator":       ("antcrew.capabilities",          "CodeGenerator"),
+    "CodeRegenerator":     ("antcrew.capabilities",          "CodeRegenerator"),
+    "CodeReviewer":        ("antcrew.capabilities",          "CodeReviewer"),
+    "DependencyInstaller": ("antcrew.capabilities",          "DependencyInstaller"),
+    "DocGenerator":        ("antcrew.capabilities",          "DocGenerator"),
+    "HitlReviewer":        ("antcrew.capabilities",          "HitlReviewer"),
+    "ReviewFixer":         ("antcrew.capabilities",          "ReviewFixer"),
+    "SpecExtractor":       ("antcrew.capabilities",          "SpecExtractor"),
+    "TaskPlanner":         ("antcrew.capabilities",          "TaskPlanner"),
+    "TeamExecutor":        ("antcrew.capabilities",          "TeamExecutor"),
+    "TestGenerator":       ("antcrew.capabilities",          "TestGenerator"),
+    "TestRunner":          ("antcrew.capabilities",          "TestRunner"),
+    # Engine
+    "EMPTY_DELTA":         ("antcrew.engine", "EMPTY_DELTA"),
+    "Artifact":            ("antcrew.engine", "Artifact"),
+    "ArtifactDelta":       ("antcrew.engine", "ArtifactDelta"),
+    "ArtifactId":          ("antcrew.engine", "ArtifactId"),
+    "ArtifactKind":        ("antcrew.engine", "ArtifactKind"),
+    "ArtifactStore":       ("antcrew.engine", "ArtifactStore"),
+    "CapabilityDescriptor":("antcrew.engine", "CapabilityDescriptor"),
+    "CapabilityRegistry":  ("antcrew.engine", "CapabilityRegistry"),
+    "CapabilityResult":    ("antcrew.engine", "CapabilityResult"),
+    "CapabilitySelector":  ("antcrew.engine", "CapabilitySelector"),
+    "CheapestFirst":       ("antcrew.engine", "CheapestFirst"),
+    "Condition":           ("antcrew.engine", "Condition"),
+    "ConditionId":         ("antcrew.engine", "ConditionId"),
+    "Constraints":         ("antcrew.engine", "Constraints"),
+    "DesiredProjectState": ("antcrew.engine", "DesiredProjectState"),
+    "EngineLoop":          ("antcrew.engine", "EngineLoop"),
+    "EngineLoopError":     ("antcrew.engine", "EngineLoopError"),
+    "EventBusBridge":      ("antcrew.engine", "EventBusBridge"),
+    "EventLog":            ("antcrew.engine", "EventLog"),
+    "Executor":            ("antcrew.engine", "Executor"),
+    "FilesystemStore":     ("antcrew.engine", "FilesystemStore"),
+    "FirstMatch":          ("antcrew.engine", "FirstMatch"),
+    "Goal":                ("antcrew.engine", "Goal"),
+    "MemoryStore":         ("antcrew.engine", "MemoryStore"),
+    "MostProductive":      ("antcrew.engine", "MostProductive"),
+    "MultiRepoStore":      ("antcrew.engine", "MultiRepoStore"),
+    "PrioritySelector":    ("antcrew.engine", "PrioritySelector"),
+    "ProjectState":        ("antcrew.engine", "ProjectState"),
+    "Validator":           ("antcrew.engine", "Validator"),
+    "ValidatorResult":     ("antcrew.engine", "ValidatorResult"),
+    # Eval
+    "AgentImprovement":    ("antcrew.eval", "AgentImprovement"),
+    "AgentScore":          ("antcrew.eval", "AgentScore"),
+    "EvalCase":            ("antcrew.eval", "EvalCase"),
+    "EvalFeedbackAgent":   ("antcrew.eval", "EvalFeedbackAgent"),
+    "EvalReport":          ("antcrew.eval", "EvalReport"),
+    "EvalRunner":          ("antcrew.eval", "EvalRunner"),
+    "EvalSuite":           ("antcrew.eval", "EvalSuite"),
+    "ImprovementPlan":     ("antcrew.eval", "ImprovementPlan"),
+    "JudgeResult":         ("antcrew.eval", "JudgeResult"),
+    # MCP
+    "MCPRegistry":         ("antcrew.tools.mcp", "MCPRegistry"),
+    "MCPTool":             ("antcrew.tools.mcp", "MCPTool"),
+    "MCPToolset":          ("antcrew.tools.mcp", "MCPToolset"),
+    # Memory
+    "BaseMemory":          ("antcrew.memory.store",      "BaseMemory"),
+    "ChromaMemory":        ("antcrew.memory.chroma",     "ChromaMemory"),
+    "InMemoryMemory":      ("antcrew.memory.store",      "InMemoryMemory"),
+    "MemoryResult":        ("antcrew.memory.store",      "MemoryResult"),
+    "RunSnapshot":         ("antcrew.memory.store",      "RunSnapshot"),
+    "RepoIndex":           ("antcrew.memory.repo_index", "RepoIndex"),
+    # Presets
+    "AgentPreset":         ("antcrew.presets", "AgentPreset"),
+    "get_preset":          ("antcrew.presets", "get_preset"),
+    "CONCISE":             ("antcrew.presets", "CONCISE"),
+    "STRICT":              ("antcrew.presets", "STRICT"),
+    "VERBOSE":             ("antcrew.presets", "VERBOSE"),
+    "CAREFUL":             ("antcrew.presets", "CAREFUL"),
+    # Testing
+    "SequencedLLM":        ("antcrew.testing",           "SequencedLLM"),
+    # Persistence
+    "load_state":          ("antcrew.utils.persistence", "load_state"),
+    "save_state":          ("antcrew.utils.persistence", "save_state"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Module-level lazy loader — imports submodules on first attribute access."""
+    if name in _OPTIONAL_MAP:
+        module_path, attr = _OPTIONAL_MAP[name]
+        try:
+            value = getattr(importlib.import_module(module_path), attr)
+        except ImportError:
+            value = None
+        globals()[name] = value
+        return value
+
+    if name in _LAZY_MAP:
+        module_path, attr = _LAZY_MAP[name]
+        value = getattr(importlib.import_module(module_path), attr)
+        globals()[name] = value
+        return value
+
+    raise AttributeError(f"module 'antcrew' has no attribute {name!r}")
+
+
+# ---------------------------------------------------------------------------
+# __version__ — resolved immediately (importlib.metadata is stdlib, cheap)
+# ---------------------------------------------------------------------------
 try:
-    from antcrew.models.azure_openai_model import AzureOpenAIModel
-    from antcrew.models.openai_model import OpenAIModel
-except ImportError:
-    OpenAIModel = None  # type: ignore[assignment,misc]
-    AzureOpenAIModel = None  # type: ignore[assignment,misc]
-from antcrew.checkpointers import SqliteSaver
-from antcrew.config import TeamContext, build_llm, build_runner, load_context
-from antcrew.core.artifacts import ArtifactHistory, ArtifactVersion
-from antcrew.core.events import Event, EventBus, bus, capture, new_run_id
-from antcrew.core.exceptions import CostLimitExceeded
-from antcrew.core.gates import (
-    AllGate,
-    AnyGate,
-    BaseGate,
-    GateError,
-    GateResult,
-    JsonGate,
-    NonEmptyGate,
-    PythonSyntaxGate,
-    SchemaGate,
-    parse_gate,
-)
-from antcrew.core.group_chat import GroupChat, GroupChatResult
-from antcrew.core.hitl import FlexibleHITL, HITLAction, HITLDecision
-from antcrew.core.run_result import RunResult
-from antcrew.core.workflow_builder import Workflow, WorkflowBuilder
-from antcrew.flow import format_flow, load_flow, validate_flow
-from antcrew.integrations.console import ConsoleChannel
-from antcrew.integrations.github import GitHubIntegration
-from antcrew.integrations.google_cloud import BigQueryTool, GCSTool
-from antcrew.integrations.jira import JiraIntegration
-from antcrew.models.cache import FileLLMCache, LLMCache
-from antcrew.project import Project
-from antcrew.quickstart import QuickStart
-from antcrew.sandbox import DockerRunner, ExecutionResult, LocalRunner, SandboxRunner
-from antcrew.sandbox import RunResult as SandboxRunResult
-from antcrew.trace import ReplayError, TraceLog
+    from importlib.metadata import version as _v
+    __version__: str = _v("antcrew")
+except Exception:
+    __version__ = "unknown"
 
-try:
-    from antcrew.integrations.telegram.integration import (
-        AgentBotConfig,
-        TelegramChannel,
-        TelegramIntegration,
-    )
-except ImportError:
-    TelegramChannel = None  # type: ignore[assignment,misc]
-    TelegramIntegration = None  # type: ignore[assignment,misc]
-    AgentBotConfig = None  # type: ignore[assignment,misc]
-from antcrew.capabilities import (
-    Architect,
-    BugFixer,
-    CodeGenerator,
-    CodeRegenerator,
-    CodeReviewer,
-    DependencyInstaller,
-    DocGenerator,
-    HitlReviewer,
-    ReviewFixer,
-    SpecExtractor,
-    TaskPlanner,
-    TeamExecutor,
-    TestGenerator,
-    TestRunner,
-)
-from antcrew.core.agent import compute_team_hash
-from antcrew.core.operators import (
-    BaseOperator,
-    CopyOp,
-    DropOp,
-    MapOp,
-    MergeOp,
-    RenameOp,
-    SetOp,
-    build_operator,
-)
-from antcrew.core.validation import validate_agent_dag
-from antcrew.engine import (
-    EMPTY_DELTA,
-    Artifact,
-    ArtifactDelta,
-    ArtifactId,
-    ArtifactKind,
-    ArtifactStore,
-    CapabilityDescriptor,
-    CapabilityRegistry,
-    CapabilityResult,
-    CapabilitySelector,
-    CheapestFirst,
-    Condition,
-    ConditionId,
-    Constraints,
-    DesiredProjectState,
-    EngineLoop,
-    EngineLoopError,
-    EventBusBridge,
-    EventLog,
-    Executor,
-    FilesystemStore,
-    FirstMatch,
-    Goal,
-    MemoryStore,
-    MostProductive,
-    MultiRepoStore,
-    PrioritySelector,
-    ProjectState,
-    Validator,
-    ValidatorResult,
-)
-from antcrew.eval import (
-    AgentImprovement,
-    AgentScore,
-    EvalCase,
-    EvalFeedbackAgent,
-    EvalReport,
-    EvalRunner,
-    EvalSuite,
-    ImprovementPlan,
-    JudgeResult,
-)
-from antcrew.tools.mcp import MCPRegistry, MCPTool, MCPToolset
 
-try:
-    from antcrew.models.litellm_model import LiteLLMModel
-except ImportError:
-    LiteLLMModel = None  # type: ignore[assignment,misc]
-from antcrew.integrations.slack import SlackChannel
-from antcrew.memory.chroma import ChromaMemory
-from antcrew.memory.repo_index import RepoIndex
-from antcrew.memory.store import BaseMemory, InMemoryMemory, MemoryResult, RunSnapshot
-from antcrew.presets import CAREFUL, CONCISE, STRICT, VERBOSE, AgentPreset, get_preset
-from antcrew.teams.base import AGENT_ARTIFACT
-from antcrew.teams.custom_team import CustomTeam
-from antcrew.testing import SequencedLLM
-from antcrew.utils.persistence import load_state, save_state
-
+# ---------------------------------------------------------------------------
+# __all__ — public API surface (unchanged from previous version)
+# ---------------------------------------------------------------------------
 __all__ = [
     # Teams
     "DevTeam",
@@ -519,9 +604,3 @@ __all__ = [
     "classify_task",
     "MinimalPipeline",
 ]
-try:
-    from importlib.metadata import version as _v
-
-    __version__: str = _v("antcrew")
-except Exception:
-    __version__ = "unknown"

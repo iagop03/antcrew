@@ -190,9 +190,19 @@ class BaseAgent(ABC):
             self.output_schema = output_schema
         # Per-agent cost cap: raises CostLimitExceeded when exceeded
         self.max_cost_usd: Optional[float] = max_cost_usd
-        # Run context — set by _make_evented_run before each run so _tracelog can correlate
+        # Run context — set by bind_run() before each run so _tracelog can correlate
         self._run_id: Optional[str] = None
         self._thread_id: Optional[str] = None
+
+    def bind_run(self, run_id: Optional[str], thread_id: Optional[str] = None) -> None:
+        """Set run context so _tracelog() can correlate events to the current run.
+
+        Called by _make_evented_run (multi-agent LangGraph path) and by
+        _SingleAgentTeam.run (single-agent bypass path) before invoking run().
+        Replaces direct mutation of private attrs from external callers.
+        """
+        self._run_id = run_id
+        self._thread_id = thread_id
 
     @abstractmethod
     def run(self, state: TeamState) -> dict:

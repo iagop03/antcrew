@@ -276,9 +276,8 @@ def _make_evented_run(run_fn: Callable, agent_name: str, agent=None) -> Callable
         run_id = state.get("_run_id")
         thread_id = state.get("_thread_id", "default")
         # Inject run context so agent._tracelog() can correlate events to the run
-        if agent is not None:
-            agent._run_id = run_id
-            agent._thread_id = thread_id
+        if agent is not None and hasattr(agent, "bind_run"):
+            agent.bind_run(run_id, thread_id)
         bus.emit(Event(
             "agent.start",
             {"agent_name": agent_name, "stage": getattr(agent, "stage", "")},
