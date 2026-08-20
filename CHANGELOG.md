@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.21] — 2026-08-21
+
+### Added
+
+- **Lazy `import antcrew`** — cold import time drops from ~1.8 s to ~230 ms. All 200+ public symbols now load on first access via `__getattr__`. Optional-dependency symbols (`OpenAIModel`, `LiteLLMModel`, `TelegramChannel`, etc.) return `None` if the dependency is missing instead of raising `ImportError`.
+- **`BaseAgent.bind_run(run_id, thread_id=None)`** — new public method for binding run context. Replaces direct mutation of `_run_id` / `_thread_id` by platform internals; framework guards calls with `hasattr` so non-agent objects (e.g. `ParallelGroup`) are not affected.
+- **Hypothesis property-based tests** — 30 tests in `tests/test_gates_property.py` covering contract gates under random inputs.
+
+### Changed
+
+- **`DevTeam.run()`** refactored into 5 private helpers (`_prepare_context`, `_run_agents`, `_run_coherence`, `_update_kb`, `_build_result`). Coherence agent now runs in a daemon background thread — runs return immediately after the main pipeline without blocking the caller.
+- **KB update guard** — `DevTeam._update_kb()` is skipped when `dry_run=True` or when no `code_artifacts` were produced, preventing partial-run context from polluting the knowledge base.
+
+### Fixed
+
+- `_make_evented_run()` in `events.py` guarded `bind_run()` call with `hasattr` — `ParallelGroup` is not a `BaseAgent` subclass and previously caused `AttributeError` when used in parallel pipelines.
+- `_SingleAgentTeam.__init__()` accepts no `agent_name` kwarg (test fixture corrected).
+
+---
+
 ## [0.33.20] — 2026-08-19
 
 ### Added
