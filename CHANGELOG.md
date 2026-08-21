@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.22] — 2026-08-21
+
+### Added
+
+- **`antcrew test`** — new CLI command for prompt regression testing via `TraceLog.replay_with_mutation()`. Replays a recorded run with a mutated system prompt for one agent, reports `diff_pct`, and exits 1 when `diff_pct > threshold`. Supports `--prompt <file>`, `--prompt-text`, `--threshold`, `--json` output. Use as a CI/CD gate to catch prompt regressions before production.
+
+---
+
 ## [0.33.21] — 2026-08-21
 
 ### Added
