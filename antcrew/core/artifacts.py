@@ -414,6 +414,73 @@ class DesignSystemDoc(BaseModel):
     rationale: Optional[str] = None
 
 
+# ── Legal review artifacts ────────────────────────────────────────────────────
+
+class RiskLevel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class LegalClause(BaseModel):
+    clause_id: str = ""
+    section: str = ""
+    text: str
+    risk_level: RiskLevel = RiskLevel.LOW
+    issue: str = ""
+    recommendation: str = ""
+    regulations: list[str] = Field(default_factory=list)
+
+
+class LegalFindingArtifact(BaseModel):
+    document_name: str = ""
+    document_type: str = ""
+    clauses: list[LegalClause] = Field(default_factory=list)
+    high_risk_count: int = 0
+    summary: str = ""
+    approved: bool = False
+    rationale: Optional[str] = None
+
+    def model_post_init(self, __context) -> None:
+        self.high_risk_count = sum(
+            1 for c in self.clauses
+            if c.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
+        )
+
+
+# ── Code migration artifacts ──────────────────────────────────────────────────
+
+class MigrationIssue(BaseModel):
+    file_path: str
+    line: Optional[int] = None
+    issue_type: str = ""
+    description: str
+    suggested_fix: str = ""
+    severity: Severity = "warning"
+    auto_fixable: bool = False
+
+
+class MigrationPlanArtifact(BaseModel):
+    source_pattern: str = ""
+    target_pattern: str = ""
+    total_files: int = 0
+    issues: list[MigrationIssue] = Field(default_factory=list)
+    migrated_files: list[str] = Field(default_factory=list)
+    skipped_files: list[str] = Field(default_factory=list)
+    test_passed: bool = False
+    summary: str = ""
+    rationale: Optional[str] = None
+
+    @property
+    def critical_count(self) -> int:
+        return sum(1 for i in self.issues if i.severity == "critical")
+
+    @property
+    def auto_fixable_count(self) -> int:
+        return sum(1 for i in self.issues if i.auto_fixable)
+
+
 # ---------------------------------------------------------------------------
 # Workspace contract schema registry
 # ---------------------------------------------------------------------------

@@ -118,10 +118,10 @@ class EventBus:
         """Remove *handler* for *event_type*."""
         with self._lock:
             if event_type == "*":
-                self._wildcard = [h for h in self._wildcard if h is not handler]
+                self._wildcard = [h for h in self._wildcard if h != handler]
             else:
                 self._handlers[event_type] = [
-                    h for h in self._handlers.get(event_type, []) if h is not handler
+                    h for h in self._handlers.get(event_type, []) if h != handler
                 ]
 
     def clear(self, event_type: Optional[str] = None) -> None:
@@ -178,6 +178,52 @@ class EventBus:
             if event_type == "*":
                 return bool(self._wildcard)
             return bool(self._handlers.get(event_type)) or bool(self._wildcard)
+
+
+# ---------------------------------------------------------------------------
+# WebhookSink — thread-safe event collector for outbound webhook delivery
+# ---------------------------------------------------------------------------
+
+class WebhookSink:
+    """Thread-safe event collector that the platform layer uses for outbound webhooks.
+
+    Subscribe to the global bus before a run, then drain after the run completes
+    to create WebhookDelivery rows for each captured event.
+
+    Usage (platform runner)::
+
+        sink = WebhookSink(run_id="abc123")
+        bus.subscribe("*", sink.handle)
+        try:
+            result = run_pipeline(...)
+        finally:
+            bus.unsubscribe("*", sink.handle)
+
+        for event_type, payload in sink.drain():
+            await fire_event_webhooks(session, workspace_id=ws_id,
+                                      event_type=event_type, run_id=sink.run_id,
+                                      payload=payload)
+    """
+
+    def __init__(self, run_id: str = "") -> None:
+        self.run_id = run_id
+        self._events: list[tuple[str, dict]] = []
+        self._lock = threading.Lock()
+
+    def handle(self, event: "Event") -> None:
+        with self._lock:
+            self._events.append((event.type, dict(event.payload)))
+
+    def drain(self) -> list[tuple[str, dict]]:
+        """Return all captured (event_type, payload) pairs and clear the internal list."""
+        with self._lock:
+            captured = list(self._events)
+            self._events.clear()
+        return captured
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._events)
 
 
 # ---------------------------------------------------------------------------
