@@ -5,11 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.33.25] — 2026-08-21
+
+### Changed
+
+- **`antcrew test` restored** — reverted to the v0.8.1 sandbox test runner interface (`antcrew test <state.json>`). The command runs QA-generated test artifacts from a saved pipeline state.
+- **`antcrew regtest`** — the TraceLog prompt regression command previously named `antcrew test` is now `antcrew regtest`. All flags unchanged; update CI scripts accordingly.
+
+---
+
+## [0.33.24] — 2026-08-21
+
+### Added
+
+- **`llm.fallback` event emission** — `wrap_agent_call()` now emits a `llm.fallback` bus event for each FallbackLLM fallback that occurs during an agent call. Events are persisted to the platform `Event` table and exposed via `GET /runs/{run_id}/fallbacks`. Captured per-agent (only new events since the snapshot taken before each agent call are emitted).
+
+---
+
+## [0.33.23] — 2026-08-21
+
+### Added
+
+- **`antcrew verify-hash`** — new CLI command. Instantiates agents from a YAML config using `SimulatedLLM` (no API calls), prints per-agent `governance_hash` and an aggregated `team_hash`. Accepts `--expected <hash>` to compare against a known-good hash and exit 0/1 — use as a deploy gate.
+
+---
+
 ## [0.33.22] — 2026-08-21
 
 ### Added
 
-- **`antcrew test`** — new CLI command for prompt regression testing via `TraceLog.replay_with_mutation()`. Replays a recorded run with a mutated system prompt for one agent, reports `diff_pct`, and exits 1 when `diff_pct > threshold`. Supports `--prompt <file>`, `--prompt-text`, `--threshold`, `--json` output. Use as a CI/CD gate to catch prompt regressions before production.
+- **`antcrew regtest`** (previously `antcrew test`) — prompt regression testing via `TraceLog.replay_with_mutation()`. Replays a recorded run with a mutated system prompt for one agent, reports `diff_pct`, and exits 1 when `diff_pct > threshold`. Supports `--prompt <file>`, `--prompt-text`, `--threshold`, `--json` output.
 
 ---
 

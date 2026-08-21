@@ -1,158 +1,163 @@
-"""antcrew test — prompt mutation regression testing against a TraceLog."""
+"""antcrew test — run QA test artifacts from a saved pipeline state."""
 from __future__ import annotations
 
-import json as _json
-import sys as _sys
 from pathlib import Path
 from typing import Optional
 
 import typer
+from rich.panel import Panel
 
-from antcrew.cli._app import _MODEL_HELP, app, console
+from antcrew.cli._app import app, console
+
+
+def _print_test_results(tr) -> None:
+    if tr is None:
+        return
+    if hasattr(tr, "success"):
+        success = tr.success
+        summary = tr.summary()
+    else:
+        passed = int(tr.get("passed", 0))
+        failed = int(tr.get("failed", 0))
+        errors = int(tr.get("errors", 0))
+        success = bool(tr.get("success", failed == 0 and errors == 0))
+        ms = float(tr.get("duration_ms", 0))
+        parts = []
+        if passed:
+            parts.append(f"{passed} passed")
+        if failed:
+            parts.append(f"{failed} failed")
+        if errors:
+            parts.append(f"{errors} error{'s' if errors != 1 else ''}")
+        summary = (", ".join(parts) or "no tests ran") + f" in {ms:.0f}ms"
+
+    colour = "green" if success else "red"
+    icon = "✓" if success else "✗"
+    console.print(Panel(summary, title=f"[{colour}]Tests {icon}[/{colour}]", border_style=colour))
 
 
 @app.command(name="test")
 def test_cmd(
-    db: Path = typer.Argument(..., help="TraceLog SQLite file (created with --full-trace)"),
-    run_id: str = typer.Option(..., "--run", "-r", help="Run ID to replay"),
-    agent: str = typer.Option(..., "--agent", "-a", help="Agent name whose prompt to replace"),
-    prompt_file: Optional[Path] = typer.Option(
-        None, "--prompt", "-p",
-        help="File containing the new system prompt.",
+    state_file: Path = typer.Argument(
+        ...,
+        help="JSON state file produced by 'antcrew run --save' or 'antcrew interactive'.",
     ),
-    prompt_text: Optional[str] = typer.Option(
-        None, "--prompt-text",
-        help="Inline new system prompt (mutually exclusive with --prompt).",
+    runner: str = typer.Option(
+        "local", "--runner", "-r",
+        help="Execution backend: local (same Python, temp dir) | docker (isolated container).",
     ),
-    model: str = typer.Option("claude", "--model", "-m", help=_MODEL_HELP),
-    threshold: float = typer.Option(
-        0.20, "--threshold",
-        help="Exit code 1 when diff_pct exceeds this value (0.0–1.0). Default: 0.20 (20%).",
+    timeout: int = typer.Option(
+        60, "--timeout", help="Seconds before killing pytest (default: 60)."
     ),
-    output_json: bool = typer.Option(False, "--json", help="Write results as JSON to stdout."),
+    keep: Optional[Path] = typer.Option(
+        None, "--keep", "-k",
+        help="Also write test + code files to this directory and keep them after the run.",
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v",
+        help="Always print full pytest output (default: only on failure).",
+    ),
+    no_code: bool = typer.Option(
+        False, "--no-code",
+        help="Skip code artifacts — run test files only (useful when the project already exists).",
+    ),
 ) -> None:
-    """Prompt regression testing via replay_with_mutation().
-
-    Replays a recorded run substituting the system prompt for one agent and
-    reports the diff percentage. Exits 1 when diff_pct > threshold — use as a
-    CI/CD gate to catch prompt regressions before they reach production.
+    """Run test artifacts from a saved pipeline state.
 
     \b
-    Requirements:
-        The run must have been recorded with --full-trace.
+    Basic usage:
+        antcrew test antcrew-output.json
 
     \b
-    File-based prompt:
-        antcrew test ~/.antcrew/trace.db --run <id> --agent BA --prompt v2.txt
+    Isolated Docker run with longer timeout:
+        antcrew test antcrew-output.json --runner docker --timeout 120
 
     \b
-    Inline prompt:
-        antcrew test ~/.antcrew/trace.db --run <id> --agent BA \\
-          --prompt-text "You are a Business Analyst. Be concise."
+    Keep generated files on disk for inspection:
+        antcrew test antcrew-output.json --keep ./test-output
 
     \b
-    CI gate (fail when diff > 15%):
-        antcrew test trace.db --run $RUN_ID --agent BA --prompt v2.txt --threshold 0.15
+    Run only the test files (project already checked out separately):
+        antcrew test antcrew-output.json --no-code
 
-    \b
-    JSON output for scripting:
-        antcrew test trace.db --run $RUN_ID --agent BA --prompt v2.txt --json
+    Exit code is 0 when all tests pass, 1 otherwise.
+
+    For prompt mutation regression testing use 'antcrew regtest'.
     """
-    from rich.table import Table
+    from antcrew.core.artifacts import CodeArtifact, TestArtifact
+    from antcrew.sandbox import DockerRunner, LocalRunner
+    from antcrew.sandbox.runner import _write_artifacts
+    from antcrew.utils.persistence import load_state
 
-    from antcrew.trace import ReplayError, TraceLog
-
-    # Validate inputs
-    if not db.exists():
-        console.print(f"[red]TraceLog not found:[/] {db}")
+    if not state_file.exists():
+        console.print(f"[red]State file not found:[/] {state_file}")
         raise typer.Exit(1)
-    if prompt_file is None and prompt_text is None:
-        console.print("[red]Provide --prompt <file> or --prompt-text <text>.[/]")
-        raise typer.Exit(1)
-    if prompt_file is not None and prompt_text is not None:
-        console.print("[red]--prompt and --prompt-text are mutually exclusive.[/]")
-        raise typer.Exit(1)
-
-    if prompt_file is not None:
-        if not prompt_file.exists():
-            console.print(f"[red]Prompt file not found:[/] {prompt_file}")
-            raise typer.Exit(1)
-        new_prompt: str = prompt_file.read_text(encoding="utf-8")
-    else:
-        new_prompt = prompt_text  # type: ignore[assignment]
-
-    from antcrew.config import build_llm as _build_llm
-
-    llm = _build_llm(model)
-
-    tlog = TraceLog(db)
-    run = tlog.get_run(run_id)
-    if run is None:
-        console.print(f"[red]Run not found:[/] {run_id}")
-        tlog.close()
-        raise typer.Exit(1)
-
-    console.print(
-        f"\n[bold green]antcrew test[/]  "
-        f"run=[cyan]{run_id[:8]}…[/]  agent=[yellow]{agent}[/]  "
-        f"threshold=[dim]{threshold:.0%}[/dim]\n"
-    )
 
     try:
-        result = tlog.replay_with_mutation(run_id, agent, new_prompt, llm)
-    except ReplayError as exc:
-        console.print(f"[red]ReplayError:[/] {exc}")
-        tlog.close()
+        raw = load_state(state_file)
+    except Exception as exc:
+        console.print(f"[red]Failed to load state file:[/] {exc}")
         raise typer.Exit(1)
-    finally:
-        tlog.close()
 
-    mutated_calls = [r for r in result["runs"] if r.get("mutated")]
-    avg_diff_pct = (
-        sum(r.get("diff_pct", 0.0) for r in mutated_calls) / len(mutated_calls)
-        if mutated_calls else 0.0
-    )
-    passed = avg_diff_pct <= threshold
+    if "state" in raw and isinstance(raw.get("state"), dict):
+        raw = raw["state"]
 
-    if output_json:
-        out = {
-            "run_id": run_id,
-            "agent_name": agent,
-            "threshold": threshold,
-            "diff_pct": avg_diff_pct,
-            "passed": passed,
-            "total_changed": result["total_changed"],
-            "calls": result["runs"],
-        }
-        _sys.stdout.write(_json.dumps(out, indent=2, default=str) + "\n")
-        if not passed:
-            raise typer.Exit(1)
-        return
+    test_arts_raw = raw.get("test_artifacts") or []
+    code_arts_raw = [] if no_code else (raw.get("code_artifacts") or [])
 
-    tbl = Table(show_header=True, header_style="bold dim")
-    tbl.add_column("Agent",   style="cyan",  no_wrap=True)
-    tbl.add_column("Mutated", justify="center")
-    tbl.add_column("Diff %",  justify="right")
-    tbl.add_column("Match",   justify="center")
-    tbl.add_column("Cost",    justify="right")
+    if not test_arts_raw:
+        console.print(
+            f"[yellow]No test artifacts found in[/] [cyan]{state_file}[/]\n"
+            "[dim]Run a pipeline first (DevTeam or FullStackTeam with QA enabled).[/dim]"
+        )
+        raise typer.Exit(0)
 
-    for r in result["runs"]:
-        mutated_str = "[yellow]✎[/]" if r.get("mutated") else "—"
-        diff_pct = r.get("diff_pct", 0.0)
-        diff_str = f"{diff_pct:.1%}" if r.get("mutated") else "—"
-        matched_str = "[green]✓[/]" if r.get("matched", True) else "[red]✗[/]"
-        cost_str = f"${r.get('cost_usd', 0):.4f}"
-        tbl.add_row(r["agent_name"], mutated_str, diff_str, matched_str, cost_str)
+    try:
+        test_artifacts = [
+            TestArtifact.model_validate(a) if isinstance(a, dict) else a
+            for a in test_arts_raw
+        ]
+        code_artifacts = [
+            CodeArtifact.model_validate(a) if isinstance(a, dict) else a
+            for a in code_arts_raw
+        ]
+    except Exception as exc:
+        console.print(f"[red]Failed to parse artifacts:[/] {exc}")
+        raise typer.Exit(1)
 
-    console.print(tbl)
-
-    color = "green" if passed else "red"
-    icon = "✓ PASS" if passed else "✗ FAIL"
+    runner_label = runner.strip().lower()
     console.print(
-        f"\n[{color} bold]{icon}[/]  "
-        f"diff={avg_diff_pct:.1%}  threshold={threshold:.0%}  "
-        f"changed={result['total_changed']}/{len(result['runs'])} agents\n"
+        f"\n[bold green]antcrew test[/]  [cyan]{state_file}[/]  "
+        f"[dim]{len(test_artifacts)} test file(s)"
+        + (f"  +{len(code_artifacts)} code file(s)" if code_artifacts else "")
+        + f"  runner={runner_label}[/dim]\n"
     )
 
-    if not passed:
+    if keep is not None:
+        keep.mkdir(parents=True, exist_ok=True)
+        _write_artifacts(keep, test_artifacts, code_artifacts)
+        console.print(f"[dim]Files written → [cyan]{keep}/[/][/dim]\n")
+
+    if runner_label == "docker":
+        active_runner = DockerRunner(timeout=timeout)
+    elif runner_label == "local":
+        active_runner = LocalRunner(timeout=timeout)
+    else:
+        console.print(
+            f"[red]Unknown runner:[/] {runner_label!r}  (choose 'local' or 'docker')"
+        )
+        raise typer.Exit(1)
+
+    with console.status("[bold]Running tests…[/]"):
+        result = active_runner.run(test_artifacts, code_artifacts=code_artifacts)
+
+    _print_test_results(result)
+
+    if verbose or not result.success:
+        output = result.output or ""
+        tail = output[-3000:] if len(output) > 3000 else output
+        if tail.strip():
+            console.print(Panel(tail, title="pytest output", border_style="dim"))
+
+    if not result.success:
         raise typer.Exit(1)

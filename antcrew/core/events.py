@@ -286,6 +286,8 @@ def _make_evented_run(run_fn: Callable, agent_name: str, agent=None) -> Callable
         ))
         t0 = time.monotonic()
         before = _llm_usage_totals(agent) if agent is not None else None
+        # Snapshot fallback event count before this call so we emit only new ones.
+        _fb_count = len(getattr(getattr(agent, "llm", None), "_fallback_events", ()) or ())
         result = run_fn(state)
         duration = round(time.monotonic() - t0, 3)
         produced = [
@@ -314,6 +316,18 @@ def _make_evented_run(run_fn: Callable, agent_name: str, agent=None) -> Callable
             run_id=run_id,
             thread_id=thread_id,
         ))
+        # Emit any FallbackLLM events accumulated during this agent call.
+        _llm = getattr(agent, "llm", None) if agent is not None else None
+        if _llm is not None:
+            _fev_list = getattr(_llm, "_fallback_events", None)
+            if _fev_list is not None:
+                for _fe in list(_fev_list[_fb_count:]):
+                    bus.emit(Event(
+                        "llm.fallback",
+                        {**_fe, "agent_name": agent_name},
+                        run_id=run_id,
+                        thread_id=thread_id,
+                    ))
         if agent is not None and getattr(agent, "approval_required", False):
             bus.emit(Event(
                 "hitl.pending",

@@ -13,6 +13,7 @@ from antcrew.cli import (
     eval_cmds,  # noqa: F401
     flow_cmds,  # noqa: F401
     graph_cmd,  # noqa: F401
+    hash_cmd,  # noqa: F401
     history_cmd,  # noqa: F401
     init_cmd,  # noqa: F401
     inspect_cmds,  # noqa: F401
@@ -20,6 +21,7 @@ from antcrew.cli import (
     project_cmds,  # noqa: F401
     publish_cmd,  # noqa: F401
     quick_cmd,  # noqa: F401
+    regtest_cmd,  # noqa: F401
     review_cmd,  # noqa: F401
     run_cmd,  # noqa: F401
     scan_cmd,  # noqa: F401
