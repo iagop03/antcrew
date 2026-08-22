@@ -220,6 +220,12 @@ def run(
         envvar="ANTCREW_PLATFORM_API_KEY",
         show_default=False,
     ),
+    compliance: bool = typer.Option(
+        False, "--compliance",
+        help="Compliance mode: forces full TraceLog (all prompts and responses) and writes a "
+             "governance attestation JSON to compliance_<run_id>.json. "
+             "Implies --full-trace. Useful for healthcare, fintech, and legaltech audits.",
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -363,6 +369,14 @@ def run(
         # --max-cost flag sets a per-run cost budget
         if max_cost is not None and _llm_ref is not None:
             _llm_ref.max_cost_usd = max_cost
+
+        # --compliance: force full TraceLog with a timestamped default db path
+        if compliance:
+            if not trace_db:
+                import datetime as _dt
+                _ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                trace_db = Path(f"compliance_{_ts}.db")
+            full_trace = True
 
         # --trace flag attaches TraceLog for per-agent call recording
         if trace_db:
@@ -549,6 +563,35 @@ def run(
             team=team, request=actual_request, thread=thread, llm=_llm_ref,
             duration_s=_run_duration_s,
         )
+
+    if compliance:
+        import datetime as _dt
+        _run_id = getattr(state, "thread_id", None) or "unknown"
+        _team_hash = "n/a"
+        try:
+            from antcrew.core.agent import compute_team_hash as _cth
+            _agents = getattr(active_team, "_agents", None)
+            if _agents:
+                _team_hash = "sha256:" + _cth(_agents)
+        except Exception:
+            pass
+        _attestation = {
+            "run_id": _run_id,
+            "attested_at": _dt.datetime.utcnow().isoformat() + "Z",
+            "team": team,
+            "model": model,
+            "governance_hash": _team_hash,
+            "cost_usd": getattr(state, "cost_usd", 0.0),
+            "duration_s": round(_run_duration_s, 2),
+            "full_trace": True,
+            "trace_db": str(trace_db) if trace_db else None,
+        }
+        _att_path = Path(f"compliance_{_run_id}.json")
+        _att_path.write_text(json.dumps(_attestation, indent=2), encoding="utf-8")
+        console.print(f"\n[bold green]✓ Compliance attestation[/bold green] → [cyan]{_att_path}[/cyan]")
+        console.print(f"  [dim]run_id:[/dim]  [cyan]{_run_id}[/cyan]")
+        console.print(f"  [dim]hash:  [/dim]  [green]{_team_hash}[/green]")
+        console.print(f"  [dim]trace: [/dim]  [cyan]{trace_db}[/cyan]")
 
     _print_usage(_llm_ref)
     console.print("\n[bold green]Done![/]\n")
