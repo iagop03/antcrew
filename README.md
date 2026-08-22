@@ -107,6 +107,11 @@ print(result.cost_usd)               # e.g. 0.43
 | `CustomTeam` | User-defined steps (code or YAML) | Fully custom pipelines |
 | `Router` | Classifier → dispatches to any team/agent | Smart routing: simple vs. complex |
 | `DirectAgent` | Single LLM call | Q&A, summaries, lightweight tasks |
+| `LegalReviewTeam` | ClauseExtractor → RiskFlagging → LegalReviewer | Contract review with risk scoring |
+| `CodeMigrationTeam` | Scanner → Planner → Migrator → Verifier | Automated codebase migration (e.g. Py2 → Py3) |
+| `ReproducibleResearchPipeline` | ResearchTeam + full-trace + governance_hash | Reproducible AI research experiments |
+| `BrandVoiceContentTeam` | ContentTeam + ChromaMemory brand library | On-brand content at scale |
+| `WhiteLabelWrapper` | Wraps any team with markup-based billing | Agency / reseller client billing |
 
 ```python
 from antcrew import (
@@ -114,10 +119,79 @@ from antcrew import (
     FeatureTeam, CustomTeam,
     Router, DirectAgent,
     LLMClassifier, RuleClassifier,
-    # New specialized agents (0.33.11)
-    DiscoveryAgent, UIDesignAgent, ConflictAgent,
-    RetroAgent, CostAgent, SecurityAgent,
+    # Specialized teams (0.34.0)
+    LegalReviewTeam, CodeMigrationTeam,
+    ReproducibleResearchPipeline, ExperimentRecord,
+    BrandVoiceContentTeam, BrandVoiceProfile,
+    WhiteLabelWrapper, BillingRecord,
 )
+```
+
+### Specialized teams (0.34.0)
+
+**Legal review:**
+
+```python
+from antcrew import LegalReviewTeam
+
+team = LegalReviewTeam()
+result = team.run(nda_text)
+finding = result.state["legal_finding"]
+print(f"High-risk clauses: {finding.high_risk_count}")
+for clause in finding.clauses:
+    print(clause.clause_id, clause.risk_level, clause.text[:80])
+```
+
+**Code migration:**
+
+```python
+from antcrew import CodeMigrationTeam
+
+team = CodeMigrationTeam(source_pattern="Python 2", target_pattern="Python 3.11")
+result = team.run("Migrate the requests module usage in src/")
+plan = result.state["migration_plan"]
+print(f"Critical issues: {plan.critical_count}, test passed: {plan.test_passed}")
+```
+
+**Reproducible research (UC8):**
+
+```python
+from antcrew.teams.reproducible_research import ReproducibleResearchPipeline
+
+pipeline = ReproducibleResearchPipeline(db_path="experiments.db")
+exp = pipeline.run("What are the failure modes of multi-agent AI systems?")
+print(exp.experiment_id)   # "<team_hash>:<run_id>" — cite in papers
+
+# Replay later to detect model drift
+for r in pipeline.replay_experiment(exp.experiment_id):
+    print(r["agent_name"], "matched:", r["matched"])
+```
+
+**Brand voice content (UC10):**
+
+```python
+from antcrew.teams.brand_voice_team import BrandVoiceContentTeam, BrandVoiceProfile
+
+profile = BrandVoiceProfile(
+    name="Acme Corp",
+    tone="Professional but approachable",
+    style="Short paragraphs, active voice",
+    standards=["Always end with a CTA", "Use 'you' not 'users'"],
+    examples=["Our API ships same-day — because waiting is so 2019."],
+)
+team = BrandVoiceContentTeam(brand=profile)  # requires pip install antcrew[memory]
+result = team.run("Write a product launch announcement")
+team.add_example(result.state["content_piece"].body)  # grow the library
+```
+
+**White-label billing (UC9):**
+
+```python
+from antcrew import DevTeam, WhiteLabelWrapper
+
+billing = WhiteLabelWrapper(DevTeam(), client_label="acme-corp", markup_pct=200)
+record = billing.run("Build a REST API for a todo app")
+print(f"Cost: ${record.cost_usd:.4f}  Billed: ${record.billed_usd:.4f}  Margin: {record.margin_pct:.1f}%")
 ```
 
 ### Specialized agents

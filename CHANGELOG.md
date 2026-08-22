@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.34.0] — 2026-08-22
+
+### Added
+
+- **`WebhookSink`** (UC5) — thread-safe event collector for outbound webhook integrations. Subscribes to any `EventBus` event type, buffers events, and exposes `drain()` for batch delivery. Supports `run_id` filtering so a single bus can feed multiple sinks for concurrent runs.
+
+- **`LegalReviewTeam`** (UC6) — multi-agent legal contract review pipeline: `ClauseExtractorAgent` → `RiskFlaggingAgent` → `LegalReviewerAgent`. Returns a `LegalFindingArtifact` with typed `LegalClause` entries (`risk_level`: LOW / MEDIUM / HIGH / CRITICAL) and a computed `high_risk_count` property.
+
+- **`CodeMigrationTeam`** (UC7) — migration pipeline: `MigrationScannerAgent` → `MigrationPlannerAgent` → `CodeMigratorAgent` → `MigrationVerifierAgent`. Returns a `MigrationPlanArtifact` with per-file issue tracking, `critical_count`, `auto_fixable_count`, and a `test_passed` flag. Parameterized with `source_pattern` / `target_pattern` (e.g. `"Python 2"` → `"Python 3.11"`).
+
+- **`ReproducibleResearchPipeline`** (UC8) — wraps `ResearchTeam` with mandatory `full_trace=True` TraceLog recording and governance anchoring. Returns an `ExperimentRecord` with `experiment_id = "<team_hash>:<run_id>"` — citable in papers and replayable via `replay_experiment()`. Raises `ValueError` if the provided `TraceLog` was not created with `full_trace=True`.
+
+- **`ExperimentRecord`** — frozen dataclass with `experiment_id`, `run_id`, `team_hash`, `request`, `cost_usd`, `state`.
+
+- **`WhiteLabelWrapper`** (UC9) — wraps any antcrew team for agency/reseller billing. Accepts `client_label` (non-empty) and `markup_pct` (≥ 0, default 300). Returns a `BillingRecord` with `cost_usd`, `billed_usd`, `margin_usd`, `margin_pct`. Emits `agency.run_start` / `agency.run_end` events with billing metadata. Forwards all `**kwargs` to the wrapped team.
+
+- **`BillingRecord`** — dataclass with per-client cost and billing breakdown. `margin_pct` is `None` when `billed_usd` is 0 (avoids `ZeroDivisionError`).
+
+- **`BrandVoiceContentTeam`** (UC10) — `ContentTeam` + `ChromaMemory` per-brand collection for brand voice consistency. Accepts a `BrandVoiceProfile` (tone, style, persona, examples, standards), seeds ChromaDB on first run, and retrieves semantically relevant examples on each `run()` call. `add_example()` grows the library over time; `search_examples()` provides semantic lookup. Requires `pip install antcrew[memory]`.
+
+- **`BrandVoiceProfile`** — structured dataclass for brand guidelines. `to_context_block()` renders guidelines as a prompt-injectable context block, capping examples at 3 and omitting empty sections.
+
+- **GitHub Action `antcrew-regtest`** — composite action at `.github/actions/antcrew-regtest`. Inputs: `db`, `run`, `agent`, `prompt-file`/`prompt-text`, `threshold` (default 0.20), `model`, `antcrew-version`, `api-key`. Outputs: `diff-pct`, `passed`, `total-changed`. Exits 1 when diff exceeds threshold.
+
+---
+
 ## [0.33.25] — 2026-08-21
 
 ### Changed
