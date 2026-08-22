@@ -1,0 +1,115 @@
+name: 'antcrew regtest'
+description: 'Prompt regression gate — replay a recorded run with a new prompt and fail if the output drifts beyond threshold.'
+
+inputs:
+  db:
+    description: 'Path to the TraceLog SQLite file (recorded with --full-trace).'
+    required: false
+    default: 'antcrew-traces.db'
+  run:
+    description: 'Run ID to replay.'
+    required: true
+  agent:
+    description: 'Agent name whose system prompt to replace.'
+    required: true
+  prompt-file:
+    description: 'Path to a file containing the new system prompt. Mutually exclusive with prompt-text.'
+    required: false
+    default: ''
+  prompt-text:
+    description: 'Inline new system prompt text. Mutually exclusive with prompt-file.'
+    required: false
+    default: ''
+  threshold:
+    description: 'Maximum allowed diff as a decimal (0.0–1.0). Default 0.20 = 20%. Exit code 1 when exceeded.'
+    required: false
+    default: '0.20'
+  model:
+    description: 'LLM model alias for replay (claude, openai, ollama, …). Defaults to claude.'
+    required: false
+    default: 'claude'
+  antcrew-version:
+    description: 'pip version specifier for antcrew, e.g. ==0.33.25. Empty = latest.'
+    required: false
+    default: ''
+  api-key:
+    description: 'Anthropic API key. If set, exported as ANTHROPIC_API_KEY. Leave empty to use the existing env var.'
+    required: false
+    default: ''
+
+outputs:
+  diff-pct:
+    description: 'Average diff percentage across mutated agent calls (decimal, e.g. 0.127).'
+    value: ${{ steps.parse.outputs.diff-pct }}
+  passed:
+    description: 'true if diff-pct <= threshold, false otherwise.'
+    value: ${{ steps.parse.outputs.passed }}
+  total-changed:
+    description: 'Number of agent calls whose output changed during replay.'
+    value: ${{ steps.parse.outputs.total-changed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install antcrew
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.antcrew-version }}" ]; then
+          pip install --quiet "antcrew${{ inputs.antcrew-version }}"
+        else
+          pip install --quiet antcrew
+        fi
+
+    - name: Run regression test
+      id: regtest
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.api-key != '' && inputs.api-key || env.ANTHROPIC_API_KEY }}
+      run: |
+        CMD="antcrew regtest \"${{ inputs.db }}\""
+        CMD="$CMD --run \"${{ inputs.run }}\""
+        CMD="$CMD --agent \"${{ inputs.agent }}\""
+        CMD="$CMD --threshold ${{ inputs.threshold }}"
+        CMD="$CMD --model ${{ inputs.model }}"
+        CMD="$CMD --json"
+
+        if [ -n "${{ inputs.prompt-file }}" ]; then
+          CMD="$CMD --prompt \"${{ inputs.prompt-file }}\""
+        elif [ -n "${{ inputs.prompt-text }}" ]; then
+          CMD="$CMD --prompt-text \"${{ inputs.prompt-text }}\""
+        else
+          echo "::error::Either prompt-file or prompt-text must be provided."
+          exit 1
+        fi
+
+        echo "Running: $CMD"
+        RESULT_FILE="$(mktemp /tmp/antcrew-regtest-XXXXXX.json)"
+        echo "result_file=$RESULT_FILE" >> "$GITHUB_OUTPUT"
+
+        set +e
+        eval "$CMD" > "$RESULT_FILE"
+        EXIT_CODE=$?
+        set -e
+
+        echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+        cat "$RESULT_FILE"
+        exit $EXIT_CODE
+
+    - name: Parse results
+      id: parse
+      if: always()
+      shell: bash
+      run: |
+        RESULT_FILE="${{ steps.regtest.outputs.result_file }}"
+        if [ -f "$RESULT_FILE" ] && [ -s "$RESULT_FILE" ]; then
+          DIFF_PCT=$(python3 -c "import json,sys; d=json.load(open('$RESULT_FILE')); print(d.get('diff_pct', 0))" 2>/dev/null || echo "0")
+          PASSED=$(python3 -c "import json,sys; d=json.load(open('$RESULT_FILE')); print(str(d.get('passed', False)).lower())" 2>/dev/null || echo "false")
+          CHANGED=$(python3 -c "import json,sys; d=json.load(open('$RESULT_FILE')); print(d.get('total_changed', 0))" 2>/dev/null || echo "0")
+        else
+          DIFF_PCT="0"
+          PASSED="false"
+          CHANGED="0"
+        fi
+        echo "diff-pct=$DIFF_PCT" >> "$GITHUB_OUTPUT"
+        echo "passed=$PASSED" >> "$GITHUB_OUTPUT"
+        echo "total-changed=$CHANGED" >> "$GITHUB_OUTPUT"
