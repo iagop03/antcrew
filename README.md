@@ -44,26 +44,31 @@ The core differentiator: every output is a **typed artifact** (Pydantic class, n
 
 ## Quick start
 
-**Zero cost — simulated LLM, no credentials:**
+**Zero setup — simulated LLM, no credentials:**
+
+Runs immediately. Produces typed artifacts with deterministic fake content — good for testing and CI, not for real AI output.
 
 ```bash
 pip install antcrew
 antcrew run --model simulated "Build a REST API for user authentication"
 ```
 
-**Fully local — Ollama, no API key, no data leaves your machine:**
+**Fully local — Ollama (real AI, no API key, no data leaves your machine):**
+
+Requires [Ollama](https://ollama.com) installed (~5 min) and `ollama pull llama3`.
 
 ```bash
-# Requires: ollama pull llama3 (or any Ollama model)
 antcrew run --model ollama:llama3 "Build a REST API for user authentication"
 ```
 
-**Cloud model:**
+**Cloud model — real AI, no local setup:**
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 antcrew run --model claude "Build a REST API for user authentication"
 ```
+
+> **Don't want to configure anything?** Use [antcrew-platform](https://github.com/iagop03/antcrew-platform) — the managed tier provides the LLM. You run agent teams from a web UI without installing Ollama or managing API keys.
 
 From Python:
 
