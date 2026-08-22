@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.35.0] — 2026-08-22
+
+### Changed
+
+- **`antcrew_engine` bundled inside `antcrew` wheel.** `pip install antcrew` is the only install needed — `antcrew-engine` as a separate package is no longer required. All imports (`from antcrew_engine import EngineLoop`) work unchanged.
+- Removed `antcrew-engine>=0.3.11` from core dependencies; `antcrew_engine` source is now shipped directly in the wheel.
+
+### Added
+
+- **`antcrew run --compliance`** — compliance mode flag. Forces full TraceLog (all prompts + responses), auto-creates a timestamped `.db` if `--trace` is not specified, and writes a `compliance_<run_id>.json` attestation file after the run with `run_id`, `attested_at`, `governance_hash`, `cost_usd`, `duration_s`, `full_trace`, and `trace_db` path. Prints attestation summary to console.
+
+---
+
 ## [0.34.0] — 2026-08-22
 
 ### Added
