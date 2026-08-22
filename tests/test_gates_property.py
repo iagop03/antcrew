@@ -103,12 +103,19 @@ class TestJsonGateProperty:
 
     @given(st.dictionaries(st.text(min_size=1, max_size=10), st.text(max_size=10), min_size=1, max_size=3))
     def test_non_empty_dict_value_stringified_fails(self, d: dict):
-        """JsonGate stringifies non-str values with str(). A non-empty Python dict
-        str repr uses single quotes — NOT valid JSON."""
+        """JsonGate receives a raw dict and stringifies it with str(). Usually
+        str(dict) produces Python repr (single-quoted keys) which is invalid JSON.
+        Edge case: when all keys/values contain single quotes, Python switches to
+        double-quote repr which can be coincidentally valid JSON — skip those."""
+        value_str = str(d)
+        try:
+            json.loads(value_str)
+            assume(False)  # str(d) is coincidentally valid JSON — not the case under test
+        except (ValueError, json.JSONDecodeError):
+            pass
         gate = JsonGate(field="data")
         result = gate.check(_state("data", d))
-        # str({"k": "v"}) → "{'k': 'v'}" — single-quoted keys, invalid JSON
-        assert not result.passed, f"Expected JsonGate to reject str({d!r}) = {str(d)!r}"
+        assert not result.passed, f"Expected JsonGate to reject str({d!r}) = {value_str!r}"
 
     def test_none_field_fails(self):
         assert not JsonGate(field="data").check({"data": None}).passed
