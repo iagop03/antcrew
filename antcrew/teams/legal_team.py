@@ -50,7 +50,7 @@ from antcrew.core.supervisor import Supervisor
 from antcrew.models.base import BaseLLM
 
 if TYPE_CHECKING:
-    pass
+    from antcrew.core.artifacts import LegalFindingArtifact
 
 log = logging.getLogger(__name__)
 

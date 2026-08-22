@@ -30,10 +30,13 @@ Common migration types:
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from antcrew.core.supervisor import Supervisor
 from antcrew.models.base import BaseLLM
+
+if TYPE_CHECKING:
+    from antcrew.core.artifacts import MigrationPlanArtifact
 
 log = logging.getLogger(__name__)
 
