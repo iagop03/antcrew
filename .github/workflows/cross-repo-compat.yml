@@ -1,12 +1,12 @@
 name: Cross-repo compatibility
 
 # Runs on every push to main of antcrew, and daily at 06:00 UTC.
-# Installs antcrew + antcrew-engine from PyPI and validates every
-# import that antcrew-platform uses from either package.
+# Installs antcrew from PyPI and validates every import that antcrew-platform
+# uses from antcrew or antcrew_engine (bundled inside antcrew since v0.35.0).
 #
-# Purpose: catch renames / removals in antcrew-engine (like the
-# Operator→EngineLoop incident) before they reach antcrew-platform in prod.
-# Any ImportError or AttributeError here means platform is broken.
+# Purpose: catch renames / removals in antcrew_engine or antcrew before
+# they reach antcrew-platform in prod. Any ImportError or AttributeError
+# here means platform is broken.
 
 on:
   push:
@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install antcrew + antcrew-engine from PyPI
-        run: pip install antcrew antcrew-engine
+      - name: Install antcrew from PyPI (antcrew_engine bundled since v0.35)
+        run: pip install antcrew
 
       - name: Verify all cross-repo imports used by antcrew-platform
         run: |
