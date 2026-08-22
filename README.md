@@ -229,14 +229,14 @@ pip install "antcrew[mcp]"       # MCP tool servers
 
 ## Architecture
 
-antcrew is two packages shipped together:
+`pip install antcrew` is the only install you need. The package ships two layers in a single wheel:
 
-| Layer | Package | What it does |
-|---|---|---|
-| Layer 1 | `antcrew` | Named-role teams (BA, PM, Dev…) orchestrated with LangGraph. HITL, sessions, memory. |
-| Layer 2 | `antcrew-engine` | Goal-directed `EngineLoop` — capabilities selected at runtime until conditions are satisfied. |
+| Layer | What it does |
+|---|---|
+| `antcrew` | Named-role teams (BA, PM, Dev…) orchestrated with LangGraph. HITL, sessions, memory. |
+| `antcrew_engine` | Goal-directed `EngineLoop` — capabilities selected at runtime until conditions are satisfied. Bundled inside antcrew since v0.35.0. |
 
-`pip install antcrew` installs both. You don't need to install or import `antcrew-engine` directly — all its capabilities (`Architect`, `CodeGenerator`, `TestRunner`…) are re-exported from `antcrew`. The separation exists so `antcrew-engine` can be used standalone without LangGraph — useful if you're building a custom execution layer on top.
+All engine capabilities (`Architect`, `CodeGenerator`, `TestRunner`…) are available directly from `antcrew.engine.*` or via `from antcrew_engine import EngineLoop`.
 
 ---
 
