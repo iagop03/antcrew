@@ -47,9 +47,9 @@ gemini    = []  # GeminiModel uses httpx (already a core dep) — no extra packa
 openai    = ["openai>=1.30"]
 slack     = ["slack-sdk>=3.19", "slack-bolt>=1.18"]
 serve     = ["uvicorn[standard]>=0.30"]
-server    = ["uvicorn[standard]>=0.30"]  # deprecated alias for serve
+server    = ["uvicorn[standard]>=0.30"]  # DEPRECATED — use [serve] instead; will be removed in v1.0
 memory    = ["chromadb>=0.5"]
-dashboard = ["uvicorn[standard]>=0.30"]  # deprecated alias for serve
+dashboard = ["uvicorn[standard]>=0.30"]  # DEPRECATED — use [serve] instead; will be removed in v1.0
 watch     = ["watchdog>=4.0"]
 contracts = ["jsonschema>=4.0"]
 litellm   = ["litellm>=1.40"]   # LiteLLMModel: 100+ providers via one interface
@@ -91,3 +91,6 @@ skips = ["B608"]
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 testpaths = ["tests"]
+markers = [
+    "real_api: tests that call real LLM provider APIs (skipped unless ANTHROPIC_API_KEY or OPENAI_API_KEY is set)",
+]
