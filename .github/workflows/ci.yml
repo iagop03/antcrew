@@ -96,6 +96,16 @@ jobs:
       - name: pip-audit — dependency CVE scan
         run: pip-audit
 
+      - name: semgrep — SAST (application logic)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/python
+            p/owasp-top-ten
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        continue-on-error: ${{ secrets.SEMGREP_APP_TOKEN == '' }}
+
   changelog:
     name: CHANGELOG
     runs-on: ubuntu-latest
