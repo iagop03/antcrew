@@ -86,9 +86,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package and security tools
-        run: |
-          pip install -e ".[dev,server,telegram]"
-          pip install "bandit[toml]" pip-audit
+        run: pip install -e ".[dev,server,telegram]" "bandit[toml]" pip-audit
 
       - name: bandit — static security analysis (MEDIUM+)
         # -ll  skip LOW severity   -ii  skip LOW confidence
