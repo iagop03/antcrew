@@ -10,17 +10,14 @@ emits those before/after EngineLoop.run() so they carry the real run_id and cost
 
 Dependency injection
 --------------------
-Pass ``on_event`` to avoid any runtime dependency on antcrew (Layer 1).
-Without it, the bridge falls back to a lazy import of ``antcrew.core.events``
-which is fine when both packages are installed together (e.g. antcrew-platform).
+Always pass ``on_event`` so antcrew_engine has no upward dependency on antcrew.
+The caller is responsible for wiring the bridge to its own event bus:
 
-    # antcrew-engine standalone (DI):
-    from antcrew_engine.core.events import bus, Event as BusEvent
-    bridge = EventBusBridge(log, run_id=rid,
+    from antcrew.core.events import Event as BusEvent, bus
+    bridge = EventBusBridge(event_log, run_id=rid,
         on_event=lambda t, d, **kw: bus.emit(BusEvent(t, d, **kw)))
 
-    # antcrew-platform (lazy fallback, antcrew installed):
-    bridge = EventBusBridge(log, run_id=rid)
+Events are silently dropped when ``on_event`` is None (no-op).
 """
 from __future__ import annotations
 
@@ -60,14 +57,7 @@ class EventBusBridge:
     def _handle(self, event) -> None:
         on_event = self._on_event
         if on_event is None:
-            try:
-                from antcrew.core.events import Event as BusEvent
-                from antcrew.core.events import bus
-
-                def on_event(t, d, **kw):
-                    bus.emit(BusEvent(t, d, **kw))
-            except ImportError:
-                return
+            return  # no bus wired — events are intentionally dropped
 
         kind = event.kind
         rid = self._run_id

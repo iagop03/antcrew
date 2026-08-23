@@ -306,7 +306,7 @@ class BaseLLM(ABC):
         if self.max_cost_usd is not None:
             spent = self.get_usage_summary()["total_cost_usd"] - self._cost_limit_offset
             if spent >= self.max_cost_usd:
-                from antcrew.core.exceptions import CostLimitExceeded
+                from antcrew_engine.exceptions import CostLimitExceeded
                 raise CostLimitExceeded(spent, self.max_cost_usd)
 
         messages = [
