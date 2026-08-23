@@ -51,7 +51,9 @@ jobs:
           pip install hypothesis  # test dep added in 0.33.21; older published wheels omit it
 
       - name: Run tests against installed wheel
-        run: pytest --tb=short -q
+        # --override-ini suppresses the addopts coverage flags: the published
+        # wheel may predate pytest-cov being added to dev extras.
+        run: pytest --tb=short -q --override-ini="addopts="
         env:
           ANTCREW_SANDBOX: none
 
