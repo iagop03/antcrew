@@ -97,14 +97,9 @@ jobs:
         run: pip-audit
 
       - name: semgrep — SAST (application logic)
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/python
-            p/owasp-top-ten
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-        continue-on-error: ${{ secrets.SEMGREP_APP_TOKEN == '' }}
+        run: |
+          pip install semgrep
+          semgrep --config p/python --config p/owasp-top-ten antcrew/ --error --quiet
 
   changelog:
     name: CHANGELOG
