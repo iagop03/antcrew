@@ -166,11 +166,19 @@ class TestSchemaGateProperty:
 
     @given(st.text(min_size=1), st.text(min_size=1))
     def test_wrong_type_for_int_field_fails(self, name: str, not_int: str):
-        # Pydantic v2 coerces numeric strings (e.g. "+0", "42") to int.
-        # Exclude any string that Python's int() can parse (same set Pydantic accepts).
+        # Pydantic v2 coerces numeric strings to int in lax mode:
+        #   - pure integer strings: "42", "+0", "-3"  (int() accepts these)
+        #   - float strings whose value is a whole number: "0.0", "1.0"
+        #     (Pydantic parses as float first, then truncates to int)
+        # Skip both families so only genuinely non-coercible strings are tested.
         try:
             int(not_int)
-            assume(False)  # skip numeric strings
+            assume(False)
+        except (ValueError, OverflowError):
+            pass
+        try:
+            f = float(not_int)
+            assume(not f.is_integer())  # "0.0", "1.0" etc. are coerced to int by Pydantic
         except (ValueError, OverflowError):
             pass
         gate = SchemaGate(field="item", schema=_Item)
