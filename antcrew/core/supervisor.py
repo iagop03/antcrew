@@ -363,7 +363,6 @@ class Supervisor:
         # Activate message-count limit (set per-Supervisor via max_messages or
         # the ANTCREW_MAX_MESSAGES env var).  The context var is read by the
         # _capped_add_messages reducer in state.py.
-        import contextvars as _cv
         from antcrew.core.state import _max_messages_var as _mmv
         _limit = self._max_messages or int(os.environ.get("ANTCREW_MAX_MESSAGES", "0") or "0") or None
         if _limit is not None:
