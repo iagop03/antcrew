@@ -1,5 +1,34 @@
+"""TeamState — the central shared state TypedDict for AntCrew LangGraph pipelines.
+
+Three state stores exist in an AntCrew run, each with a distinct lifetime and purpose:
+
+  TeamState (this file)
+    LangGraph per-run state. Lives in memory for the duration of one team.run()
+    call. Every agent node reads and partially updates it. Contains: the user
+    request, typed artifact slots (prd, tickets, code_artifacts, …), messages
+    (full LLM conversation history), and runtime metadata. Ephemeral — gone when
+    the run ends (unless checkpointed via PostgresSaver).
+
+  MemoryStore (antcrew_engine/engine/)
+    antcrew-engine's internal dict[ArtifactId, Artifact]. Used only by Layer-2
+    capability executors (EngineLoop) to accumulate code artifacts across loop
+    iterations. Not shared with Layer-1 teams. Ephemeral — per-EngineLoop
+    instance.
+
+  KVMemory / RunMemory (platform DB)
+    dict[str, Any] persisted to the RunMemory table in the platform database.
+    Cross-run: survives between separate team.run() invocations for the same
+    team in the same workspace. Read at run start, written at run end. Use for
+    long-lived agent memory (e.g. "what did we decide in the last sprint?").
+
+Invariant: data flows ONE direction per call:
+  KVMemory → (loaded into) TeamState at run start
+  TeamState → (extracted from) KVMemory at run end
+  MemoryStore ↔ EngineLoop only (never touches TeamState or KVMemory directly)
+"""
 from __future__ import annotations
 
+import contextvars
 import operator
 from typing import Annotated, Any, Optional
 
@@ -25,13 +54,33 @@ from antcrew.core.artifacts import (
     UIDesignSpec,
 )
 
+# Per-supervisor limit on the number of messages kept in TeamState.
+# Supervisor.build() calls _max_messages_var.set(N) before compiling the graph.
+# When None (the default), no trimming is applied.
+_max_messages_var: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar(
+    "_max_messages_var", default=None
+)
+
+
+def _capped_add_messages(left: list, right: list) -> list:
+    """LangGraph reducer: accumulate messages, then trim to the configured limit.
+
+    Reads _max_messages_var at reduction time (not build time) so the limit can
+    differ between concurrent supervisors running in the same process.
+    """
+    merged = add_messages(left, right)
+    limit = _max_messages_var.get()
+    if limit is not None and len(merged) > limit:
+        return merged[-limit:]
+    return merged
+
 
 class TeamState(TypedDict):
     """Central shared state that flows through the LangGraph pipeline."""
 
     # Task
     request: str
-    messages: Annotated[list, add_messages]
+    messages: Annotated[list, _capped_add_messages]
 
     # Codebase continuation context (set when --project-dir / project_dirs is provided)
     project_dir: Optional[str]                          # single-dir shorthand

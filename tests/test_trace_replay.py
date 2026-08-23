@@ -198,3 +198,138 @@ class TestTraceLogReplay:
     def test_replay_error_exported(self):
         from antcrew import ReplayError as RE
         assert issubclass(RE, RuntimeError)
+
+    def test_hitl_record_and_read(self, tmp_path):
+        """record_hitl() inserts a row and get_hitl_decisions() returns it."""
+        trace = _make_trace(tmp_path)
+        run_id = trace.begin_run(thread_id="t7", request="build auth", team="DevTeam")
+        trace.record_hitl(
+            run_id=run_id,
+            step="backend_dev",
+            decision="approved",
+            reviewer_id="alice@example.com",
+            reason="LGTM",
+        )
+        trace.end_run(run_id)
+
+        decisions = trace.get_hitl_decisions(run_id)
+        assert len(decisions) == 1
+        d = decisions[0]
+        assert d["run_id"] == run_id
+        assert d["step"] == "backend_dev"
+        assert d["decision"] == "approved"
+        assert d["reviewer_id"] == "alice@example.com"
+        assert d["reason"] == "LGTM"
+
+    def test_hitl_multiple_steps(self, tmp_path):
+        """Multiple HITL decisions for one run all appear in order."""
+        trace = _make_trace(tmp_path)
+        run_id = trace.begin_run(thread_id="t8", request="r", team="DevTeam")
+        trace.record_hitl(run_id=run_id, step="pm", decision="approved")
+        trace.record_hitl(run_id=run_id, step="qa", decision="rejected", reason="tests missing")
+        trace.end_run(run_id)
+
+        decisions = trace.get_hitl_decisions(run_id)
+        assert len(decisions) == 2
+        assert decisions[0]["step"] == "pm"
+        assert decisions[1]["step"] == "qa"
+        assert decisions[1]["reason"] == "tests missing"
+
+    def test_hitl_empty_for_run_without_decisions(self, tmp_path):
+        """Runs without HITL events return an empty list."""
+        trace = _make_trace(tmp_path)
+        run_id = trace.begin_run(thread_id="t9", request="r", team="DevTeam")
+        trace.end_run(run_id)
+        assert trace.get_hitl_decisions(run_id) == []
+
+    def test_hitl_table_created_on_existing_db(self, tmp_path):
+        """Opening a pre-existing TraceDB without hitl_decisions creates the table."""
+        import sqlite3
+        db_path = tmp_path / "old.db"
+        # Create a minimal DB without the hitl_decisions table
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute("""
+                CREATE TABLE runs (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL,
+                request TEXT NOT NULL, team TEXT NOT NULL, started_at TEXT NOT NULL,
+                ended_at TEXT, cost_usd REAL, status TEXT NOT NULL DEFAULT 'running')
+            """)
+            conn.execute("""
+                CREATE TABLE agent_calls (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL, agent_name TEXT NOT NULL, started_at TEXT NOT NULL,
+                duration_ms REAL NOT NULL, input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0,
+                prompt_snippet TEXT DEFAULT '', response_snippet TEXT DEFAULT '',
+                prompt_full TEXT DEFAULT '', response_full TEXT DEFAULT '',
+                user_full TEXT DEFAULT '')
+            """)
+            conn.commit()
+        # Opening with TraceLog should migrate the table in
+        trace = TraceLog(db_path)
+        run_id = trace.begin_run(thread_id="t10", request="r", team="DevTeam")
+        # Should not raise — table is now present
+        trace.record_hitl(run_id=run_id, step="ba", decision="approved")
+        assert len(trace.get_hitl_decisions(run_id)) == 1
+
+
+# ---------------------------------------------------------------------------
+# SimulatedLLM team integration — no real LLM tokens consumed
+# ---------------------------------------------------------------------------
+
+class TestReplayWithSimulatedTeam:
+    """Integration tests that run a full DevTeam pipeline with SimulatedLLM.
+
+    No real API calls are made — SimulatedLLM returns pre-baked fixture JSON.
+    The tests verify that TraceLog records calls end-to-end when injected via
+    trace_log= and that record_hitl integrates with the same DB cleanly.
+    """
+
+    def test_simulated_run_records_trace(self, tmp_path):
+        """A DevTeam run with trace_log= produces run + agent_calls rows."""
+        from antcrew import DevTeam, SimulatedLLM
+
+        trace = TraceLog(tmp_path / "trace.db", full_trace=True)
+        team = DevTeam(model=SimulatedLLM(), trace_log=trace)
+        team.run("Build a login module", thread_id="sim-1")
+
+        runs = trace.list_runs()
+        assert len(runs) >= 1, "at least one run row should have been created"
+        run_id = runs[0]["id"]
+        calls = trace.get_calls(run_id)
+        assert len(calls) >= 1, "at least one agent_call should have been recorded"
+
+    def test_simulated_run_no_tokens_consumed(self, tmp_path):
+        """SimulatedLLM tracks usage without making real API calls."""
+        from antcrew import DevTeam, SimulatedLLM
+
+        llm = SimulatedLLM()
+        trace = TraceLog(tmp_path / "trace.db")
+        team = DevTeam(model=llm, trace_log=trace)
+        team.run("Add password reset", thread_id="sim-2")
+
+        summary = llm.get_usage_summary()
+        # SimulatedLLM accumulates approximate token counts but spends $0
+        assert summary.get("total_cost_usd", 0.0) == pytest.approx(0.0)
+
+    def test_simulated_run_with_hitl_decision(self, tmp_path):
+        """record_hitl() and a DevTeam run coexist in the same TraceLog DB."""
+        from antcrew import DevTeam, SimulatedLLM
+
+        trace = TraceLog(tmp_path / "trace.db")
+        team = DevTeam(model=SimulatedLLM(), trace_log=trace)
+        team.run("Build search feature", thread_id="sim-3")
+
+        runs = trace.list_runs()
+        assert runs, "expected at least one run"
+        run_id = runs[0]["id"]
+
+        # Simulate a HITL review outcome recorded against this run
+        trace.record_hitl(
+            run_id=run_id,
+            step="backend_dev",
+            decision="approved",
+            reviewer_id="reviewer@example.com",
+        )
+
+        decisions = trace.get_hitl_decisions(run_id)
+        assert len(decisions) == 1
+        assert decisions[0]["decision"] == "approved"

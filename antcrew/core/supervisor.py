@@ -325,9 +325,11 @@ class Supervisor:
         flow: list[tuple],
         *,
         gates: "Optional[dict[str, BaseGate]]" = None,
+        max_messages: "Optional[int]" = None,
     ) -> None:
         self._flow: list[_FlowEdge] = [_parse_edge(e) for e in flow]
         self._gates: dict = gates or {}
+        self._max_messages: Optional[int] = max_messages
 
     # ------------------------------------------------------------------
     # Build
@@ -352,6 +354,20 @@ class Supervisor:
         """
         if not self._flow:
             raise ValueError("Supervisor requires at least one flow edge.")
+
+        # Validate artifact contracts declared with @agent_contract — raises
+        # ContractViolationError with a descriptive message if violated.
+        from antcrew.core.contracts import validate_contracts
+        validate_contracts(self._flow, agents)
+
+        # Activate message-count limit (set per-Supervisor via max_messages or
+        # the ANTCREW_MAX_MESSAGES env var).  The context var is read by the
+        # _capped_add_messages reducer in state.py.
+        import contextvars as _cv
+        from antcrew.core.state import _max_messages_var as _mmv
+        _limit = self._max_messages or int(os.environ.get("ANTCREW_MAX_MESSAGES", "0") or "0") or None
+        if _limit is not None:
+            _mmv.set(_limit)
 
         graph = StateGraph(TeamState)
 

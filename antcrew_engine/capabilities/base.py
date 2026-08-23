@@ -117,7 +117,14 @@ class BaseExecutor:
                         "Output ONLY the JSON object or array — no markdown fences, no prose.]"
                     ),
                 )
-        return raw
+        try:
+            parse_json(raw)
+            return raw
+        except Exception as exc:
+            raise ValueError(
+                f"LLM returned non-JSON after {_MAX_JSON_RETRIES + 1} attempts. "
+                f"Last response ({len(raw)} chars): {raw[:200]!r}"
+            ) from exc
 
     def _run(self, store: "ArtifactStore", goal: "Goal") -> CapabilityResult:
         raise NotImplementedError(f"{type(self).__name__}._run() not implemented")

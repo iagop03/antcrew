@@ -64,15 +64,39 @@ CREATE TABLE IF NOT EXISTS agent_calls (
     response_full    TEXT NOT NULL DEFAULT '',
     user_full        TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS hitl_decisions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id      TEXT NOT NULL REFERENCES runs(id),
+    step        TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    reviewer_id TEXT NOT NULL DEFAULT '',
+    reason      TEXT NOT NULL DEFAULT '',
+    decided_at  TEXT NOT NULL
+);
 """
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """Add columns introduced after the initial schema (idempotent)."""
-    existing = {r[1] for r in conn.execute("PRAGMA table_info(agent_calls)").fetchall()}
+    """Add columns and tables introduced after the initial schema (idempotent)."""
+    existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_calls)").fetchall()}
     for col in ("prompt_full", "response_full", "user_full"):
-        if col not in existing:
+        if col not in existing_cols:
             conn.execute(f"ALTER TABLE agent_calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # hitl_decisions table (added in trace v2)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "hitl_decisions" not in tables:
+        conn.execute("""
+            CREATE TABLE hitl_decisions (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id      TEXT NOT NULL REFERENCES runs(id),
+                step        TEXT NOT NULL,
+                decision    TEXT NOT NULL,
+                reviewer_id TEXT NOT NULL DEFAULT '',
+                reason      TEXT NOT NULL DEFAULT '',
+                decided_at  TEXT NOT NULL
+            )
+        """)
     conn.commit()
 
 
@@ -162,6 +186,35 @@ class TraceLog:
                 response_full if self.full_trace else "",
                 user_full if self.full_trace else "",
             ),
+        )
+        self._conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def record_hitl(
+        self,
+        *,
+        run_id: str,
+        step: str,
+        decision: str,
+        reviewer_id: str = "",
+        reason: str = "",
+    ) -> int:
+        """Insert one hitl_decisions row for a human-in-the-loop review outcome.
+
+        Args:
+            run_id:      The run this decision belongs to.
+            step:        Agent or pipeline step that triggered the review (e.g. "backend_dev").
+            decision:    Human verdict: "approved", "rejected", or a custom string.
+            reviewer_id: Identifier of the reviewer (user id, email, or Slack user id).
+            reason:      Optional free-text explanation for the decision.
+
+        Returns the integer primary key of the inserted row.
+        """
+        cur = self._conn.execute(
+            """INSERT INTO hitl_decisions
+               (run_id, step, decision, reviewer_id, reason, decided_at)
+               VALUES (?,?,?,?,?,?)""",
+            (run_id, step, decision, reviewer_id or "", reason or "", _now_iso()),
         )
         self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
@@ -325,6 +378,14 @@ class TraceLog:
             "last_run":            row["last_run"],
             "by_team": [dict(r) for r in by_team_rows],
         }
+
+    def get_hitl_decisions(self, run_id: str) -> list[dict]:
+        """Return all HITL decision rows for a run, ordered by insertion time."""
+        rows = self._conn.execute(
+            "SELECT * FROM hitl_decisions WHERE run_id=? ORDER BY id",
+            (run_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def prune(self, days: int) -> int:
         """Delete runs (and their agent_calls) older than *days* days.
