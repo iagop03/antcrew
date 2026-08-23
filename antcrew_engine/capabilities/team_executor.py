@@ -4,11 +4,11 @@ Any antcrew Team or Agent that has a `.run(input: str) -> dict` method can be
 wrapped as an engine Executor.  The engine stays decoupled — it never imports
 Team classes directly.
 
-Usage
+Usage (caller code — these imports belong in your application, not this module)
 -----
-    from antcrew.teams.dev_team import DevTeam
-    from antcrew_engine.capabilities.team_executor import TeamExecutor
-    from antcrew_engine.engine import CapabilityDescriptor, ConditionId
+    # from antcrew.teams.dev_team import DevTeam               # your app
+    # from antcrew_engine.capabilities.team_executor import TeamExecutor
+    # from antcrew_engine.engine import CapabilityDescriptor, ConditionId
 
     descriptor = CapabilityDescriptor(
         name="dev_team",
