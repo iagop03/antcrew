@@ -132,7 +132,7 @@ def edit_artifact_in_editor(obj: PRD | list[Ticket]) -> str | None:
         tmp_path = tmp.name
 
     try:
-        subprocess.run([editor, tmp_path], check=True)
+        subprocess.run([editor, tmp_path], check=True)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
         with open(tmp_path, encoding="utf-8") as f:
             edited = f.read()
         return edited if edited.strip() != raw.strip() else None

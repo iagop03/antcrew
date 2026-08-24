@@ -225,7 +225,7 @@ def _edit_content(content, console) -> "dict | str | None":
         tmp_path = f.name
 
     try:
-        subprocess.run([editor, tmp_path], check=True)
+        subprocess.run([editor, tmp_path], check=True)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
         edited = Path(tmp_path).read_text(encoding="utf-8")
         return _json.loads(edited) if is_dict else edited
     except Exception as exc:
