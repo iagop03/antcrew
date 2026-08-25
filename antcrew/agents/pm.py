@@ -33,7 +33,7 @@ Respond ONLY with a valid JSON array of ticket objects (no markdown fences, no p
     "description": "...",
     "priority": "low|medium|high|critical",
     "acceptance_criteria": ["...", ...],
-    "dependencies": []
+    "dependencies": ["<exact title of another ticket in this list>"]
   },
   ...
 ]
@@ -42,6 +42,9 @@ Rules:
 - Generate between 3 and 10 tickets.
 - Each ticket must be independently testable.
 - Order tickets so that foundational ones come first.
+- "dependencies" must be an array of exact titles of other tickets in this same list.
+  Use an empty array [] when a ticket has no dependencies.
+  Never reference tickets outside this list or use IDs, indices, or descriptions.
 """
 
 _REFINE_SYSTEM = """\
