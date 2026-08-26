@@ -17,9 +17,11 @@ class AnthropicModel(BaseLLM):
         api_key: Optional[str] = None,
         prompt_caching: bool = False,
         base_url: Optional[str] = None,
+        extra_body: Optional[dict] = None,
     ) -> None:
         self.model = model
         self.prompt_caching = prompt_caching
+        self._extra_body = extra_body or {}
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not key:
             raise EnvironmentError(
@@ -80,6 +82,8 @@ class AnthropicModel(BaseLLM):
         return self._with_retry(self._blocking_complete, kwargs)
 
     def _blocking_complete(self, kwargs: dict) -> str:
+        if self._extra_body:
+            kwargs = {**kwargs, "extra_body": self._extra_body}
         response = self._client.messages.create(**kwargs)
         self._record_usage(
             self._total_input(response.usage),
@@ -97,6 +101,8 @@ class AnthropicModel(BaseLLM):
         return response.content[0].text
 
     def _stream_complete(self, kwargs: dict) -> str:
+        if self._extra_body:
+            kwargs = {**kwargs, "extra_body": self._extra_body}
         chunks: list[str] = []
         with self._client.messages.stream(**kwargs) as stream:
             for text in stream.text_stream:

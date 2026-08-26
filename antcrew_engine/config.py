@@ -10,7 +10,7 @@ from typing import Optional
 from antcrew_engine.models.base import BaseLLM
 
 
-def build_llm(model_str: str, *, prompt_caching: bool = False, api_key: Optional[str] = None, base_url: Optional[str] = None) -> BaseLLM:
+def build_llm(model_str: str, *, prompt_caching: bool = False, api_key: Optional[str] = None, base_url: Optional[str] = None, extra_body: Optional[dict] = None) -> BaseLLM:
     """Parse a model string and return a configured LLM instance.
 
     Supported forms::
@@ -173,4 +173,6 @@ def build_llm(model_str: str, *, prompt_caching: bool = False, api_key: Optional
         kw["api_key"] = api_key
     if base_url:
         kw["base_url"] = base_url
+    if extra_body:
+        kw["extra_body"] = extra_body
     return AnthropicModel(prompt_caching=prompt_caching, **kw)
