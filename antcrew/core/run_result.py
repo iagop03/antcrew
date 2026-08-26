@@ -45,11 +45,19 @@ class RunResult:
         state:     Full pipeline output (TeamState dict).
         thread_id: LangGraph thread used for this run.
         cost_usd:  Estimated API cost; 0.0 when not tracked.
+        usage:     Token usage summary from BaseLLM.get_usage_summary(); empty dict
+                   when not tracked. Keys: total_input_tokens, total_output_tokens,
+                   total_cost_usd, by_agent (list of per-call records).
     """
 
     state: dict
     thread_id: str = "default"
     cost_usd: float = 0.0
+    usage: dict = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.usage is None:
+            self.usage = {}
 
     # ── Dict-like interface — backward compatibility ──────────────────────────
 
@@ -100,6 +108,7 @@ class RunResult:
             "run_id": self.state.get("_run_id"),
             "thread_id": self.thread_id,
             "cost_usd": self.cost_usd,
+            "usage": self.usage,
             "state": serialized_state,
         }
 

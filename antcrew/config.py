@@ -58,6 +58,7 @@ _KNOWN_MODEL_PREFIXES = (
     "openai:", "ollama:", "groq:", "azure:", "gemini", "simulated",
     "moonshot:", "deepseek:", "mistral:", "xai:", "together:", "fireworks:", "cerebras:",
     "lmstudio:", "vllm:", "litellm:",
+    "local:",  # local CLI drivers routed via remote-gateway (claude-code, gemini, codex)
 )
 
 
@@ -67,25 +68,50 @@ def build_llm(
     prompt_caching: bool = False,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
+    extra_body: Optional[dict] = None,
 ) -> BaseLLM:
-    """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'litellm:bedrock/...', 'simulated'."""
+    """Parse 'claude', 'gpt-4o', 'ollama:llama3', 'groq:llama3-70b', 'litellm:bedrock/...', 'simulated'.
+
+    extra_body: dict merged into every API request body as Anthropic SDK extra_body.
+    Use to pass driver-specific fields (e.g. {"working_directory": "/workspaces/ws_123"})
+    through KeyBridge to remote-gateway without changing the main call signature.
+
+    local: prefix routes through remote-gateway (claude-code, gemini, codex drivers)
+    via a KeyBridge proxy; requires base_url pointing at a KeyBridge instance and
+    api_key set to the proxy token.
+    """
     from antcrew_engine.config import build_llm as _build_llm
     s = model_str.strip().lower()
     if not any(s.startswith(p) for p in _KNOWN_MODEL_PREFIXES):
         raise ValueError(
             f"Unknown model: {model_str!r}. "
             "Supported prefixes: claude, gpt, o1, o3, openai:, ollama:, groq:, azure:, gemini:, "
-            "moonshot:, deepseek:, mistral:, xai:, together:, fireworks:, cerebras:, lmstudio:, vllm:, litellm:, simulated."
+            "moonshot:, deepseek:, mistral:, xai:, together:, fireworks:, cerebras:, lmstudio:, vllm:, litellm:, local:, simulated."
         )
     if s.startswith("litellm:"):
         from antcrew.models.litellm_model import LiteLLMModel
         litellm_model_str = model_str[len("litellm:"):]
         return LiteLLMModel(litellm_model_str, api_key=api_key, api_base=base_url)
+    if s.startswith("local:"):
+        # local:* models are CLI drivers proxied via remote-gateway; they speak the
+        # Anthropic messages API, so AnthropicModel with the proxy base_url is correct.
+        # The full model string is preserved so KeyBridge can route by driver prefix.
+        from antcrew_engine.models.anthropic_model import AnthropicModel
+        _local_kw: dict = {}
+        if api_key is not None:
+            _local_kw["api_key"] = api_key
+        if base_url is not None:
+            _local_kw["base_url"] = base_url
+        if extra_body is not None:
+            _local_kw["extra_body"] = extra_body
+        return AnthropicModel(model=model_str, prompt_caching=prompt_caching, **_local_kw)
     _kw: dict = {}
     if api_key is not None:
         _kw["api_key"] = api_key
     if base_url is not None:
         _kw["base_url"] = base_url
+    if extra_body is not None:
+        _kw["extra_body"] = extra_body
     return _build_llm(model_str, prompt_caching=prompt_caching, **_kw)
 
 
