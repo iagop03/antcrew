@@ -11,6 +11,8 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 class AnthropicModel(BaseLLM):
+    _extra_body: dict = {}  # class-level default; overridden per-instance in __init__
+
     def __init__(
         self,
         model: str = _DEFAULT_MODEL,
