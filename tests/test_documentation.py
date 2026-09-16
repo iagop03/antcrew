@@ -500,3 +500,74 @@ class TestBaseExecutorDocumentation:
         ex.set_documentation(BadManager())
         # Must not raise — returns ""
         assert ex._doc_context("query") == ""
+
+
+# ---------------------------------------------------------------------------
+# 8. BaseAgent integration
+# ---------------------------------------------------------------------------
+
+class TestBaseAgentDocumentation:
+    def _make_agent(self):
+        from unittest.mock import MagicMock
+        from antcrew.core.agent import BaseAgent
+
+        class DummyAgent(BaseAgent):
+            name = "DummyAgent"
+            def run(self, state):
+                return {}
+
+        llm = MagicMock()
+        llm.system.return_value = "ok"
+        llm.current_agent = None
+        agent = DummyAgent(llm=llm)
+        return agent, llm
+
+    def test_set_documentation(self) -> None:
+        agent, _ = self._make_agent()
+        assert agent.documentation is None
+        agent.set_documentation("mock_mgr")
+        assert agent.documentation == "mock_mgr"
+
+    def test_doc_context_empty_without_manager(self) -> None:
+        agent, _ = self._make_agent()
+        assert agent._doc_context("any query") == ""
+
+    def test_doc_context_with_manager(self, doc_manager: DocumentationManager, tmp_docs: Path) -> None:
+        agent, _ = self._make_agent()
+        doc_manager.bulk_upload(str(tmp_docs))
+        agent.set_documentation(doc_manager)
+        ctx = agent._doc_context("JWT authentication")
+        assert isinstance(ctx, str)
+
+    def test_inject_documentation_prepends_to_user(self, doc_manager: DocumentationManager, tmp_docs: Path) -> None:
+        agent, _ = self._make_agent()
+        doc_manager.bulk_upload(str(tmp_docs))
+        agent.set_documentation(doc_manager)
+        result = agent._inject_documentation("Task: build login")
+        # When docs found, result starts with documentation context
+        assert isinstance(result, str)
+        assert "Task: build login" in result
+
+    def test_inject_documentation_noop_without_manager(self) -> None:
+        agent, _ = self._make_agent()
+        msg = "Task: build login"
+        assert agent._inject_documentation(msg) == msg
+
+    def test_doc_context_silent_on_exception(self) -> None:
+        from antcrew.core.agent import BaseAgent
+
+        class BadManager:
+            def get_context_for_agent(self, *a, **kw):
+                raise RuntimeError("boom")
+            def search(self, *a, **kw):
+                raise RuntimeError("boom")
+
+        class DummyAgent(BaseAgent):
+            name = "DummyAgent"
+            def run(self, state):
+                return {}
+
+        from unittest.mock import MagicMock
+        agent = DummyAgent(llm=MagicMock())
+        agent.set_documentation(BadManager())
+        assert agent._doc_context("query") == ""

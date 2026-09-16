@@ -155,6 +155,7 @@ class BaseAgent(ABC):
     repo_index: Optional["RepoIndex"] = None        # set by team after construction
     symbol_index: Optional["SymbolIndex"] = None    # set by team after construction
     kv_memory: Optional[Any] = None                 # BaseKVMemory — injected by platform runner
+    documentation: Optional[Any] = None             # DocumentationManager — injected via set_documentation()
 
     def __init__(
         self,
@@ -194,6 +195,36 @@ class BaseAgent(ABC):
         self._run_id: Optional[str] = None
         self._thread_id: Optional[str] = None
 
+    def set_documentation(self, documentation) -> None:
+        """Attach a DocumentationManager so _doc_context() is available in run()."""
+        self.documentation = documentation
+
+    def _doc_context(self, query: str, max_chars: int = 3000) -> str:
+        """Return relevant documentation as a formatted string for LLM prompts.
+
+        Returns "" when no manager is attached or no relevant docs are found.
+        """
+        if self.documentation is None:
+            return ""
+        try:
+            ctx = self.documentation.get_context_for_agent(self.name, query)
+            if ctx:
+                return "## Relevant documentation\n" + self.documentation.format_context(ctx, max_chars=max_chars)
+            results = self.documentation.search(query, top_k=3)
+            if not results:
+                return ""
+            snippets = "\n\n".join(r["content"][:600] for r in results)
+            return f"## Relevant documentation\n\n{snippets}"
+        except Exception:
+            return ""
+
+    def _inject_documentation(self, user: str) -> str:
+        """Prepend relevant documentation context to the user message."""
+        doc_ctx = self._doc_context(user)
+        if not doc_ctx:
+            return user
+        return f"{doc_ctx}\n\n{user}"
+
     def bind_run(self, run_id: Optional[str], thread_id: Optional[str] = None) -> None:
         """Set run context so _tracelog() can correlate events to the current run.
 
@@ -223,6 +254,7 @@ class BaseAgent(ABC):
         if self.preset is not None:
             system_prompt = self.preset.apply(system_prompt)
         user = self._inject_memory(user)
+        user = self._inject_documentation(user)
         if self.system_prompt_suffix:
             system_prompt = system_prompt + "\n\n" + self.system_prompt_suffix
         if self.max_tokens and "max_tokens" not in kwargs:
@@ -307,6 +339,7 @@ class BaseAgent(ABC):
         if self.preset is not None:
             system_prompt = self.preset.apply(system_prompt)
         user = self._inject_memory(user)
+        user = self._inject_documentation(user)
         if self.system_prompt_suffix:
             system_prompt = system_prompt + "\n\n" + self.system_prompt_suffix
 

@@ -198,6 +198,24 @@ class InteractiveMixin:
 
     _agents: dict[str, "BaseAgent"]
 
+    def set_documentation(self, documentation) -> None:
+        """Inject a DocumentationManager into all agents in the team.
+
+        After calling this, every agent's system() call automatically prepends
+        relevant documentation context to LLM prompts.
+        """
+        from antcrew.core.supervisor import ParallelGroup
+
+        def _inject(agent) -> None:
+            if isinstance(agent, ParallelGroup):
+                for inner in agent._agents:
+                    _inject(inner)
+            elif hasattr(agent, "set_documentation"):
+                agent.set_documentation(documentation)
+
+        for agent in self._agents.values():
+            _inject(agent)
+
     def _build_agent_map(self) -> dict:
         """Return the agent dict to pass to Supervisor.build().
 
