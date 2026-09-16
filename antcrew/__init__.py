@@ -296,6 +296,13 @@ _LAZY_MAP: dict[str, tuple[str, str]] = {
     "CAREFUL":             ("antcrew.presets", "CAREFUL"),
     # Testing
     "SequencedLLM":        ("antcrew.testing",           "SequencedLLM"),
+    # Documentation
+    "DocumentationManager":        ("antcrew_engine.documentation", "DocumentationManager"),
+    "DocumentationSchemaRegistry": ("antcrew_engine.documentation", "DocumentationSchemaRegistry"),
+    "DocumentTypeConfig":          ("antcrew_engine.documentation", "DocumentTypeConfig"),
+    "DocumentationIndex":          ("antcrew_engine.documentation", "DocumentationIndex"),
+    "DocumentationGraph":          ("antcrew_engine.documentation", "DocumentationGraph"),
+    "SearchResult":                ("antcrew_engine.documentation", "SearchResult"),
     # Persistence
     "load_state":          ("antcrew.utils.persistence", "load_state"),
     "save_state":          ("antcrew.utils.persistence", "save_state"),

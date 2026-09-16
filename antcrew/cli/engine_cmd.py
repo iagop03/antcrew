@@ -544,6 +544,10 @@ def engine_cmd(
                                   help="Disable Anthropic prompt caching (default: enabled)."),
     confirm_before: Optional[float] = typer.Option(None, "--confirm-before",
                                                    help="Prompt before capabilities with cost >= N."),
+    schema:   Optional[Path] = typer.Option(None, "--schema",
+                                            help="Path to documentation schema.yaml."),
+    docs_dir: Optional[Path] = typer.Option(None, "--docs-dir",
+                                            help="Directory of project documentation to index."),
 ) -> None:
     """Run the capability-driven engine to build a software project from a goal.
 
@@ -591,6 +595,24 @@ def engine_cmd(
     goal       = _build_goal(goal_description, tuple(tech), condition, full)
     store      = FilesystemStore(output) if output is not None else MemoryStore()
     log        = EventLog()
+
+    # ---- documentation -------------------------------------------------------
+    doc_mgr = None
+    if schema is not None or docs_dir is not None:
+        try:
+            from antcrew_engine.documentation import DocumentationManager
+            schema_path = str(schema) if schema is not None else None
+            doc_mgr = DocumentationManager(schema_path=schema_path)
+            if docs_dir is not None:
+                if not docs_dir.is_dir():
+                    console.print(f"[red]--docs-dir: not a directory: {docs_dir}[/]")
+                    raise typer.Exit(code=1)
+                uploaded = doc_mgr.bulk_upload(str(docs_dir))
+                console.print(f"[dim]Documentation: indexed {len(uploaded)} document(s) from {docs_dir}[/]")
+        except ImportError:
+            console.print("[yellow]Warning: antcrew_engine.documentation not available; --schema/--docs-dir ignored.[/]")
+            doc_mgr = None
+
     registry   = _build_registry(
         llm, model,
         capability_models=cap_models,
@@ -600,6 +622,12 @@ def engine_cmd(
         parallel_workers=parallel_workers,
     )
     validators = _build_validators()
+
+    # Inject documentation into all executors that support it
+    if doc_mgr is not None:
+        for executor in registry.all():
+            if hasattr(executor, "set_documentation"):
+                executor.set_documentation(doc_mgr)
 
     # Task mode: seed store from existing codebase
     if from_dir is not None:

@@ -52,11 +52,43 @@ class BaseExecutor:
 
     The EngineLoop injects _event_log before each execute() call so that
     streaming tokens are forwarded as CapabilityProgress events.
+
+    Call set_documentation(doc_mgr) after construction to attach a
+    DocumentationManager; then use _doc_context(query) inside _run() to
+    prepend relevant documentation to LLM prompts.
     """
 
     def __init__(self, llm: "Optional[BaseLLM]" = None) -> None:
         self._llm = llm
+        self._documentation = None  # injected via set_documentation()
         self._event_log = None  # injected by EngineLoop; enables streaming
+
+    def set_documentation(self, documentation) -> None:
+        """Attach a DocumentationManager so _doc_context() becomes available."""
+        self._documentation = documentation
+
+    def _doc_context(self, query: str, max_chars: int = 3000) -> str:
+        """Return documentation context as a formatted string for LLM prompts.
+
+        Returns "" when no DocumentationManager is attached or when no
+        relevant documents are found, so callers can always do::
+
+            prompt = f\"{self._doc_context(task)}\\n\\nTask: {task}\"
+        """
+        if self._documentation is None:
+            return ""
+        try:
+            agent_name = type(self).__name__
+            ctx = self._documentation.get_context_for_agent(agent_name, query)
+            if ctx:
+                return "## Relevant documentation\n" + self._documentation.format_context(ctx, max_chars=max_chars)
+            results = self._documentation.search(query, top_k=3)
+            if not results:
+                return ""
+            snippets = "\n\n".join(r["content"][:600] for r in results)
+            return f"## Relevant documentation\n\n{snippets}"
+        except Exception:
+            return ""
 
     def _call(self, system: str, user: str) -> str:
         """Call the injected LLM with a system + user prompt pair.
