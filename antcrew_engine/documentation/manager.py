@@ -80,6 +80,8 @@ class DocumentationManager:
                 bucket=config["bucket"],
                 prefix=config.get("prefix", ""),
                 region=config.get("region", "us-east-1"),
+                aws_access_key_id=config.get("aws_access_key_id"),
+                aws_secret_access_key=config.get("aws_secret_access_key"),
             )
         from .storage.local import LocalFileStorage
         return LocalFileStorage(root=config.get("path", "./documentation"))
@@ -165,6 +167,98 @@ class DocumentationManager:
         """Alias for bulk_upload — loads documents into memory without returning IDs."""
         self.bulk_upload(directory)
 
+    def index_from_storage(self) -> list[str]:
+        """Index all documents already present in the configured storage backend.
+
+        Works with any backend (local, git, s3). Downloads each document, parses
+        it, and adds it to the semantic index and knowledge graph.
+        Returns the list of successfully indexed doc_ids.
+        """
+        import tempfile
+        from pathlib import Path as _Path
+
+        indexed: list[str] = []
+        try:
+            doc_ids = self.storage.list_documents()
+        except Exception:
+            return indexed
+
+        for doc_id in doc_ids:
+            try:
+                content_bytes = self.storage.load(doc_id)
+                metadata = {}
+                if hasattr(self.storage, "load_metadata"):
+                    try:
+                        metadata = self.storage.load_metadata(doc_id) or {}
+                    except Exception:
+                        pass
+
+                # Multi-layer doc_type detection for pre-existing files
+                path = _Path(doc_id)
+
+                # Layer 1: antcrew metadata sidecar (loaded above via load_metadata)
+                doc_type: str | None = metadata.get("doc_type")
+
+                # Layer 2: S3 native user-metadata via HeadObject
+                if not doc_type and hasattr(self.storage, "_s3"):
+                    try:
+                        head = self.storage._s3.head_object(
+                            Bucket=self.storage.bucket,
+                            Key=self.storage._key(doc_id),
+                        )
+                        obj_meta = head.get("Metadata", {})
+                        doc_type = (
+                            obj_meta.get("doc-type")
+                            or obj_meta.get("doc_type")
+                            or obj_meta.get("category")
+                        )
+                    except Exception:
+                        pass
+
+                # Layer 3: path_rules from schema
+                if not doc_type:
+                    doc_type = self.schema.classify_by_path(doc_id)
+
+                # Layer 4+5: filename convention + extension fallback
+                if not doc_type:
+                    doc_type = self._detect_doc_type(path, None)[0]
+
+                category = metadata.get("category") or self.schema.get_category_for_type(doc_type)
+                parser_name = self.schema.get_parser_for_type(doc_type)
+
+                # Write to temp file so parsers can read it by path
+                suffix = path.suffix or ".txt"
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp.write(content_bytes)
+                    tmp_path = tmp.name
+
+                try:
+                    parser = _get_parser(parser_name)
+                    parsed = parser.parse(tmp_path)
+                finally:
+                    import os as _os
+                    _os.unlink(tmp_path)
+
+                full_meta: dict = {
+                    **parsed.metadata,
+                    **metadata,
+                    "doc_type": doc_type,
+                    "category": category,
+                    "source_file": doc_id,
+                }
+                self.index.add_document(doc_id, parsed.content, full_meta)
+                self.graph.add_node(doc_id, full_meta)
+                self._documents[doc_id] = {
+                    "doc_type": doc_type,
+                    "category": category,
+                    "metadata": full_meta,
+                }
+                indexed.append(doc_id)
+            except Exception:
+                pass  # skip unreadable/unsupported files silently
+
+        return indexed
+
     # ------------------------------------------------------------------
     # Search
     # ------------------------------------------------------------------
@@ -176,12 +270,38 @@ class DocumentationManager:
         category: str | None = None,
         top_k: int = 5,
     ) -> list[dict]:
-        filter_meta: dict | None = None
-        if doc_type:
-            filter_meta = {"doc_type": doc_type}
-        elif category:
-            filter_meta = {"category": category}
-        return self.index.search(query, top_k=top_k, filter_metadata=filter_meta)
+        # Explicit filter always wins — bypass hint routing
+        if doc_type or category:
+            filter_meta: dict | None = {"doc_type": doc_type} if doc_type else {"category": category}
+            return self.index.search(query, top_k=top_k, filter_metadata=filter_meta)
+
+        # Intent-based routing via query_hints
+        hinted_types = self.schema.get_doc_types_for_query(query)
+        if not hinted_types:
+            return self.index.search(query, top_k=top_k)
+
+        # Search hinted types first, then fill remaining slots with generic results
+        seen: set[str] = set()
+        results: list[dict] = []
+        for dt in hinted_types:
+            for r in self.index.search(query, top_k=top_k, filter_metadata={"doc_type": dt}):
+                rid = r.get("id") or r.get("doc_id", "")
+                if rid not in seen:
+                    seen.add(rid)
+                    results.append(r)
+            if len(results) >= top_k:
+                break
+
+        if len(results) < top_k:
+            for r in self.index.search(query, top_k=top_k):
+                rid = r.get("id") or r.get("doc_id", "")
+                if rid not in seen:
+                    seen.add(rid)
+                    results.append(r)
+                if len(results) >= top_k:
+                    break
+
+        return results[:top_k]
 
     def search_by_type(self, query: str, doc_type: str, top_k: int = 5) -> list[dict]:
         return self.search(query, doc_type=doc_type, top_k=top_k)

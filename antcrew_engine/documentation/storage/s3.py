@@ -7,12 +7,24 @@ from .base import BaseStorage
 
 
 class S3Storage(BaseStorage):
-    def __init__(self, bucket: str, prefix: str = "", region: str = "us-east-1") -> None:
+    def __init__(
+        self,
+        bucket: str,
+        prefix: str = "",
+        region: str = "us-east-1",
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
+    ) -> None:
         self.bucket = bucket
         self.prefix = prefix.rstrip("/")
         try:
             import boto3
-            self._s3 = boto3.client("s3", region_name=region)
+            self._s3 = boto3.client(
+                "s3",
+                region_name=region,
+                aws_access_key_id=aws_access_key_id or None,
+                aws_secret_access_key=aws_secret_access_key or None,
+            )
         except ImportError:
             raise ImportError("boto3 is required for S3 storage: pip install boto3")
 
@@ -46,6 +58,13 @@ class S3Storage(BaseStorage):
                 doc_id = key[len(self.prefix):].lstrip("/") if self.prefix else key
                 result.append(doc_id)
         return sorted(result)
+
+    def load_metadata(self, doc_id: str) -> dict:
+        try:
+            resp = self._s3.get_object(Bucket=self.bucket, Key=self._meta_key(doc_id))
+            return json.loads(resp["Body"].read().decode())
+        except Exception:
+            return {}
 
     def delete(self, doc_id: str) -> None:
         for key in (self._key(doc_id), self._meta_key(doc_id)):

@@ -1,6 +1,7 @@
 """DocumentationSchemaRegistry: load, validate, and query documentation schemas."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -10,22 +11,104 @@ from typing import Any
 class DocumentTypeConfig:
     id: str
     name: str
-    category: str  # functional | technical | operational
+    category: str  # functional | technical | operational | procedural | …
     purpose: str = ""
     parser: str = "markdown"
     related_to: list[str] = field(default_factory=list)
 
 
+@dataclass
+class QueryHint:
+    """Maps query keywords/patterns to preferred doc types.
+
+    When a user query matches ``pattern`` (case-insensitive regex or plain
+    substring), the listed ``doc_types`` are searched first and their results
+    are ranked above generic matches.
+    """
+    pattern: str          # regex or plain substring (matched case-insensitively)
+    doc_types: list[str]  # doc_type ids to prioritise
+    _compiled: "re.Pattern | None" = field(default=None, init=False, repr=False)
+
+    def matches(self, query: str) -> bool:
+        if self._compiled is None:
+            try:
+                object.__setattr__(self, "_compiled", re.compile(self.pattern, re.IGNORECASE))
+            except re.error:
+                object.__setattr__(self, "_compiled", re.compile(re.escape(self.pattern), re.IGNORECASE))
+        return bool(self._compiled.search(query))
+
+
+@dataclass
+class PathRule:
+    """Maps an S3 / storage path prefix or suffix to a doc type.
+
+    Used by ``index_from_storage()`` to classify pre-existing files that have
+    no metadata sidecar.  Rules are evaluated in order; first match wins.
+
+    Examples::
+
+        PathRule(prefix="procedures/", doc_type="procedure")
+        PathRule(prefix="specs/",      doc_type="functional_spec")
+        PathRule(suffix=".jira.json",  doc_type="jira_ticket")
+    """
+    doc_type: str
+    prefix: str = ""   # match if doc_id starts with this string (case-insensitive)
+    suffix: str = ""   # match if doc_id ends with this string (case-insensitive)
+
+    def matches(self, doc_id: str) -> bool:
+        lower = doc_id.lower()
+        if self.prefix and not lower.startswith(self.prefix.lower()):
+            return False
+        if self.suffix and not lower.endswith(self.suffix.lower()):
+            return False
+        return bool(self.prefix or self.suffix)
+
+
 class DocumentationSchemaRegistry:
     """Manages the documentation schema (structure) for a project.
 
-    Each project defines its own document types and per-agent search hints
-    via a YAML file (or a plain dict).
+    Each project defines its own document types, per-agent search hints,
+    query-intent routing hints, and path-based classification rules via a
+    YAML file (or a plain dict).
+
+    Schema YAML example::
+
+        documentation_schema:
+          org_name: Acme Corp
+
+          document_types:
+            - id: functional_spec
+              name: Functional Specification
+              category: functional
+              parser: markdown
+
+            - id: procedure
+              name: Procedure
+              category: procedural
+              parser: markdown
+
+          agent_hints:
+            CodeGenerator:
+              - "For requirements: search Functional Specification (functional_spec)"
+
+          query_hints:
+            - pattern: "crear tabla|table creation|nueva tabla"
+              doc_types: [procedure]
+            - pattern: "componente|component|implementar"
+              doc_types: [functional_spec, technical_design]
+
+          path_rules:
+            - prefix: "procedures/"
+              doc_type: procedure
+            - prefix: "specs/"
+              doc_type: functional_spec
     """
 
     def __init__(self, schema_path: str | None = None) -> None:
         self._types: dict[str, DocumentTypeConfig] = {}
         self._agent_hints: dict[str, list[str]] = {}
+        self._query_hints: list[QueryHint] = []
+        self._path_rules: list[PathRule] = []
         self._org_name: str = ""
         if schema_path:
             self.load_from_file(schema_path)
@@ -61,6 +144,23 @@ class DocumentationSchemaRegistry:
 
         for agent, hints in root.get("agent_hints", {}).items():
             self._agent_hints[agent] = list(hints)
+
+        self._query_hints = [
+            QueryHint(
+                pattern=qh["pattern"],
+                doc_types=list(qh.get("doc_types", [])),
+            )
+            for qh in root.get("query_hints", [])
+        ]
+
+        self._path_rules = [
+            PathRule(
+                doc_type=pr["doc_type"],
+                prefix=pr.get("prefix", ""),
+                suffix=pr.get("suffix", ""),
+            )
+            for pr in root.get("path_rules", [])
+        ]
 
     # ------------------------------------------------------------------
     # Validation
@@ -100,6 +200,38 @@ class DocumentationSchemaRegistry:
     @property
     def org_name(self) -> str:
         return self._org_name
+
+    # ------------------------------------------------------------------
+    # Query-intent routing
+    # ------------------------------------------------------------------
+
+    def get_doc_types_for_query(self, query: str) -> list[str]:
+        """Return doc_type ids that the query_hints say are relevant for this query.
+
+        Returns an empty list when no hint matches (→ generic search across all types).
+        Multiple matching hints are merged in order; duplicates are preserved for ranking.
+        """
+        matched: list[str] = []
+        for hint in self._query_hints:
+            if hint.matches(query):
+                for dt in hint.doc_types:
+                    if dt not in matched:
+                        matched.append(dt)
+        return matched
+
+    # ------------------------------------------------------------------
+    # Path-based classification (for existing storage files)
+    # ------------------------------------------------------------------
+
+    def classify_by_path(self, doc_id: str) -> str | None:
+        """Return a doc_type id for a file path, or None if no rule matches.
+
+        Evaluated in schema order; first match wins.
+        """
+        for rule in self._path_rules:
+            if rule.matches(doc_id):
+                return rule.doc_type
+        return None
 
     # ------------------------------------------------------------------
     # Runtime registration

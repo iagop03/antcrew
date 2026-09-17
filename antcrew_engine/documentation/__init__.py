@@ -13,12 +13,14 @@ Quickstart::
 from .graph import DocumentationGraph
 from .index import DocumentationIndex, SearchResult
 from .manager import DocumentationManager
-from .schema import DocumentationSchemaRegistry, DocumentTypeConfig
+from .schema import DocumentationSchemaRegistry, DocumentTypeConfig, PathRule, QueryHint
 
 __all__ = [
     "DocumentationManager",
     "DocumentationSchemaRegistry",
     "DocumentTypeConfig",
+    "QueryHint",
+    "PathRule",
     "DocumentationIndex",
     "SearchResult",
     "DocumentationGraph",

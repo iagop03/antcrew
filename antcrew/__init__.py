@@ -300,6 +300,8 @@ _LAZY_MAP: dict[str, tuple[str, str]] = {
     "DocumentationManager":        ("antcrew_engine.documentation", "DocumentationManager"),
     "DocumentationSchemaRegistry": ("antcrew_engine.documentation", "DocumentationSchemaRegistry"),
     "DocumentTypeConfig":          ("antcrew_engine.documentation", "DocumentTypeConfig"),
+    "QueryHint":                   ("antcrew_engine.documentation", "QueryHint"),
+    "PathRule":                    ("antcrew_engine.documentation", "PathRule"),
     "DocumentationIndex":          ("antcrew_engine.documentation", "DocumentationIndex"),
     "DocumentationGraph":          ("antcrew_engine.documentation", "DocumentationGraph"),
     "SearchResult":                ("antcrew_engine.documentation", "SearchResult"),
