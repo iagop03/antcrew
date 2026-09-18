@@ -50,7 +50,7 @@ class COBOLAnalysis:
             f"Paragraphs: {', '.join(self.paragraphs[:10])}{'...' if len(self.paragraphs) > 10 else ''}",
             f"Calls    : {', '.join(c.target for c in self.external_calls if c.kind == 'CALL')[:5]}",
         ]
-        return "\n".join(l for l in lines if l)
+        return "\n".join(ln for ln in lines if ln)
 
 
 class COBOLAnalyzer:

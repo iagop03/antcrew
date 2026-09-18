@@ -1,6 +1,6 @@
 """antcrew.augment.cobol — add AI to COBOL programs without rewriting them."""
-from .analyzer import COBOLAnalyzer, COBOLAnalysis
 from .ai_generator import AIGenerator
+from .analyzer import COBOLAnalysis, COBOLAnalyzer
 from .integrator import Integrator
 
 

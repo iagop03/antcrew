@@ -91,7 +91,7 @@ def augment_cobol_cmd(
     caller_path.write_text(result.cobol_caller, encoding="utf-8")
     guide_path.write_text(result.deployment_guide, encoding="utf-8")
 
-    console.print(f"[green]Written:[/green]")
+    console.print("[green]Written:[/green]")
     console.print(f"  Python wrapper  → {wrapper_path}")
     console.print(f"  COBOL caller    → {caller_path}")
     console.print(f"  Deployment guide→ {guide_path}")
