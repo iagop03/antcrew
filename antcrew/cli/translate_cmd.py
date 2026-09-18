@@ -38,7 +38,7 @@ def translate_cobol_cmd(
 ) -> None:
     """Translate a COBOL program to Python, Java, or Go.
 
-    Requires antcrew-translators: pip install antcrew-translators
+    Requires polytranslate: pip install polytranslate
 
     Examples::
 
@@ -47,11 +47,11 @@ def translate_cobol_cmd(
         antcrew translate-cobol ORDPRC.cbl --target go --module github.com/acme/legacy
     """
     try:
-        from translators.languages.cobol import CobolParser
+        from polytranslate.languages.cobol import CobolParser
     except ImportError:
         console.print(
-            "[red]antcrew-translators is not installed.[/red]\n"
-            "Run: [bold]pip install antcrew-translators[/bold]"
+            "[red]polytranslate is not installed.[/red]\n"
+            "Run: [bold]pip install polytranslate[/bold]"
         )
         raise typer.Exit(1)
 
@@ -97,10 +97,10 @@ def translate_cobol_cmd(
 
 def _build_generator(target: str, package: str, module: str):
     if target == "java":
-        from translators.targets.java import JavaGenerator
+        from polytranslate.targets.java import JavaGenerator
         return JavaGenerator(package=package)
     if target == "go":
-        from translators.targets.golang import GoGenerator
+        from polytranslate.targets.golang import GoGenerator
         return GoGenerator(module=module)
-    from translators.targets.python import PythonGenerator
+    from polytranslate.targets.python import PythonGenerator
     return PythonGenerator()

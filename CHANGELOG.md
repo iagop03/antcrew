@@ -27,7 +27,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Lazy exports** — `AS400Connector`, `COBOLAugment`, `COBOLAnalyzer`, `COBOLAnalysis`, `CobolSupport` added to `antcrew.__init__` lazy map.
 
-- **`antcrew-translators`** (new repository) — COBOL → Python / Java / Go structural translation pipeline. Ships: `translators/core/` (AST nodes, `BaseParser`, `BaseGenerator`), `translators/languages/cobol/` (full structural parser + `CobolASTMapper` with PIC normalisation), `translators/targets/python/` (`PythonGenerator` producing `_model.py`, `_logic.py`, `_runner.py`). Java and Go generator stubs ready. See [github.com/iagop03/antcrew-translators](https://github.com/iagop03/antcrew-translators).
+- **`polytranslate`** (new repository) — COBOL → Python / Java / Go structural translation pipeline. Ships: `translators/core/` (AST nodes, `BaseParser`, `BaseGenerator`), `translators/languages/cobol/` (full structural parser + `CobolASTMapper` with PIC normalisation), `translators/targets/python/` (`PythonGenerator` producing `_model.py`, `_logic.py`, `_runner.py`). Java and Go generator stubs ready. See [github.com/iagop03/polytranslate](https://github.com/iagop03/polytranslate).
 
 ---
 
