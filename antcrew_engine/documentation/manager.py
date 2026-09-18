@@ -29,6 +29,10 @@ _EXT_TO_PARSER: dict[str, str] = {
     ".doc": "docx",
     ".pdf": "pdf",
     ".json": "jira",
+    ".cbl": "cobol",
+    ".cob": "cobol",
+    ".cpy": "cobol",
+    ".copy": "cobol",
 }
 
 
@@ -46,6 +50,9 @@ def _get_parser(parser_name: str):
     if canonical == "jira":
         from .parsers.jira import JiraTicketParser
         return JiraTicketParser()
+    if canonical == "cobol":
+        from .parsers.cobol import CobolParser
+        return CobolParser()
     from .parsers.text import TextParser
     return TextParser()
 

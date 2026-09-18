@@ -296,6 +296,11 @@ _LAZY_MAP: dict[str, tuple[str, str]] = {
     "CAREFUL":             ("antcrew.presets", "CAREFUL"),
     # Testing
     "SequencedLLM":        ("antcrew.testing",           "SequencedLLM"),
+    # Legacy / COBOL augmentation
+    "AS400Connector":              ("antcrew.integrations.as400",   "AS400Connector"),
+    "COBOLAugment":                ("antcrew.augment.cobol",        "COBOLAugment"),
+    "COBOLAnalyzer":               ("antcrew.augment.cobol",        "COBOLAnalyzer"),
+    "COBOLAnalysis":               ("antcrew.augment.cobol",        "COBOLAnalysis"),
     # Documentation
     "DocumentationManager":        ("antcrew_engine.documentation", "DocumentationManager"),
     "DocumentationSchemaRegistry": ("antcrew_engine.documentation", "DocumentationSchemaRegistry"),

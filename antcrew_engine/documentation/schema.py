@@ -64,6 +64,15 @@ class PathRule:
         return bool(self.prefix or self.suffix)
 
 
+@dataclass
+class CobolSupport:
+    """COBOL / legacy system options when org_type is 'legacy'."""
+    enabled: bool = True
+    as400_connection: bool = False    # expose AS400Connector in CLI / agents
+    copybook_parsing: bool = True     # parse .cpy/.copy files as COBOL
+    batch_job_docs: bool = True       # treat COBOL programs as batch-job docs
+
+
 class DocumentationSchemaRegistry:
     """Manages the documentation schema (structure) for a project.
 
@@ -75,6 +84,14 @@ class DocumentationSchemaRegistry:
 
         documentation_schema:
           org_name: Acme Corp
+          org_type: legacy          # legacy | microservices | mixed
+
+          if_legacy:
+            cobol_support:
+              enable: true
+              as400_connection: false
+              copybook_parsing: true
+              batch_job_docs: true
 
           document_types:
             - id: functional_spec
@@ -110,6 +127,8 @@ class DocumentationSchemaRegistry:
         self._query_hints: list[QueryHint] = []
         self._path_rules: list[PathRule] = []
         self._org_name: str = ""
+        self._org_type: str = "microservices"   # legacy | microservices | mixed
+        self._cobol_support: CobolSupport | None = None
         if schema_path:
             self.load_from_file(schema_path)
 
@@ -130,6 +149,17 @@ class DocumentationSchemaRegistry:
         """Load schema from a plain dictionary."""
         root = schema_dict.get("documentation_schema", schema_dict)
         self._org_name = root.get("org_name", "")
+        self._org_type = root.get("org_type", "microservices")
+
+        if_legacy = root.get("if_legacy", {})
+        cs_raw = if_legacy.get("cobol_support", {})
+        if self._org_type == "legacy" or cs_raw.get("enable", cs_raw.get("enabled", False)):
+            self._cobol_support = CobolSupport(
+                enabled=True,
+                as400_connection=cs_raw.get("as400_connection", False),
+                copybook_parsing=cs_raw.get("copybook_parsing", True),
+                batch_job_docs=cs_raw.get("batch_job_docs", True),
+            )
 
         for dt in root.get("document_types", []):
             cfg = DocumentTypeConfig(
@@ -200,6 +230,18 @@ class DocumentationSchemaRegistry:
     @property
     def org_name(self) -> str:
         return self._org_name
+
+    @property
+    def org_type(self) -> str:
+        return self._org_type
+
+    @property
+    def is_legacy(self) -> bool:
+        return self._org_type == "legacy"
+
+    @property
+    def cobol_support(self) -> "CobolSupport | None":
+        return self._cobol_support
 
     # ------------------------------------------------------------------
     # Query-intent routing
