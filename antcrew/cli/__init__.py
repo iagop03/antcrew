@@ -18,6 +18,7 @@ from antcrew.cli import (
     history_cmd,  # noqa: F401
     init_cmd,  # noqa: F401
     inspect_cmds,  # noqa: F401
+    java_to_cobol_cmd,  # noqa: F401
     ops_cmds,  # noqa: F401
     project_cmds,  # noqa: F401
     publish_cmd,  # noqa: F401
