@@ -9,7 +9,7 @@ import typer
 from antcrew.cli._app import app, console
 
 _COBOL_EXTS = {".cbl", ".cob", ".cpy", ".copy"}
-_MAX_JAVA_SIZE = 1 * 1024 * 1024  # 1 MB — prevents accidental API spam with huge files
+_MAX_JAVA_SIZE = 1 * 1024 * 1024  # 1 MB
 
 
 @app.command(name="java-to-cobol")
@@ -29,14 +29,24 @@ def java_to_cobol_cmd(
     ),
     model: str = typer.Option(
         "claude", "--model", "-m",
-        help="LLM to use for translation (e.g. claude, claude-sonnet-5, openai:gpt-4o).",
+        help="LLM to use (e.g. claude, claude-sonnet-5, openai:gpt-4o).",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print output without writing files."),
+    no_normalize: bool = typer.Option(False, "--no-normalize", help="Skip COBOLNormalizer pass."),
+    refine_file: Optional[Path] = typer.Option(
+        None, "--refine", "-r",
+        help="Existing .cbl to refine instead of translating from scratch.",
+    ),
+    feedback: Optional[str] = typer.Option(
+        None, "--feedback", "-f",
+        help="Feedback text for --refine mode.",
+    ),
 ) -> None:
     """Translate a Java source file to COBOL.
 
-    Optionally learns naming conventions and structure rules from an existing
-    COBOL file or a standards documentation file, then generates conformant code.
+    Optionally learns naming conventions from an existing COBOL file or
+    standards doc. Applies COBOLNormalizer and structural validation after
+    translation.
 
     Requires polytranslate: pip install polytranslate
 
@@ -45,6 +55,7 @@ def java_to_cobol_cmd(
         antcrew java-to-cobol OrderProcessor.java
         antcrew java-to-cobol OrderProcessor.java --standards CLAIMS.cbl
         antcrew java-to-cobol OrderProcessor.java --standards COBOL_STANDARDS.md -o ./output
+        antcrew java-to-cobol OrderProcessor.java --refine out.cbl --feedback "missing date check"
         antcrew java-to-cobol OrderProcessor.java --dry-run
     """
     try:
@@ -56,7 +67,7 @@ def java_to_cobol_cmd(
         )
         raise typer.Exit(1)
 
-    # Blocker #1: validate Java file before sending to the LLM
+    # Validate Java input file
     java_size = java_file.stat().st_size
     if java_size == 0:
         console.print(f"[red]Java file is empty: {java_file}[/red]")
@@ -96,15 +107,46 @@ def java_to_cobol_cmd(
             console.print(f"[red]Failed to load standards: {exc}[/red]")
             raise typer.Exit(1)
 
-    console.print(f"[bold]Translating[/bold] {java_file.name} → COBOL…")
-    try:
-        cobol_code = translator.translate(java_code)
-    except TimeoutError as exc:
-        console.print(f"[red]{exc}[/red]")
-        raise typer.Exit(1)
-    except Exception as exc:
-        console.print(f"[red]Translation error: {exc}[/red]")
-        raise typer.Exit(1)
+    normalize = not no_normalize
+
+    if refine_file:
+        if not feedback:
+            console.print("[red]--feedback is required when using --refine[/red]")
+            raise typer.Exit(1)
+        current_cobol = refine_file.read_text(encoding="utf-8")
+        console.print(f"[bold]Refining[/bold] {refine_file.name} with feedback…")
+        try:
+            cobol_code = translator.refine(java_code, current_cobol, feedback, normalize=normalize)
+        except Exception as exc:
+            console.print(f"[red]Refinement error: {exc}[/red]")
+            raise typer.Exit(1)
+    else:
+        lines = len(java_code.splitlines())
+        if lines > 150:
+            console.print(f"[yellow]Large file ({lines} lines) — translating in chunks…[/yellow]")
+        else:
+            console.print(f"[bold]Translating[/bold] {java_file.name} → COBOL…")
+        try:
+            cobol_code = translator.translate(java_code, normalize=normalize)
+        except TimeoutError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+        except Exception as exc:
+            console.print(f"[red]Translation error: {exc}[/red]")
+            raise typer.Exit(1)
+
+    # Structural validation
+    validation = translator.validate(cobol_code)
+    if validation.errors:
+        console.print("[red bold]Validation errors:[/red bold]")
+        for e in validation.errors:
+            console.print(f"  [red]✗ {e}[/red]")
+    if validation.warnings:
+        console.print("[yellow]Warnings:[/yellow]")
+        for w in validation.warnings:
+            console.print(f"  [yellow]⚠ {w}[/yellow]")
+    if validation.valid and not validation.warnings:
+        console.print("[green]✓ COBOL structure valid[/green]")
 
     if dry_run:
         console.rule(f"[cyan]{java_file.stem}.cbl[/cyan]")
