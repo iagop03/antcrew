@@ -9,6 +9,7 @@ import typer
 from antcrew.cli._app import app, console
 
 _COBOL_EXTS = {".cbl", ".cob", ".cpy", ".copy"}
+_MAX_JAVA_SIZE = 1 * 1024 * 1024  # 1 MB — prevents accidental API spam with huge files
 
 
 @app.command(name="java-to-cobol")
@@ -55,9 +56,21 @@ def java_to_cobol_cmd(
         )
         raise typer.Exit(1)
 
+    # Blocker #1: validate Java file before sending to the LLM
+    java_size = java_file.stat().st_size
+    if java_size == 0:
+        console.print(f"[red]Java file is empty: {java_file}[/red]")
+        raise typer.Exit(1)
+    if java_size > _MAX_JAVA_SIZE:
+        console.print(
+            f"[red]Java file too large ({java_size / 1024:.0f} KB > 1 MB): {java_file}[/red]\n"
+            "Split the file into smaller classes before translating."
+        )
+        raise typer.Exit(1)
+
     java_code = java_file.read_text(encoding="utf-8")
     if not java_code.strip():
-        console.print(f"[red]Java file is empty: {java_file}[/red]")
+        console.print(f"[red]Java file contains only whitespace: {java_file}[/red]")
         raise typer.Exit(1)
 
     try:
@@ -86,6 +99,9 @@ def java_to_cobol_cmd(
     console.print(f"[bold]Translating[/bold] {java_file.name} → COBOL…")
     try:
         cobol_code = translator.translate(java_code)
+    except TimeoutError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
     except Exception as exc:
         console.print(f"[red]Translation error: {exc}[/red]")
         raise typer.Exit(1)
