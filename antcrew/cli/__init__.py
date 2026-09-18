@@ -33,6 +33,7 @@ from antcrew.cli import (
     template_cmd,  # noqa: F401
     test_cmd,  # noqa: F401
     trace_cmd,  # noqa: F401
+    translate_cmd,  # noqa: F401
     validate_cmd,  # noqa: F401
     writeback_cmd,  # noqa: F401
 )
