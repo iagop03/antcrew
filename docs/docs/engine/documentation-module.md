@@ -328,6 +328,38 @@ agent.set_documentation(mgr)
 result = agent.run({"request": "Implement JWT login"})
 ```
 
+### DocumentationReader — structured access for capabilities
+
+`DocumentationReader` wraps a `DocumentationManager` and gives engine capabilities a typed, ergonomic API for reading documents — as opposed to the raw search interface used by agents.
+
+```python
+from antcrew_engine.documentation import DocumentationManager, DocumentationReader
+
+mgr = DocumentationManager(schema_path="schema.yaml")
+mgr.index_from_storage()
+
+reader = DocumentationReader(mgr)
+
+# List all indexed documents
+docs = reader.list_docs()                        # → list[DocSummary]
+docs = reader.list_docs(doc_type="cobol")        # → filtered by type
+
+# Read a document's full content
+content = reader.read("cobol/PAYROLL.cbl")       # → str (utf-8 or latin-1)
+content = reader.read_with_header("cobol/PAYROLL.cbl")  # → str with type/size header
+
+# Search
+results = reader.search("net pay calculation", top_k=5)   # → list[SearchResult]
+
+# Text variants — formatted for LLM prompts
+table   = reader.list_docs_as_text()             # → markdown table
+snippet = reader.search_as_text("tax deduction") # → formatted search results
+```
+
+`DocSummary` has fields: `doc_id`, `doc_type`, `source_file`, `size_bytes`, `uploaded_at`.
+
+`DocumentationReader` is what the COBOL capabilities use internally — `COBOLAnalyzerExecutor`, `RequirementsElicitationExecutor`, and others call `reader.list_docs(doc_type="cobol")` to discover source files, then `reader.read(doc_id)` to load their content.
+
 ### Engine capabilities (BaseExecutor)
 
 Engine capabilities also have `set_documentation()` and `_doc_context()`. The CLI wires this automatically via `--docs-dir`. For custom executors:

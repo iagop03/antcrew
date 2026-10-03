@@ -158,6 +158,54 @@ for agent, h_a in hashes_a.items():
 
 ---
 
+## Document traceability
+
+When a run uses workspace documentation (S3 or local), the attestation includes a `doc_traceability` block that records a SHA-256 snapshot of every indexed document at the time the run started:
+
+```json
+{
+  "doc_traceability": {
+    "indexed_at": "2026-10-01T09:12:33+00:00",
+    "document_count": 4,
+    "documents": [
+      {
+        "doc_id": "cobol/PAYROLL.cbl",
+        "doc_type": "cobol",
+        "source_file": "PAYROLL.cbl",
+        "content_hash": "sha256:a3f8c2d1..."
+      },
+      {
+        "doc_id": "srs/payroll-spec.md",
+        "doc_type": "srs",
+        "source_file": "payroll-spec.md",
+        "content_hash": "sha256:9b7e4f2a..."
+      }
+    ]
+  }
+}
+```
+
+This proves which version of each document was visible to the AI at decision time — crucial in regulated contexts (financial services, insurance, healthcare) where the input corpus may change between runs.
+
+The block is present only when the workspace has at least one indexed document. It is written at run-start, so it reflects the index state before any agent reads from it.
+
+### Compliance Pack — `doc_traceability.json`
+
+The [Compliance Pack](compliance-pack.md) ZIP export (paid) includes a `doc_traceability.json` file alongside the per-run attestations:
+
+```
+compliance_export_2026-10-01/
+├── attestations/
+│   ├── attestation-run-abc123.json
+│   └── attestation-run-def456.json
+├── doc_traceability.json          ← consolidated doc snapshot for all included runs
+└── manifest.json
+```
+
+`doc_traceability.json` is a single object keyed by `run_id`, so auditors can cross-reference which document snapshot each run used without opening individual attestation files.
+
+---
+
 ## See also
 
 - [Compliance Pack](compliance-pack.md) — bulk attestation export, dashboard, and role-scoped keys for compliance officers

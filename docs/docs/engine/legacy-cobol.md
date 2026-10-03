@@ -441,6 +441,104 @@ Four passes in sequence:
 
 ---
 
+## COBOL modernisation capabilities
+
+antcrew ships a set of engine capabilities that work together as a full AI-driven modernisation pipeline. They are available as `antcrew_engine.capabilities` and run inside the platform's [pipeline builder](../platform/pipelines.md) or directly via the SDK.
+
+### Capability reference
+
+| Class | Produces | Description |
+|---|---|---|
+| `RequirementsElicitationExecutor` | `elicitation_report` | Reads workspace docs, identifies ambiguities, contradictions, missing info, and outputs structured JSON with clarifying questions |
+| `COBOLAnalyzerExecutor` | `cobol_analysis` | Parses every COBOL file in the doc index, builds a dependency graph, identifies complexity and modernisation risks |
+| `COBOLGeneratorExecutor` | `cobol_source` | Generates ANS-85-compliant COBOL from requirements + analysis context. Enforces structured PERFORM, no GOTO |
+| `COBOLRefactorerExecutor` | `cobol_source` (updated) | Refactors existing source for readability, naming conventions, and division structure |
+| `COBOLSyntaxValidatorExecutor` | `cobol_validation` | Validates syntax via GnuCOBOL (`cobc -syntax-only`) when available, falling back to static structural checks |
+| `COBOLTestGeneratorExecutor` | `cobol_tests`, `cobol_jcl` | Generates test case specs and a JCL skeleton for batch testing |
+
+### Quick start
+
+```python
+from antcrew_engine.capabilities import (
+    RequirementsElicitationExecutor,
+    COBOLAnalyzerExecutor,
+    COBOLGeneratorExecutor,
+    COBOLSyntaxValidatorExecutor,
+    COBOLTestGeneratorExecutor,
+)
+from antcrew_engine.documentation import DocumentationManager
+from antcrew_engine.engine import MemoryStore, Goal, DesiredProjectState, Constraints
+from antcrew.models import build_llm
+
+llm = build_llm("claude")
+mgr = DocumentationManager(schema_path="cobol-schema.yaml")
+mgr.index_from_storage()
+
+goal = Goal(
+    description="Modernise the ORDPRC payroll program — analyse, validate, and generate test suite",
+    desired_state=DesiredProjectState(frozenset()),
+    constraints=Constraints(),
+)
+store = MemoryStore()
+
+for Executor in [
+    RequirementsElicitationExecutor,
+    COBOLAnalyzerExecutor,
+    COBOLGeneratorExecutor,
+    COBOLSyntaxValidatorExecutor,
+    COBOLTestGeneratorExecutor,
+]:
+    ex = Executor(llm=llm)
+    ex.set_documentation(mgr)
+    ex.execute(store, goal)
+```
+
+### COBOL modernisation pipeline template
+
+The platform ships a ready-made pipeline template (`template:cobol_modernisation`) with 7 nodes:
+
+```
+requirements_analyst → cobol_analyzer → cobol_generator → cobol_validator
+    → cobol_reviewer (HITL, approval required)
+        ↓ fix_requested → cobol_generator (loop)
+        ↓ approved      → cobol_refactorer → cobol_test_gen
+```
+
+Create it in the visual builder by selecting **Templates → COBOL Modernisation**.
+
+### Validation — static vs GnuCOBOL
+
+`COBOLSyntaxValidatorExecutor` first attempts to use `cobc` (GnuCOBOL) if it is on the PATH:
+
+```bash
+# Debian/Ubuntu
+apt-get install gnucobol
+
+# macOS
+brew install gnu-cobol
+```
+
+If GnuCOBOL is not available, the executor falls back to static checks:
+
+- Four divisions present in correct order (IDENTIFICATION, ENVIRONMENT, DATA, PROCEDURE)
+- `STOP RUN` or `GOBACK` present
+- IF/END-IF balance
+- GOTO usage (warning, not error)
+
+The validation result (`cobol_validation` artifact) includes `method: "gnucobol"` or `method: "static"` so downstream stages and human reviewers know which path ran.
+
+### HITL review artifacts
+
+In the platform's review screen, COBOL artifacts render with dedicated views:
+
+| Artifact ID | View | Description |
+|---|---|---|
+| `cobol_source` | Line-numbered table, DIVISION headers highlighted | COBOL source with copy button |
+| `cobol_validation` | Valid/invalid badge, errors with line references | Validator output |
+| `cobol_tests` | Categorised cards (normal / boundary / error) | Test case specs |
+
+---
+
 ## Choosing the right tool
 
 | Scenario | Recommended tool |
@@ -448,6 +546,6 @@ Four passes in sequence:
 | Index COBOL programs in the doc system | `antcrew[docs]` + `org_type: legacy` |
 | Query DB2 for i schema from Python | `AS400Connector` |
 | Keep COBOL running, add AI logic alongside | `antcrew augment-cobol` |
+| Full AI-driven analysis, generation, and test suite | COBOL modernisation capabilities + pipeline template |
 | Migrate COBOL to Python/Java/Go | `polytranslate` |
 | Translate Java to COBOL (standards-aware) | `JavaToCOBOLTranslator` / `antcrew java-to-cobol` |
-| Full AI-driven rewrite with agent team | `antcrew run --team CodeMigrationTeam` |
