@@ -51,6 +51,7 @@ from .hitl import (
     HitlResolvedPayload,
     HitlReviewRequest,
     ReviewChannel,
+    hitl_decision_from_flexible,
 )
 from .operator import EngineLoop, EngineLoopError
 from .registry import CapabilityRegistry
@@ -96,5 +97,5 @@ __all__ = [
     # hitl contract
     "HitlReviewRequest", "HitlDecision",
     "HitlRequestedPayload", "HitlResolvedPayload",
-    "ReviewChannel",
+    "ReviewChannel", "hitl_decision_from_flexible",
 ]

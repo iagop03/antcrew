@@ -152,3 +152,44 @@ class HitlResolvedPayload(TypedDict):
     verdict: str
     feedback: NotRequired[Optional[str]]
     reviewer_id: NotRequired[Optional[str]]
+
+
+# ---------------------------------------------------------------------------
+# Bridge — FlexibleHITL → HitlDecision
+# ---------------------------------------------------------------------------
+
+_FLEXIBLE_VERB_MAP: dict[str, str] = {
+    "approve":          "approve",
+    "modify":           "edit",
+    "skip":             "approve",
+    "request_changes":  "reject",
+    "reject":           "reject",
+}
+
+
+def hitl_decision_from_flexible(decision: Any) -> "HitlDecision":
+    """Convert a ``FlexibleHITL`` ``HITLDecision`` to the canonical ``HitlDecision`` dict.
+
+    Verb mapping::
+
+        HITLAction.APPROVE         → "approve"
+        HITLAction.MODIFY          → "edit"
+        HITLAction.SKIP            → "approve"
+        HITLAction.REQUEST_CHANGES → "reject"
+        HITLAction.REJECT          → "reject"
+
+    Preserves ``reviewer_id`` and ``reason`` (→ ``feedback``) from the source object.
+    """
+    action_val = getattr(decision, "action", None)
+    raw = action_val.value if hasattr(action_val, "value") else str(action_val)
+    verdict = _FLEXIBLE_VERB_MAP.get(raw, "reject")
+
+    result: HitlDecision = {"verdict": verdict}  # type: ignore[typeddict-item]
+    if reviewer_id := getattr(decision, "reviewer_id", None):
+        result["reviewer_id"] = reviewer_id
+    if reason := getattr(decision, "reason", None):
+        result["feedback"] = reason
+    modified = getattr(decision, "modified_state", None)
+    if modified is not None and verdict == "edit":
+        result["new_content"] = modified
+    return result

@@ -35,7 +35,10 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Optional, Type
+
+if TYPE_CHECKING:
+    from antcrew.trace import TraceLog
 
 from antcrew_engine.engine import (
     Artifact,
@@ -89,6 +92,8 @@ class HitlReviewer(BaseExecutor):
         channel: str = "default",
         feedback_schema: "Optional[Type]" = None,
         max_rejections: int = 3,
+        trace_log: "Optional[TraceLog]" = None,
+        run_id: str = "",
     ) -> None:
         super().__init__(llm=None)
         self._reviewed_art_id = ArtifactId(artifact_id or reviewed_capability)
@@ -99,6 +104,8 @@ class HitlReviewer(BaseExecutor):
         self._feedback_schema = feedback_schema
         self._max_rejections  = max_rejections
         self._reject_count    = 0
+        self._trace_log       = trace_log
+        self._run_id          = run_id
 
         exists_cond   = ConditionId(triggers_condition or f"{reviewed_capability}_exists")
         approved_cond = ConditionId(f"{reviewed_capability}_approved")
@@ -157,8 +164,21 @@ class HitlReviewer(BaseExecutor):
             review_request["_feedback_schema"] = schema
 
         verdict_data = self._request_review(review_request)
-        verdict  = verdict_data.get("verdict", "timeout")
-        feedback = (verdict_data.get("feedback") or "").strip()
+        verdict     = verdict_data.get("verdict", "timeout")
+        feedback    = (verdict_data.get("feedback") or "").strip()
+        reviewer_id = (verdict_data.get("reviewer_id") or "").strip()
+
+        if self._trace_log is not None and self._run_id:
+            try:
+                self._trace_log.record_hitl(
+                    run_id=self._run_id,
+                    step=f"hitl_{self._reviewed_art_id}",
+                    decision=verdict,
+                    reviewer_id=reviewer_id,
+                    reason=feedback,
+                )
+            except Exception as _exc:
+                _log.warning("TraceLog.record_hitl failed: %r", _exc)
 
         if verdict == "approve":
             approval = Artifact(
