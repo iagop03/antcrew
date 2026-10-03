@@ -416,7 +416,10 @@ def load(path: str | Path):
                 "Install it: pip install pyyaml"
             )
         cfg: dict = _expand_env(_yaml.safe_load(raw))
-    return _build_team_cfg(cfg, base_dir=path.parent)
+    team = _build_team_cfg(cfg, base_dir=path.parent)
+    if change_ref_val := str(cfg.get("change_ref", "")).strip():
+        team._change_ref = change_ref_val
+    return team
 
 
 def build_runner(cfg: dict):

@@ -232,6 +232,7 @@ class Router:
                 thread_id=thread_id,
                 request=request,
                 team=type(self).__name__,
+                change_ref=getattr(self, '_change_ref', ''),
             )
 
         try:

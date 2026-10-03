@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at  TEXT NOT NULL,
     ended_at    TEXT,
     cost_usd    REAL,
-    status      TEXT NOT NULL DEFAULT 'running'
+    status      TEXT NOT NULL DEFAULT 'running',
+    change_ref  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS agent_calls (
@@ -99,6 +100,18 @@ CREATE TABLE IF NOT EXISTS hitl_decisions (
     decided_at  TEXT NOT NULL,
     row_hash    TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS release_approvals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    release_id      TEXT NOT NULL,
+    approver_id     TEXT NOT NULL DEFAULT '',
+    approver_role   TEXT NOT NULL DEFAULT '',
+    decision        TEXT NOT NULL,           -- approved | rejected
+    reason          TEXT NOT NULL DEFAULT '',
+    evidence_hash   TEXT NOT NULL DEFAULT '', -- SHA-256 of attached evidence (package MD)
+    decided_at      TEXT NOT NULL,
+    row_hash        TEXT NOT NULL DEFAULT ''  -- SHA-256 hash chain (same scheme as hitl_decisions)
+);
 """
 
 
@@ -111,6 +124,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col in ("model_id", "provider"):
         if col not in existing_cols:
             conn.execute(f"ALTER TABLE agent_calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    # change_ref in runs (added in trace v4)
+    run_cols = {r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    if "change_ref" not in run_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN change_ref TEXT NOT NULL DEFAULT ''")
     # hitl_decisions table (added in trace v2)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     if "hitl_decisions" not in tables:
@@ -131,6 +148,21 @@ def _migrate(conn: sqlite3.Connection) -> None:
         hitl_cols = {r[1] for r in conn.execute("PRAGMA table_info(hitl_decisions)").fetchall()}
         if "row_hash" not in hitl_cols:
             conn.execute("ALTER TABLE hitl_decisions ADD COLUMN row_hash TEXT NOT NULL DEFAULT ''")
+    # release_approvals table (added in trace v5)
+    if "release_approvals" not in tables:
+        conn.execute("""
+            CREATE TABLE release_approvals (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                release_id      TEXT NOT NULL,
+                approver_id     TEXT NOT NULL DEFAULT '',
+                approver_role   TEXT NOT NULL DEFAULT '',
+                decision        TEXT NOT NULL,
+                reason          TEXT NOT NULL DEFAULT '',
+                evidence_hash   TEXT NOT NULL DEFAULT '',
+                decided_at      TEXT NOT NULL,
+                row_hash        TEXT NOT NULL DEFAULT ''
+            )
+        """)
     conn.commit()
 
 
@@ -160,12 +192,12 @@ class TraceLog:
     # Write API (called during runs)
     # ------------------------------------------------------------------
 
-    def begin_run(self, *, thread_id: str, request: str, team: str) -> str:
+    def begin_run(self, *, thread_id: str, request: str, team: str, change_ref: str = "") -> str:
         """Insert a new run row and return its UUID."""
         run_id = str(uuid.uuid4())
         self._conn.execute(
-            "INSERT INTO runs(id, thread_id, request, team, started_at) VALUES (?,?,?,?,?)",
-            (run_id, thread_id, request[:1000], team, _now_iso()),
+            "INSERT INTO runs(id, thread_id, request, team, started_at, change_ref) VALUES (?,?,?,?,?,?)",
+            (run_id, thread_id, request[:1000], team, _now_iso(), change_ref or ""),
         )
         self._conn.commit()
         return run_id
@@ -317,16 +349,18 @@ class TraceLog:
         team: Optional[str] = None,
         status: Optional[str] = None,
         since: Optional[str] = None,
+        change_ref: Optional[str] = None,
         limit: int = 50,
     ) -> list[dict]:
         """Return filtered runs, newest first.
 
         Args:
-            team:   Filter to runs whose team column equals this value.
-            status: Filter to ``done`` or ``error`` runs (``None`` = all).
-            since:  ISO timestamp string; only runs started at or after this
-                    moment are included.
-            limit:  Maximum number of rows to return.
+            team:       Filter to runs whose team column equals this value.
+            status:     Filter to ``done`` or ``error`` runs (``None`` = all).
+            since:      ISO timestamp string; only runs started at or after this
+                        moment are included.
+            change_ref: Filter to runs linked to this CR/change-ref value.
+            limit:      Maximum number of rows to return.
         """
         clauses: list[str] = []
         params: list = []
@@ -339,6 +373,9 @@ class TraceLog:
         if since:
             clauses.append("started_at >= ?")
             params.append(since)
+        if change_ref:
+            clauses.append("change_ref = ?")
+            params.append(change_ref)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = self._conn.execute(
             f"SELECT * FROM runs {where} ORDER BY started_at DESC LIMIT ?",  # nosec B608
@@ -430,6 +467,54 @@ class TraceLog:
         rows = self._conn.execute(
             "SELECT * FROM hitl_decisions WHERE run_id=? ORDER BY id",
             (run_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_release_approval(
+        self,
+        *,
+        release_id: str,
+        approver_id: str = "",
+        approver_role: str = "",
+        decision: str,
+        reason: str = "",
+        evidence_hash: str = "",
+    ) -> int:
+        """Insert one release_approvals row with a hash-chain link.
+
+        The chain covers all release_approvals rows in insertion order —
+        same scheme as :meth:`record_hitl`.  Useful for release-level HITL:
+        a release only advances to ``approved`` when all required approvals
+        are recorded.
+
+        Returns the integer primary key of the inserted row.
+        """
+        decided_at = _now_iso()
+        prev_row = self._conn.execute(
+            "SELECT row_hash FROM release_approvals ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        prev_hash = (prev_row["row_hash"] if prev_row and prev_row["row_hash"] else _CHAIN_GENESIS)
+        data = (
+            f"{prev_hash}|{release_id}|{approver_id}|{approver_role}"
+            f"|{decision}|{reason}|{evidence_hash}|{decided_at}"
+        )
+        row_hash = hashlib.sha256(data.encode()).hexdigest()
+        cur = self._conn.execute(
+            """INSERT INTO release_approvals
+               (release_id, approver_id, approver_role, decision, reason,
+                evidence_hash, decided_at, row_hash)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (release_id, approver_id or "", approver_role or "", decision,
+             reason or "", evidence_hash or "", decided_at, row_hash),
+        )
+        self._conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def get_release_approvals(self, release_id: str) -> list[dict]:
+        """Return all approval rows for *release_id*, ordered by insertion time."""
+        rows = self._conn.execute(
+            "SELECT * FROM release_approvals WHERE release_id=? ORDER BY id",
+            (release_id,),
         ).fetchall()
         return [dict(r) for r in rows]
 

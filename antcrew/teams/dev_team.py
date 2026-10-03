@@ -295,6 +295,7 @@ class DevTeam(InteractiveMixin):
         if self._trace_log is not None:
             _trace_run_id = self._trace_log.begin_run(
                 thread_id=thread_id, request=request, team=type(self).__name__,
+                change_ref=getattr(self, '_change_ref', ''),
             )
             for _llm in _llms:
                 _llm.trace = self._trace_log
@@ -311,6 +312,7 @@ class DevTeam(InteractiveMixin):
             initial = self._initial_state(request)
             initial["_run_id"] = _run_id
             initial["_thread_id"] = thread_id
+            initial["_change_ref"] = getattr(self, '_change_ref', '')
             if dry_run:
                 initial["_dry_run"] = True
             if replay_run_id and self.memory:

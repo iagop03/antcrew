@@ -480,12 +480,14 @@ class CustomTeam:
                 thread_id=thread_id,
                 request=request,
                 team=type(self).__name__,
+                change_ref=getattr(self, '_change_ref', ''),
             )
             self.llm.trace = self._trace_log
             self.llm._trace_run_id = _trace_run_id
 
         state["_run_id"] = _run_id
         state["_thread_id"] = thread_id
+        state["_change_ref"] = getattr(self, '_change_ref', '')
 
         bus.emit("pipeline.start", {"team": type(self).__name__, "request": request},
                  run_id=_run_id, thread_id=thread_id)

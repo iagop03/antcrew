@@ -117,6 +117,7 @@ class ContentTeam(InteractiveMixin):
         if self._trace_log is not None:
             _trace_run_id = self._trace_log.begin_run(
                 thread_id=thread_id, request=request, team=type(self).__name__,
+                change_ref=getattr(self, '_change_ref', ''),
             )
             for _llm in _llms:
                 _llm.trace = self._trace_log
@@ -129,6 +130,7 @@ class ContentTeam(InteractiveMixin):
             config = {"configurable": {"thread_id": thread_id}}
             initial = self._initial_state(request)
             initial["_run_id"] = _run_id
+            initial["_change_ref"] = getattr(self, '_change_ref', '')
             initial["_thread_id"] = thread_id
             state = app.invoke(initial, config=config)
             if self.memory:

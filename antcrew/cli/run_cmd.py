@@ -226,6 +226,14 @@ def run(
              "governance attestation JSON to compliance_<run_id>.json. "
              "Implies --full-trace. Useful for healthcare, fintech, and legaltech audits.",
     ),
+    change_ref: Optional[str] = typer.Option(
+        None, "--change-ref",
+        help="Change-request reference to link this run (e.g. CR-1234, JIRA-42). "
+             "Stored in TraceLog and platform Run for audit traceability. "
+             "Also readable from ANTCREW_CHANGE_REF.",
+        envvar="ANTCREW_CHANGE_REF",
+        show_default=False,
+    ),
 ) -> None:
     """Run a multi-agent pipeline on REQUEST.
 
@@ -377,6 +385,10 @@ def run(
                 _ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
                 trace_db = Path(f"compliance_{_ts}.db")
             full_trace = True
+
+        # --change-ref: tag this run with a CR number for traceability
+        if change_ref:
+            active_team._change_ref = change_ref
 
         # --trace flag attaches TraceLog for per-agent call recording
         if trace_db:

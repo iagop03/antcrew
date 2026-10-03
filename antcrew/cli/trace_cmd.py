@@ -87,6 +87,11 @@ def trace_cmd(
         False, "--verify-chain",
         help="Verify the SHA-256 hash chain of all HITL decisions and exit (exit 0 = intact, 1 = broken).",
     ),
+    change_ref: Optional[str] = typer.Option(
+        None, "--change-ref",
+        help="List all runs linked to this CR/change-ref (e.g. --change-ref CR-1234).",
+        show_default=False,
+    ),
 ) -> None:
     """Inspect a TraceLog SQLite file — list runs, show call detail, prune, or dump.
 
@@ -219,19 +224,28 @@ def trace_cmd(
         _print_trace_detail(target_run, tlog.get_calls(target_run["id"]))
         return
 
-    # --- list view ---
-    runs = tlog.list_runs(limit=limit)
+    # --- list view (optionally filtered by change_ref) ---
+    if change_ref:
+        runs = tlog.list_runs_filtered(change_ref=change_ref, limit=limit)
+        title = f"TraceLog — {db}  [change-ref: {change_ref}]"
+    else:
+        runs = tlog.list_runs(limit=limit)
+        title = f"TraceLog — {db}"
     if not runs:
-        console.print("[dim]No runs recorded yet.[/dim]")
+        msg = f"No runs for change-ref {change_ref!r}." if change_ref else "No runs recorded yet."
+        console.print(f"[dim]{msg}[/dim]")
         return
 
-    tbl = Table(title=f"TraceLog — {db}", show_header=True, header_style="bold dim")
+    show_cr = change_ref is None  # show CR column when not already filtered
+    tbl = Table(title=title, show_header=True, header_style="bold dim")
     tbl.add_column("Run ID",    style="dim",    no_wrap=True, max_width=12)
     tbl.add_column("Thread",    style="cyan",   no_wrap=True, max_width=20)
     tbl.add_column("Team",      style="yellow", no_wrap=True)
     tbl.add_column("Status",    no_wrap=True)
     tbl.add_column("Cost",      justify="right")
     tbl.add_column("Started",   style="dim",    no_wrap=True)
+    if show_cr:
+        tbl.add_column("CR",    style="magenta", no_wrap=True, max_width=16)
     tbl.add_column("Request",   max_width=40)
 
     for r in runs:
@@ -244,15 +258,18 @@ def trace_cmd(
         cost = r["cost_usd"]
         cost_str = f"${cost:.4f}" if cost else "—"
         started = (r["started_at"] or "")[:19].replace("T", " ")
-        tbl.add_row(
+        row = [
             r["id"][:8] + "…",
             r["thread_id"],
             r["team"],
             status_str,
             cost_str,
             started,
-            r["request"][:40],
-        )
+        ]
+        if show_cr:
+            row.append(r.get("change_ref") or "—")
+        row.append(r["request"][:40])
+        tbl.add_row(*row)
 
     console.print(tbl)
     console.print("\n[dim]Use --run <id> or --thread <id> to inspect agent calls.[/dim]")
