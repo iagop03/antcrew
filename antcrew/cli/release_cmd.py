@@ -301,3 +301,132 @@ def release_show(
         console.print(f"[red]Release not found:[/] {release_id}")
         raise typer.Exit(1)
     console.print_json(_json.dumps(rel, indent=2))
+
+
+@release_app.command("submit")
+def release_submit(
+    release_id: str = typer.Argument(..., help="Release ID to submit to ServiceNow"),
+    config_file: Optional[Path] = typer.Option(
+        None, "--config", "-c",
+        help="Path to agentteam.yaml (defaults to ANTCREW_CONFIG env or agentteam.yaml in cwd).",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the payload without sending."),
+    update_sys_id: Optional[str] = typer.Option(
+        None, "--update", "-u",
+        help="ServiceNow sys_id to update instead of creating a new Change Request.",
+    ),
+    store: Path = typer.Option(_DEFAULT_STORE, "--store", help="JSON store file for releases."),
+    output_json: bool = typer.Option(False, "--json", help="Print result as JSON."),
+) -> None:
+    """Create (or update) a ServiceNow Change Request for a release.
+
+    \b
+    Example — create new CR:
+        antcrew release submit REL-A1B2C3D4
+
+    \b
+    Example — update existing CR:
+        antcrew release submit REL-A1B2C3D4 --update SYS_ID_HERE
+
+    \b
+    Example — preview without sending:
+        antcrew release submit REL-A1B2C3D4 --dry-run
+    """
+    import os as _os
+    import yaml as _yaml
+
+    data = _load_store(store)
+    rel_data = data.get("releases", {}).get(release_id)
+    if not rel_data:
+        console.print(f"[red]Release not found:[/] {release_id}")
+        raise typer.Exit(1)
+
+    # Load servicenow config from YAML
+    cfg_path = str(config_file) if config_file else _os.environ.get("ANTCREW_CONFIG", "agentteam.yaml")
+    cfg_data: dict = {}
+    if Path(cfg_path).exists():
+        cfg_data = _yaml.safe_load(Path(cfg_path).read_text(encoding="utf-8")) or {}
+
+    snow_cfg = cfg_data.get("servicenow")
+    if not snow_cfg and not dry_run:
+        console.print(
+            "[red]No servicenow: config found.[/] "
+            "Add a servicenow: block to agentteam.yaml or use --dry-run."
+        )
+        raise typer.Exit(1)
+
+    # Build neutral ChangeRecordInput from the release
+    from antcrew.adapters.servicenow import ChangeRecordInput
+
+    items = rel_data.get("items", [])
+    refs = ", ".join(i["change_ref"] for i in items)
+    risks = [i.get("impact_risk", "low") for i in items]
+    overall_risk = "high" if "high" in risks else ("medium" if "medium" in risks else "low")
+
+    inp = ChangeRecordInput(
+        short_description=f"{rel_data['name']} — {refs}",
+        description=f"Release: {rel_data['name']}\nState: {rel_data.get('state', 'draft')}\n"
+                    f"Change refs: {refs}\nItems: {len(items)}\n"
+                    f"Target date: {rel_data.get('target_date') or 'TBD'}",
+        risk_level=overall_risk,
+        change_ref=refs,
+        start_date=rel_data.get("target_date", ""),
+        state=rel_data.get("state", "new"),
+    )
+
+    if dry_run:
+        import sys
+        payload = {
+            "short_description": inp.short_description,
+            "description": inp.description,
+            "risk_level": inp.risk_level,
+            "change_ref": inp.change_ref,
+            "start_date": inp.start_date,
+            "state": inp.state,
+            "_action": "update" if update_sys_id else "create",
+            "_sys_id": update_sys_id or "(new)",
+        }
+        console.print("\n[bold]Dry run — payload that would be sent:[/]")
+        console.print_json(_json.dumps(payload, indent=2))
+        return
+
+    from antcrew.adapters.servicenow import get_servicenow_adapter
+
+    try:
+        adapter = get_servicenow_adapter(snow_cfg)
+    except ValueError as exc:
+        console.print(f"[red]ServiceNow auth error:[/] {exc}")
+        raise typer.Exit(1)
+
+    try:
+        if update_sys_id:
+            record = adapter.update_change(update_sys_id, inp)
+            action = "updated"
+        else:
+            record = adapter.create_change(inp)
+            action = "created"
+    except Exception as exc:
+        console.print(f"[red]ServiceNow API error:[/] {exc}")
+        raise typer.Exit(1)
+
+    # Persist sys_id and number back into the release store
+    rel_data.setdefault("servicenow", {}).update({
+        "sys_id": record.sys_id,
+        "number": record.number,
+        "url": record.url,
+    })
+    _save_store(store, data)
+
+    if output_json:
+        import sys
+        sys.stdout.write(_json.dumps({
+            "action": action, "sys_id": record.sys_id,
+            "number": record.number, "url": record.url,
+        }, indent=2) + "\n")
+        return
+
+    icon = "[green]✓[/]"
+    console.print(f"\n{icon} Change Request {action}: [cyan]{record.number}[/] ({record.sys_id})")
+    if record.url:
+        console.print(f"  URL: {record.url}")
+    console.print(f"  Risk: {overall_risk}  |  CRs: {refs}")
