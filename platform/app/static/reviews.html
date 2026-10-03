@@ -416,6 +416,100 @@
           </div>
         </template>
 
+        <!-- COBOL source artifact -->
+        <template x-if="artifactType(review) === 'cobol_source'">
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <p class="text-xs text-gray-500 uppercase tracking-wide">COBOL Source</p>
+              <button @click="navigator.clipboard?.writeText(review.artifact)"
+                class="text-xs text-gray-600 hover:text-indigo-400 transition-colors px-2 py-0.5 rounded border border-gray-800">
+                Copy
+              </button>
+            </div>
+            <div class="bg-gray-950 rounded-lg border border-gray-800 overflow-hidden">
+              <div class="overflow-x-auto max-h-96">
+                <table class="w-full text-xs font-mono">
+                  <tbody>
+                    <template x-for="(line, i) in (review.artifact || '').split('\n')" :key="i">
+                      <tr class="hover:bg-gray-900/40">
+                        <td class="px-2 py-0 text-gray-700 select-none text-right w-10 border-r border-gray-900"
+                          x-text="i + 1"></td>
+                        <td class="px-3 py-0 text-gray-300 whitespace-pre leading-5"
+                          :class="line.trim().startsWith('*') ? 'text-gray-600 italic' : (line.trim().match(/^(IDENTIFICATION|ENVIRONMENT|DATA|PROCEDURE)/) ? 'text-indigo-300 font-semibold' : '')"
+                          x-text="line"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- COBOL validation artifact -->
+        <template x-if="artifactType(review) === 'cobol_validation'">
+          <div class="space-y-3">
+            <div class="flex items-center gap-3">
+              <p class="text-xs text-gray-500 uppercase tracking-wide">COBOL Validation</p>
+              <span class="text-xs px-2 py-0.5 rounded font-medium"
+                :class="parsedArtifact(review).valid ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-400'"
+                x-text="parsedArtifact(review).valid ? 'VALID' : 'INVALID'"></span>
+              <span class="text-xs text-gray-600" x-text="'via ' + (parsedArtifact(review).method || '?')"></span>
+            </div>
+            <p class="text-sm text-gray-400" x-text="parsedArtifact(review).summary"></p>
+            <template x-if="parsedArtifact(review).errors?.length">
+              <div class="space-y-1">
+                <p class="text-xs text-red-500 font-medium">Errors</p>
+                <template x-for="(e, i) in parsedArtifact(review).errors" :key="i">
+                  <div class="flex gap-2 text-xs font-mono">
+                    <span class="text-gray-600 w-12 shrink-0" x-text="'L' + e.line"></span>
+                    <span class="text-red-400" x-text="e.message"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="parsedArtifact(review).warnings?.length">
+              <div class="space-y-1">
+                <p class="text-xs text-yellow-500 font-medium">Warnings</p>
+                <template x-for="(w, i) in parsedArtifact(review).warnings" :key="i">
+                  <div class="flex gap-2 text-xs font-mono">
+                    <span class="text-gray-600 w-12 shrink-0" x-text="'L' + w.line"></span>
+                    <span class="text-yellow-400" x-text="w.message"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- COBOL test spec artifact -->
+        <template x-if="artifactType(review) === 'cobol_tests'">
+          <div class="space-y-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">
+              COBOL Test Cases — <span x-text="parsedArtifact(review).program_id || '?'"></span>
+            </p>
+            <template x-for="(tc, i) in (parsedArtifact(review).test_cases || [])" :key="tc.id">
+              <div class="bg-gray-900 rounded-lg border border-gray-800 px-3 py-2.5 space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono text-xs text-indigo-300" x-text="tc.id"></span>
+                  <span class="text-xs px-1.5 rounded text-xs"
+                    :class="{
+                      'bg-blue-900/40 text-blue-300': tc.category === 'normal',
+                      'bg-yellow-900/40 text-yellow-300': tc.category === 'boundary',
+                      'bg-red-900/40 text-red-300': tc.category === 'error'
+                    }"
+                    x-text="tc.category"></span>
+                  <span class="text-sm text-gray-300" x-text="tc.description"></span>
+                </div>
+                <div class="flex gap-4 text-xs text-gray-500">
+                  <span>RC: <span class="font-mono text-gray-400" x-text="tc.expected_return_code || '?'"></span></span>
+                  <span x-show="tc.input">Input: <span class="font-mono text-gray-400" x-text="JSON.stringify(tc.input)"></span></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
         <!-- Code review artifact -->
         <template x-if="artifactType(review) === 'code_review'">
           <div>
@@ -772,12 +866,22 @@ function reviewQueue() {
         }
         const a = review.artifact;
         if (!a) return 'empty';
+        // COBOL: raw source string
+        if (typeof a === 'string') {
+          const up = a.trimStart().toUpperCase();
+          if (up.startsWith('IDENTIFICATION DIVISION') || up.startsWith('000') || /^\*/.test(up)) {
+            return 'cobol_source';
+          }
+        }
         if (Array.isArray(a)) {
           if (a[0]?.file_path && a[0]?.content !== undefined) return 'code';
           if (a[0]?.id !== undefined && a[0]?.title !== undefined) return 'tickets';
           if (a[0]?.ticket_id !== undefined && a[0]?.title !== undefined) return 'tickets';
           return 'json';
         }
+        // COBOL-specific JSON shapes
+        if (a.valid !== undefined && a.method !== undefined && a.errors !== undefined) return 'cobol_validation';
+        if (a.program_id !== undefined && a.test_cases !== undefined) return 'cobol_tests';
         if (a.verdict && a.summary && a.findings !== undefined) return 'code_review';
         if (a.endpoints !== undefined && a.base_path !== undefined) return 'endpoints';
         if (a.screens !== undefined && a.tokens !== undefined) return 'screens';
