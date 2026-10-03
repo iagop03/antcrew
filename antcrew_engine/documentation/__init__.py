@@ -13,10 +13,13 @@ Quickstart::
 from .graph import DocumentationGraph
 from .index import DocumentationIndex, SearchResult
 from .manager import DocumentationManager
+from .reader import DocSummary, DocumentationReader
 from .schema import CobolSupport, DocumentationSchemaRegistry, DocumentTypeConfig, PathRule, QueryHint
 
 __all__ = [
     "DocumentationManager",
+    "DocumentationReader",
+    "DocSummary",
     "DocumentationSchemaRegistry",
     "DocumentTypeConfig",
     "QueryHint",
