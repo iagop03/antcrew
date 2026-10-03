@@ -88,6 +88,7 @@ class HitlReviewer(BaseExecutor):
         timeout: int = _DEFAULT_TIMEOUT,
         channel: str = "default",
         feedback_schema: "Optional[Type]" = None,
+        max_rejections: int = 3,
     ) -> None:
         super().__init__(llm=None)
         self._reviewed_art_id = ArtifactId(artifact_id or reviewed_capability)
@@ -96,6 +97,8 @@ class HitlReviewer(BaseExecutor):
         self._request_review  = request_review
         self.channel          = channel
         self._feedback_schema = feedback_schema
+        self._max_rejections  = max_rejections
+        self._reject_count    = 0
 
         exists_cond   = ConditionId(triggers_condition or f"{reviewed_capability}_exists")
         approved_cond = ConditionId(f"{reviewed_capability}_approved")
@@ -191,37 +194,38 @@ class HitlReviewer(BaseExecutor):
                     metadata={"file_path": f".antcrew/{self._reviewed_art_id}_approval.json"},
                 )
                 return CapabilityResult(delta=ArtifactDelta(modified=(edited,), created=(approval,)))
-            # edit with no content → fall through to approve
-            approval = Artifact(
-                id=self._approval_art_id,
-                kind=ArtifactKind.CONFIG,
-                content={"approved": True, "reviewed_capability": str(self._reviewed_art_id)},
-                metadata={"file_path": f".antcrew/{self._reviewed_art_id}_approval.json"},
-            )
-            return CapabilityResult(delta=ArtifactDelta(created=(approval,)))
+            # edit with no content → request_changes so the reviewer must provide content
+            _log.warning("HitlReviewer: edit verdict with no content for '%s'", self._reviewed_art_id)
+            verdict = "request_changes"
+            feedback = feedback or "Edit submitted with no content — please provide edited content."
 
-        # reject or timeout: delete the artifact so the upstream capability re-runs
-        created: list[Artifact] = []
-        if feedback or verdict == "reject":
-            structured = self._parse_structured_feedback(feedback) if feedback else None
-            feedback_content: dict = {"feedback": feedback, "verdict": verdict, "channel": self.channel}
+        # reject, timeout, or request_changes: delete the artifact so the upstream capability re-runs
+        self._reject_count += 1
+        if self._reject_count > self._max_rejections:
+            return CapabilityResult(
+                errors=[
+                    f"HITL '{self._reviewed_art_id}' rejected/timed out "
+                    f"{self._reject_count} times (max {self._max_rejections}). Aborting pipeline."
+                ],
+            )
+
+        feedback_content: dict = {"feedback": feedback, "verdict": verdict, "channel": self.channel}
+        if feedback:
+            structured = self._parse_structured_feedback(feedback)
             if structured is not None:
                 feedback_content["structured_feedback"] = structured
-            if schema := self._feedback_schema_json():
-                feedback_content["feedback_schema"] = schema
-            created.append(Artifact(
-                id       = self._feedback_art_id,
-                kind     = ArtifactKind.CONFIG,
-                content  = feedback_content,
-                metadata = {
-                    "file_path": f".antcrew/{self._feedback_art_id}.json",
-                },
-            ))
+        if schema := self._feedback_schema_json():
+            feedback_content["feedback_schema"] = schema
 
         return CapabilityResult(
             delta=ArtifactDelta(
                 deleted = (self._reviewed_art_id,),
-                created = tuple(created),
+                created = (Artifact(
+                    id       = self._feedback_art_id,
+                    kind     = ArtifactKind.CONFIG,
+                    content  = feedback_content,
+                    metadata = {"file_path": f".antcrew/{self._feedback_art_id}.json"},
+                ),),
             ),
             warnings=[f"HITL {verdict}: {feedback}" if feedback else f"HITL {verdict}"],
         )

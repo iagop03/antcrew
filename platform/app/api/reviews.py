@@ -121,14 +121,15 @@ router = APIRouter(
     dependencies=[Depends(require_api_key)],
 )
 
-_VALID_DECISIONS = ("approve", "reject", "edit", "feedback")
-_VALID_STATUSES = ("pending", "approved", "rejected", "edited", "feedback", "cancelled", "timeout")
+_VALID_DECISIONS = ("approve", "reject", "edit", "feedback", "request_changes")
+_VALID_STATUSES = ("pending", "approved", "rejected", "edited", "feedback", "cancelled", "timeout", "changes_requested")
 
 _DECISION_TO_STATUS = {
     "approve": "approved",
     "reject": "rejected",
     "edit": "edited",
     "feedback": "feedback",
+    "request_changes": "changes_requested",
 }
 
 
@@ -472,16 +473,20 @@ async def submit_review(
         try:
             from antcrew.trace import TraceLog as _TraceLog
             _tl = _TraceLog(_tl_path)
+            # Prefer user_id (the authenticated human) over created_by (the API key label).
+            _reviewer_id = (
+                str(ctx.user_id) if ctx.user_id is not None else ctx.created_by or ""
+            )
             _tl.record_hitl(
                 run_id=review.run_id,
                 step=review.agent_name or "unknown",
                 decision=body.decision,
-                reviewer_id=ctx.created_by or "",
+                reviewer_id=_reviewer_id,
                 reason=body.feedback or "",
             )
         except Exception as _tl_exc:
             import logging as _lg
-            _lg.getLogger(__name__).debug("reviews: TraceLog record_hitl failed: %s", _tl_exc)
+            _lg.getLogger(__name__).error("reviews: TraceLog record_hitl failed: %s", _tl_exc)
 
     if run is not None and run.team == "engine":
         from app.services.engine_runner import resolve_engine_review

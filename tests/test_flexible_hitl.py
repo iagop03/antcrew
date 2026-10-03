@@ -56,11 +56,16 @@ class TestFailSafe:
 # ---------------------------------------------------------------------------
 
 class TestNoneCallback:
-    def test_no_callback_auto_approves(self):
-        """No callback = auto_approve path, not fail-closed — this is intentional
-        for test environments where no reviewer is wired up."""
+    def test_no_callback_rejects(self):
+        """callback=None with auto_approve=False is a misconfiguration — must reject, not approve."""
         hitl = FlexibleHITL(callback=None, auto_approve=False)
-        # callback is None so falls into auto path
+        assert hitl.gate("x", _state()) is False
+        assert hitl.history[0][1].action.value == "reject"
+        assert hitl.history[0][1].reason == "no_callback_configured"
+
+    def test_no_callback_auto_approve_true_still_approves(self):
+        """auto_approve=True overrides everything — callback=None is fine here."""
+        hitl = FlexibleHITL(callback=None, auto_approve=True)
         assert hitl.gate("x", _state()) is True
 
 

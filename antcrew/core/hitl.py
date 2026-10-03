@@ -98,8 +98,14 @@ class FlexibleHITL:
         if self._checkpoints is not None and checkpoint not in self._checkpoints:
             return True
 
-        if self._auto_approve or self._callback is None:
+        if self._auto_approve:
             decision = HITLDecision(action=HITLAction.APPROVE, reason="auto")
+        elif self._callback is None:
+            logger.error(
+                "HITL gate '%s': no callback configured and auto_approve=False — defaulting to REJECT",
+                checkpoint,
+            )
+            decision = HITLDecision(action=HITLAction.REJECT, reason="no_callback_configured")
         else:
             try:
                 decision = self._callback(checkpoint, state)

@@ -191,6 +191,6 @@ class PlatformChannel(BaseChannel):
                 except Exception as exc:
                     log.debug("platform: poll error: %s", exc)
 
-        log.warning("platform: HITL timeout (%.0fs) for review %s — auto-approving", self._timeout_s, review_id)
-        print("  [platform] Timeout — auto-approving")
-        return {"decision": "approve", "edited": None, "feedback": None}
+        log.warning("platform: HITL timeout (%.0fs) for review %s — rejecting", self._timeout_s, review_id)
+        print("  [platform] Timeout — rejecting")
+        return {"decision": "reject", "edited": None, "feedback": "timeout"}

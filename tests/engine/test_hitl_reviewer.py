@@ -181,9 +181,10 @@ class TestHitlReviewerTimeout:
         result = _make_reviewer("timeout").execute(_make_store(), goal)
         assert ArtifactId("architect") in result.delta.deleted
 
-    def test_timeout_with_no_feedback_creates_no_extra_artifact(self, goal):
+    def test_timeout_always_writes_feedback_artifact(self, goal):
         result = _make_reviewer("timeout").execute(_make_store(), goal)
-        assert len(result.delta.created) == 0
+        assert len(result.delta.created) == 1
+        assert result.delta.created[0].id == ArtifactId("architect_feedback")
 
     def test_timeout_emits_warning(self, goal):
         result = _make_reviewer("timeout").execute(_make_store(), goal)

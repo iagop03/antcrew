@@ -345,7 +345,7 @@ class SlackChannel(BaseChannel):
                     )
                 except SlackApiError as exc:
                     log.error("SlackChannel: modal open failed: %s", exc)
-                    self._put(session_id, {"decision": "approve", "edited": None, "feedback": None})
+                    self._put(session_id, {"decision": "reject", "edited": None, "feedback": "modal_error"})
 
             elif verb == "edit":
                 artifact = SlackChannel._artifacts.get(session_id)
@@ -357,7 +357,7 @@ class SlackChannel(BaseChannel):
                     )
                 except SlackApiError as exc:
                     log.error("SlackChannel: modal open failed: %s", exc)
-                    self._put(session_id, {"decision": "approve", "edited": None, "feedback": None})
+                    self._put(session_id, {"decision": "reject", "edited": None, "feedback": "modal_error"})
 
         # ---- Modal submission handler (feedback + edit) ----
         @bolt.view(re.compile(r"^ac_.*_(fb|edit)$"))

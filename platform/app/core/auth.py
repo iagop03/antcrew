@@ -75,6 +75,7 @@ class WorkspaceContext:
     role: str = "write"         # admin | write | read | reviewer | viewer — never "admin" by accident
     membership_ids: list[int] = field(default_factory=list)
     client_label: Optional[str] = None  # set for viewer keys scoped to a specific client
+    user_id: Optional[int] = None       # DB user id when auth is via session or a personal API key
 
     @property
     def workspace_ids(self) -> Optional[list[int]]:
@@ -166,6 +167,7 @@ async def _authenticate(raw_key: Optional[str], session) -> WorkspaceContext:
                 role=role if role in _VALID_ROLES else "read",
                 membership_ids=[m.workspace_id for m in memberships],
                 client_label=key_client_label,
+                user_id=key_user_id,
             )
 
         # Key provided but not found — check if multi-key mode is active
@@ -246,6 +248,7 @@ async def _session_context(token: str, session) -> Optional[WorkspaceContext]:
         created_by=key.label,
         role=key.role if key.role in _VALID_ROLES else "read",
         membership_ids=[m.workspace_id for m in memberships],
+        user_id=user_session.user_id,
     )
 
 
