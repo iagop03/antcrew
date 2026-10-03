@@ -133,6 +133,42 @@ class TestTraceDump:
         assert "Dumped" in result.output
 
 
+# ── antcrew trace --verify-chain ─────────────────────────────────────────────
+
+class TestTraceVerifyChain:
+    def _make_db_with_hitl(self, tmp_path) -> Path:
+        tl = TraceLog(tmp_path / "v.db")
+        run_id = tl.begin_run(thread_id="t1", request="r", team="T")
+        tl.record_hitl(run_id=run_id, step="gate", decision="approved", reviewer_id="alice")
+        tl.record_hitl(run_id=run_id, step="final", decision="approved", reviewer_id="bob")
+        tl.close()
+        return tmp_path / "v.db"
+
+    def test_verify_chain_intact(self, tmp_path):
+        db = self._make_db_with_hitl(tmp_path)
+        result = runner.invoke(app, ["trace", str(db), "--verify-chain"])
+        assert result.exit_code == 0
+        assert "intact" in result.output.lower() or "✓" in result.output
+
+    def test_verify_chain_broken(self, tmp_path):
+        db = self._make_db_with_hitl(tmp_path)
+        # Tamper with the first decision
+        import sqlite3
+        con = sqlite3.connect(str(db))
+        con.execute("UPDATE hitl_decisions SET decision='reject' WHERE step='gate'")
+        con.commit()
+        con.close()
+        result = runner.invoke(app, ["trace", str(db), "--verify-chain"])
+        assert result.exit_code == 1
+        assert "broken" in result.output.lower() or "✗" in result.output
+
+    def test_verify_chain_empty_db(self, tmp_path):
+        tl = TraceLog(tmp_path / "empty.db")
+        tl.close()
+        result = runner.invoke(app, ["trace", str(tmp_path / "empty.db"), "--verify-chain"])
+        assert result.exit_code == 0
+
+
 # ── Plugin system ─────────────────────────────────────────────────────────────
 
 class TestPluginSystem:

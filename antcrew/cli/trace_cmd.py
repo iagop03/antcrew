@@ -83,6 +83,10 @@ def trace_cmd(
     dump_calls: bool = typer.Option(False, "--dump-calls", help="Include per-agent call detail in dump"),
     dump_since: Optional[int] = typer.Option(None, "--dump-since", help="Dump only runs from last N days"),
     dump_team: Optional[str] = typer.Option(None, "--dump-team", help="Filter dump by team name"),
+    verify_chain: bool = typer.Option(
+        False, "--verify-chain",
+        help="Verify the SHA-256 hash chain of all HITL decisions and exit (exit 0 = intact, 1 = broken).",
+    ),
 ) -> None:
     """Inspect a TraceLog SQLite file — list runs, show call detail, prune, or dump.
 
@@ -107,6 +111,9 @@ def trace_cmd(
 
     Dump filtered runs as CSV to file:
         antcrew trace ~/.antcrew/trace.db --dump csv --dump-output out.csv --dump-team dev
+
+    Verify HITL audit chain integrity:
+        antcrew trace ~/.antcrew/trace.db --verify-chain
     """
     from rich.table import Table
 
@@ -117,6 +124,27 @@ def trace_cmd(
         raise typer.Exit(1)
 
     tlog = _TraceLog(db)
+
+    # --- verify-chain mode ---
+    if verify_chain:
+        result = tlog.verify_hitl_chain()
+        tlog.close()
+        valid = result["valid"]
+        total, verified = result["total"], result["verified"]
+        msg = result["message"]
+
+        if valid is True:
+            console.print(f"[bold green]✓ HITL chain intact[/] — {verified}/{total} row(s) verified.")
+            console.print(f"[dim]{msg}[/dim]")
+            raise typer.Exit(0)
+        elif valid is False:
+            broken_at = result.get("broken_at")
+            console.print(f"[bold red]✗ HITL chain BROKEN[/] at row id={broken_at}.")
+            console.print(f"[dim]{msg}[/dim]")
+            raise typer.Exit(1)
+        else:  # None — pre-v3 DB
+            console.print(f"[yellow]⚠ HITL chain unverifiable[/] — {msg}")
+            raise typer.Exit(0)
 
     # --- prune mode ---
     if prune is not None:
