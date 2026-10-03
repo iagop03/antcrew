@@ -3,7 +3,8 @@
 [![CI](https://github.com/iagop03/antcrew/actions/workflows/ci.yml/badge.svg)](https://github.com/iagop03/antcrew/actions)
 [![PyPI](https://img.shields.io/pypi/v/antcrew)](https://pypi.org/project/antcrew/)
 [![Python](https://img.shields.io/pypi/pyversions/antcrew)](https://pypi.org/project/antcrew/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![SDK License: Apache 2.0](https://img.shields.io/badge/SDK%20License-Apache%202.0-blue.svg)](LICENSE)
+[![Platform License: ELv2](https://img.shields.io/badge/Platform%20License-ELv2-orange.svg)](platform/LICENSE)
 
 **Multi-agent framework for Python. Typed outputs. Full trace. Works offline.**
 
@@ -256,4 +257,6 @@ The SDK runs entirely locally — no cloud account required. **antcrew-platform*
 
 ## License
 
-MIT
+**antcrew SDK** (`antcrew/`, `antcrew_engine/`) — [Apache License 2.0](LICENSE). Free to use, modify, and distribute, including in commercial products.
+
+**antcrew-platform** (`platform/`) — [Elastic License 2.0](platform/LICENSE). Free for self-hosted use within your own organization. Providing it as a hosted/managed service to third parties requires a commercial agreement.
