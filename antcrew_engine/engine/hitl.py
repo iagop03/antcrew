@@ -72,15 +72,30 @@ class HitlDecision(TypedDict):
 
     This is the return value of the ``request_review`` callback passed to
     HitlReviewer.  Channels (platform, CLI, Slack) must produce this shape.
+
+    Verdict semantics
+    -----------------
+    approve          — output accepted, execution continues.
+    reject           — output rejected, execution halts.
+    request_changes  — reviewer wants the capability to retry with feedback;
+                       execution loops back to the reviewed capability.
+    edit             — reviewer provides replacement content directly;
+                       no retry needed.
+    timeout          — no response received within timeout_seconds;
+                       treated as reject (fail closed).
     """
-    verdict: Literal["approve", "reject", "edit", "timeout"]
+    verdict: Literal["approve", "reject", "request_changes", "edit", "timeout"]
     """Human decision verb."""
 
     feedback: NotRequired[Optional[str]]
-    """Free-text feedback.  Required when ``verdict == 'reject'``, optional otherwise."""
+    """Free-text feedback.  Required when verdict is 'reject' or 'request_changes'."""
 
     new_content: NotRequired[Optional[Any]]
     """Replacement artifact content.  Required when ``verdict == 'edit'``."""
+
+    reviewer_id: NotRequired[Optional[str]]
+    """Identifier of the human reviewer (user id, email, or Slack handle).
+    Populated by the channel; used by TraceLog.record_hitl()."""
 
 
 # ---------------------------------------------------------------------------
@@ -136,3 +151,4 @@ class HitlResolvedPayload(TypedDict):
     thread_id: str
     verdict: str
     feedback: NotRequired[Optional[str]]
+    reviewer_id: NotRequired[Optional[str]]
