@@ -1,16 +1,36 @@
-"""PlatformChannel — antcrew BaseChannel implementation for the platform's HITL flow.
+"""PlatformChannel (server / platform-side) — BaseChannel for runs inside the platform.
 
-When a team agent with approval_required=True runs via POST /run/, this channel:
-1. Emits hitl.review_required on the antcrew event bus (→ listener persists it → WS forwards)
-2. Waits for a decision via one of two strategies:
-   a. DB polling (DEFAULT, multi-worker): polls HitlReview table every HITL_POLL_INTERVAL_S
-      seconds. Works across uvicorn workers. Use with PostgreSQL.
-   b. In-memory Future (HITL_FUTURE_MODE=1, single-worker): concurrent.futures.Future resolved
-      by POST /reviews/{review_id} calling resolve_review(). Near-instant, no DB overhead.
-      Only safe with a single uvicorn worker — breaks silently in multi-worker deployments.
+This is the **server-side** channel used by ``app.services.runner``,
+``app.services.runner_core``, and ``app.services.runner_pipeline`` when a run
+is dispatched through the platform API (``POST /run/``).
 
-Thread-safety: concurrent.futures.Future is thread-safe by design. asyncio.wrap_future
-bridges the thread's local event loop to the main loop via call_soon_threadsafe.
+Architecture note
+-----------------
+There are two ``PlatformChannel`` implementations and they serve different roles:
+
+* **This one** (``app.core.channel``) — server / platform side.
+  Runs inside the platform's uvicorn process.  Emits ``hitl.review_required``
+  on the internal event bus (→ listener persists it → WebSocket forwards to UI)
+  and waits via either an in-memory Future (HITL_FUTURE_MODE=1, single-worker)
+  or DB-polling (default, multi-worker).  Timeout → ``"reject"``.
+
+* **``antcrew.integrations.platform.PlatformChannel``** — SDK / client side.
+  Runs in the user's own process.  Communicates with the platform via HTTP
+  (``POST /reviews/``, polls ``GET /reviews/{id}``).  Used for local
+  ``antcrew run`` / programmatic SDK runs.  No access to platform internals.
+
+HITL strategies
+---------------
+* DB polling (DEFAULT, multi-worker): polls ``HitlReview`` table every
+  HITL_POLL_INTERVAL_S seconds.  Works across uvicorn workers.  Use with
+  PostgreSQL for production deployments.
+* In-memory Future (HITL_FUTURE_MODE=1, single-worker): a
+  ``concurrent.futures.Future`` resolved by ``POST /reviews/{id}`` calling
+  ``resolve_review()``.  Near-instant, no DB overhead — but breaks silently in
+  multi-worker deployments.
+
+Thread-safety: ``concurrent.futures.Future`` is thread-safe by design.
+``asyncio.wrap_future`` bridges the executor thread to the main event loop.
 """
 from __future__ import annotations
 

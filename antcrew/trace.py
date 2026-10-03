@@ -27,11 +27,33 @@ CLI:
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+_CHAIN_GENESIS = "genesis"
+
+
+def _hitl_row_hash(
+    prev_hash: str,
+    run_id: str,
+    step: str,
+    decision: str,
+    reviewer_id: str,
+    reason: str,
+    decided_at: str,
+) -> str:
+    """SHA-256 of pipe-joined fields + previous row hash.
+
+    The chain is ordered by row insertion (id ASC).  Any modification to any
+    field — or any deletion / insertion that shifts the sequence — invalidates
+    all subsequent hashes, making tampering detectable via verify_hitl_chain().
+    """
+    data = f"{prev_hash}|{run_id}|{step}|{decision}|{reviewer_id}|{reason}|{decided_at}"
+    return hashlib.sha256(data.encode()).hexdigest()
 
 
 class ReplayError(RuntimeError):
@@ -72,7 +94,8 @@ CREATE TABLE IF NOT EXISTS hitl_decisions (
     decision    TEXT NOT NULL,
     reviewer_id TEXT NOT NULL DEFAULT '',
     reason      TEXT NOT NULL DEFAULT '',
-    decided_at  TEXT NOT NULL
+    decided_at  TEXT NOT NULL,
+    row_hash    TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -94,9 +117,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 decision    TEXT NOT NULL,
                 reviewer_id TEXT NOT NULL DEFAULT '',
                 reason      TEXT NOT NULL DEFAULT '',
-                decided_at  TEXT NOT NULL
+                decided_at  TEXT NOT NULL,
+                row_hash    TEXT NOT NULL DEFAULT ''
             )
         """)
+    else:
+        # row_hash column added in trace v3 — idempotent migration
+        hitl_cols = {r[1] for r in conn.execute("PRAGMA table_info(hitl_decisions)").fetchall()}
+        if "row_hash" not in hitl_cols:
+            conn.execute("ALTER TABLE hitl_decisions ADD COLUMN row_hash TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -210,11 +239,21 @@ class TraceLog:
 
         Returns the integer primary key of the inserted row.
         """
+        decided_at = _now_iso()
+        # Compute hash chain: chain over all hitl_decisions in insertion order.
+        prev_row = self._conn.execute(
+            "SELECT row_hash FROM hitl_decisions ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        prev_hash = (prev_row["row_hash"] if prev_row and prev_row["row_hash"] else _CHAIN_GENESIS)
+        row_hash = _hitl_row_hash(
+            prev_hash, run_id, step, decision,
+            reviewer_id or "", reason or "", decided_at,
+        )
         cur = self._conn.execute(
             """INSERT INTO hitl_decisions
-               (run_id, step, decision, reviewer_id, reason, decided_at)
-               VALUES (?,?,?,?,?,?)""",
-            (run_id, step, decision, reviewer_id or "", reason or "", _now_iso()),
+               (run_id, step, decision, reviewer_id, reason, decided_at, row_hash)
+               VALUES (?,?,?,?,?,?,?)""",
+            (run_id, step, decision, reviewer_id or "", reason or "", decided_at, row_hash),
         )
         self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
@@ -386,6 +425,78 @@ class TraceLog:
             (run_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def verify_hitl_chain(self) -> dict:
+        """Verify the SHA-256 hash chain across all ``hitl_decisions`` rows.
+
+        The chain is append-only: each row's ``row_hash`` covers its own fields
+        plus the previous row's hash.  Any modification, insertion-in-the-middle,
+        or deletion breaks the chain and is detectable here.
+
+        Returns a dict with:
+
+        * ``valid``      — ``True`` if intact, ``False`` if broken, ``None`` if
+                           no hashed rows exist yet (pre-upgrade database).
+        * ``total``      — total rows in the table.
+        * ``verified``   — rows that were actually checked (those with a hash).
+        * ``broken_at``  — integer row ``id`` of the first broken row, or ``None``.
+        * ``message``    — human-readable summary.
+        """
+        rows = self._conn.execute(
+            "SELECT id, run_id, step, decision, reviewer_id, reason, decided_at, row_hash "
+            "FROM hitl_decisions ORDER BY id"
+        ).fetchall()
+
+        total = len(rows)
+        if total == 0:
+            return {"valid": True, "total": 0, "verified": 0, "broken_at": None,
+                    "message": "No HITL decisions recorded."}
+
+        hashed = [r for r in rows if r["row_hash"]]
+        if not hashed:
+            return {
+                "valid": None,
+                "total": total,
+                "verified": 0,
+                "broken_at": None,
+                "message": (
+                    f"{total} row(s) exist but none have a row_hash "
+                    "(pre-v3 database — chain will start on next record_hitl() call)."
+                ),
+            }
+
+        # Walk the hashed subset in insertion order.
+        # The first hashed row's predecessor is either a pre-chain row (row_hash='')
+        # or genesis — record_hitl() stored _CHAIN_GENESIS in that case.
+        prev_hash = _CHAIN_GENESIS
+        for row in hashed:
+            expected = _hitl_row_hash(
+                prev_hash,
+                row["run_id"], row["step"], row["decision"],
+                row["reviewer_id"], row["reason"], row["decided_at"],
+            )
+            if expected != row["row_hash"]:
+                return {
+                    "valid": False,
+                    "total": total,
+                    "verified": len(hashed),
+                    "broken_at": row["id"],
+                    "message": (
+                        f"Chain broken at row id={row['id']} "
+                        f"(step={row['step']!r}, run={row['run_id']!r})."
+                    ),
+                }
+            prev_hash = row["row_hash"]
+
+        pre_chain = total - len(hashed)
+        note = f" ({pre_chain} pre-chain row(s) not covered)" if pre_chain else ""
+        return {
+            "valid": True,
+            "total": total,
+            "verified": len(hashed),
+            "broken_at": None,
+            "message": f"Chain intact — {len(hashed)}/{total} row(s) verified{note}.",
+        }
 
     def prune(self, days: int, *, dry_run: bool = False) -> int:
         """Delete runs (and their associated records) older than *days* days.

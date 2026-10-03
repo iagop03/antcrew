@@ -1,17 +1,36 @@
-"""PlatformChannel — BaseChannel implementation backed by antcrew-platform API.
+"""PlatformChannel (SDK / client-side) — BaseChannel for LOCAL pipeline runs.
 
-When a local pipeline run reaches a HITL checkpoint, this channel:
-  1. Registers the review on the platform via POST /reviews/
-  2. Prints a link so reviewers can act via `antcrew review` CLI or the dashboard
-  3. Polls GET /reviews/{review_id} until a decision arrives or the timeout expires
-  4. Returns the decision dict, unblocking the pipeline
+This is the **SDK-side** channel.  It is used when you run the antcrew SDK
+directly (e.g. ``antcrew run`` or programmatic ``team.run()``) and want HITL
+reviews to surface in the antcrew platform dashboard rather than on the console.
 
-Configuration (in order of precedence):
+Architecture note
+-----------------
+There are two ``PlatformChannel`` implementations and they serve different roles:
+
+* **This one** (``antcrew.integrations.platform``) — SDK / client side.
+  Runs in the user's process.  Registers the review via ``POST /reviews/`` on
+  the remote platform, then HTTP-polls ``GET /reviews/{id}`` until a decision
+  arrives or the timeout fires.  No access to the platform's internal bus or DB.
+
+* **``platform.app.core.channel.PlatformChannel``** — server / platform side.
+  Runs inside the platform's uvicorn process.  Emits ``hitl.review_required``
+  on the internal event bus and waits via either an in-memory Future
+  (HITL_FUTURE_MODE=1, single-worker) or DB-polling (default, multi-worker).
+  Used by ``app.services.runner`` and siblings — never imported by the SDK.
+
+These classes are **not duplicates**: they have different interfaces and
+different transport mechanisms.  The separation keeps the SDK free of platform
+internals while letting the platform runner stay synchronisation-efficient.
+
+Configuration (in order of precedence)
+---------------------------------------
   - Constructor args
   - ANTCREW_PLATFORM_URL / ANTCREW_PLATFORM_API_KEY environment variables
-  - .antcrew/config.yaml in the working directory (written by `antcrew configure`)
+  - .antcrew/config.yaml in the working directory (written by ``antcrew configure``)
 
-Usage in agentteam.yaml:
+Usage in agentteam.yaml::
+
     channel:
       type: platform
       # url: https://antcrew.example.com   # optional, defaults to ANTCREW_PLATFORM_URL
@@ -19,7 +38,8 @@ Usage in agentteam.yaml:
       # timeout_s: 3600
       # poll_interval_s: 2.0
 
-Usage in code:
+Usage in code::
+
     from antcrew.integrations.platform import PlatformChannel
     channel = PlatformChannel(url="http://localhost:8000", api_key="sk-...")
     agent = BackendDevAgent(llm=..., channel=channel, approval_required=True)

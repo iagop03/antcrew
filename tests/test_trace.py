@@ -504,3 +504,135 @@ class TestRecordHitl:
         d = tlog.get_hitl_decisions(run_id)[0]
         assert d["reviewer_id"] == ""
         tlog.close()
+
+    def test_row_hash_stored_on_insert(self, tmp_path):
+        tlog = TraceLog(tmp_path / "h.db")
+        run_id = tlog.begin_run(thread_id="t1", request="r", team="T")
+        tlog.record_hitl(run_id=run_id, step="gate", decision="approved")
+        d = tlog.get_hitl_decisions(run_id)[0]
+        assert d["row_hash"] != ""
+        assert len(d["row_hash"]) == 64  # SHA-256 hex digest
+        tlog.close()
+
+
+# ---------------------------------------------------------------------------
+# HITL chain verification
+# ---------------------------------------------------------------------------
+
+class TestHITLChain:
+    def _tlog(self, tmp_path):
+        return TraceLog(tmp_path / "chain.db")
+
+    def _run(self, tl):
+        return tl.begin_run(thread_id="t1", request="r", team="T")
+
+    def test_empty_db_is_valid(self, tmp_path):
+        tl = self._tlog(tmp_path)
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is True
+        assert r["total"] == 0
+        assert r["verified"] == 0
+        tl.close()
+
+    def test_single_row_chain_valid(self, tmp_path):
+        tl = self._tlog(tmp_path)
+        run_id = self._run(tl)
+        tl.record_hitl(run_id=run_id, step="gate", decision="approved", reviewer_id="alice")
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is True
+        assert r["verified"] == 1
+        assert r["broken_at"] is None
+        tl.close()
+
+    def test_multi_row_chain_valid(self, tmp_path):
+        tl = self._tlog(tmp_path)
+        run_id = self._run(tl)
+        for step in ("prd", "arch", "final"):
+            tl.record_hitl(run_id=run_id, step=step, decision="approved")
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is True
+        assert r["verified"] == 3
+        tl.close()
+
+    def test_modified_row_breaks_chain(self, tmp_path):
+        tl = self._tlog(tmp_path)
+        run_id = self._run(tl)
+        tl.record_hitl(run_id=run_id, step="gate1", decision="approved")
+        tl.record_hitl(run_id=run_id, step="gate2", decision="approved")
+        tl.record_hitl(run_id=run_id, step="gate3", decision="approved")
+        # Tamper with the second row's decision field directly
+        tl._conn.execute(
+            "UPDATE hitl_decisions SET decision='reject' WHERE step='gate2'"
+        )
+        tl._conn.commit()
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is False
+        assert r["broken_at"] is not None
+        tl.close()
+
+    def test_broken_at_points_to_first_bad_row(self, tmp_path):
+        tl = self._tlog(tmp_path)
+        run_id = self._run(tl)
+        tl.record_hitl(run_id=run_id, step="a", decision="approved")
+        row1_id = tl.get_hitl_decisions(run_id)[0]["id"]
+        tl.record_hitl(run_id=run_id, step="b", decision="approved")
+        tl.record_hitl(run_id=run_id, step="c", decision="approved")
+        # Tamper with the first row — every subsequent row should also break
+        tl._conn.execute(
+            "UPDATE hitl_decisions SET reviewer_id='tampered' WHERE step='a'"
+        )
+        tl._conn.commit()
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is False
+        assert r["broken_at"] == row1_id
+        tl.close()
+
+    def test_pre_chain_rows_return_none_valid(self, tmp_path):
+        """Rows with row_hash='' (pre-v3 DB) yield valid=None, not False."""
+        tl = self._tlog(tmp_path)
+        run_id = self._run(tl)
+        # Insert a row bypassing record_hitl() so row_hash stays ''
+        tl._conn.execute(
+            "INSERT INTO hitl_decisions(run_id,step,decision,decided_at) VALUES(?,?,?,?)",
+            (run_id, "legacy", "approved", "2024-01-01T00:00:00+00:00"),
+        )
+        tl._conn.commit()
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is None
+        assert r["verified"] == 0
+        assert r["total"] == 1
+        tl.close()
+
+    def test_new_rows_chain_after_pre_chain_rows(self, tmp_path):
+        """Chain starts correctly when pre-v3 rows exist before first hashed row."""
+        tl = self._tlog(tmp_path)
+        run_id = self._run(tl)
+        # Insert a legacy row without hash
+        tl._conn.execute(
+            "INSERT INTO hitl_decisions(run_id,step,decision,decided_at) VALUES(?,?,?,?)",
+            (run_id, "legacy", "approved", "2024-01-01T00:00:00+00:00"),
+        )
+        tl._conn.commit()
+        # Now use the proper API — chain should start from genesis (pre-chain row has row_hash='')
+        tl.record_hitl(run_id=run_id, step="new_gate", decision="approved")
+        tl.record_hitl(run_id=run_id, step="final", decision="approved")
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is True
+        assert r["verified"] == 2
+        assert r["total"] == 3
+        assert "pre-chain" in r["message"]
+        tl.close()
+
+    def test_hash_covers_all_fields(self, tmp_path):
+        """Changing any field other than row_hash also breaks the chain."""
+        tl = self._tlog(tmp_path)
+        run_id = self._run(tl)
+        tl.record_hitl(run_id=run_id, step="s", decision="approved", reason="ok")
+        # Silently update the reason — decision and reviewer_id unchanged
+        tl._conn.execute(
+            "UPDATE hitl_decisions SET reason='tampered reason' WHERE step='s'"
+        )
+        tl._conn.commit()
+        r = tl.verify_hitl_chain()
+        assert r["valid"] is False
+        tl.close()
