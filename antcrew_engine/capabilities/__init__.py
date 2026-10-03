@@ -19,6 +19,8 @@ from .review_fixer import ReviewFixer
 from .security_auditor import SecurityAuditor, findings_to_sarif
 from .security_scanner import SecurityScanner
 from .cobol_analyzer import COBOLAnalyzerExecutor
+from .cobol_generator import COBOLGeneratorExecutor
+from .cobol_refactorer import COBOLRefactorerExecutor
 from .requirements_elicitation import RequirementsElicitationExecutor
 from .spec_extractor import SpecExtractor
 from .task_planner import TaskPlanner
@@ -28,6 +30,8 @@ from .test_runner import TestRunner
 
 __all__ = [
     "COBOLAnalyzerExecutor",
+    "COBOLGeneratorExecutor",
+    "COBOLRefactorerExecutor",
     "RequirementsElicitationExecutor",
     "SpecExtractor",
     "Architect",
