@@ -6,6 +6,11 @@ import logging
 import os
 
 try:
+    import app.ee  # noqa: F401 — registers EE hooks if the package is installed
+except ImportError:
+    pass
+
+try:
     from pathlib import Path as _Path
 
     from dotenv import load_dotenv as _load_dotenv
