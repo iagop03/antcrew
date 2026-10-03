@@ -48,9 +48,15 @@ class TestTracePruneFlag:
         assert len(tl.list_runs()) == 1  # only the 2099 run remains
         tl.close()
 
-    def test_prune_zero_deletes_past_runs(self, tmp_path):
+    def test_prune_zero_rejected_by_cli(self, tmp_path):
         db = _make_db(tmp_path)
         result = runner.invoke(app, ["trace", str(db), "--prune", "0", "--yes"])
+        # prune(0) is rejected to prevent accidental data loss
+        assert result.exit_code != 0
+
+    def test_prune_one_deletes_past_runs(self, tmp_path):
+        db = _make_db(tmp_path)
+        result = runner.invoke(app, ["trace", str(db), "--prune", "1", "--yes"])
         assert result.exit_code == 0
         assert "Deleted" in result.output
         tl = TraceLog(db)

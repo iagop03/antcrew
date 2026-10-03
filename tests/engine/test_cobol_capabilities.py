@@ -93,7 +93,7 @@ def goal():
 @pytest.fixture
 def store_with_cobol_source():
     store = MemoryStore()
-    store.create(Artifact(
+    store.write(Artifact(
         id=ArtifactId("cobol_source"),
         kind=ArtifactKind.SOURCE,
         content=_SAMPLE_COBOL,
@@ -106,8 +106,6 @@ def doc_manager_with_cobol(tmp_path):
     mgr = DocumentationManager()
     storage = LocalFileStorage(root=str(tmp_path))
     mgr.storage = storage
-    cbl_path = tmp_path / "payroll.cbl"
-    cbl_path.write_text(_SAMPLE_COBOL, encoding="utf-8")
     storage.save("cobol/PAYROLL.cbl", _SAMPLE_COBOL.encode(), {
         "doc_type": "cobol",
         "source_file": "PAYROLL.cbl",
@@ -222,11 +220,15 @@ class TestCOBOLSyntaxValidatorStatic:
 # ---------------------------------------------------------------------------
 
 class TestCOBOLAnalyzerExecutor:
+    def _get_created(self, result, artifact_id: str):
+        """Pull an artifact out of result.delta.created by id."""
+        return next((a for a in result.delta.created if a.id == artifact_id), None)
+
     def test_no_docs_returns_empty_programs(self, llm, goal):
         executor = COBOLAnalyzerExecutor(llm=llm)
         store = MemoryStore()
         result = executor.execute(store, goal)
-        art = store.get(ArtifactId("cobol_analysis"))
+        art = self._get_created(result, "cobol_analysis")
         assert art is not None
         data = json.loads(art.content)
         assert data["programs"] == []
@@ -237,7 +239,7 @@ class TestCOBOLAnalyzerExecutor:
         executor.set_documentation(doc_manager_with_cobol)
         store = MemoryStore()
         result = executor.execute(store, goal)
-        art = store.get(ArtifactId("cobol_analysis"))
+        art = self._get_created(result, "cobol_analysis")
         assert art is not None
         data = json.loads(art.content)
         assert len(data["programs"]) >= 1
@@ -249,6 +251,9 @@ class TestCOBOLAnalyzerExecutor:
 # ---------------------------------------------------------------------------
 
 class TestCOBOLGeneratorExecutor:
+    def _get_created(self, result, artifact_id: str):
+        return next((a for a in result.delta.created if a.id == artifact_id), None)
+
     def test_creates_cobol_source_artifact(self, llm):
         executor = COBOLGeneratorExecutor(llm=llm)
         store = MemoryStore()
@@ -257,8 +262,8 @@ class TestCOBOLGeneratorExecutor:
             desired_state=DesiredProjectState(frozenset()),
             constraints=Constraints(),
         )
-        executor.execute(store, goal)
-        art = store.get(ArtifactId("cobol_source"))
+        result = executor.execute(store, goal)
+        art = self._get_created(result, "cobol_source")
         assert art is not None
         assert art.kind == ArtifactKind.SOURCE
         assert len(art.content) > 0
@@ -266,7 +271,7 @@ class TestCOBOLGeneratorExecutor:
     def test_incorporates_elicitation_report(self, llm):
         executor = COBOLGeneratorExecutor(llm=llm)
         store = MemoryStore()
-        store.create(Artifact(
+        store.write(Artifact(
             id=ArtifactId("elicitation_report"),
             kind=ArtifactKind.REQUIREMENTS,
             content=json.dumps({"summary": "Payroll processing", "ambiguities": [], "missing_info": []}),
@@ -276,8 +281,8 @@ class TestCOBOLGeneratorExecutor:
             desired_state=DesiredProjectState(frozenset()),
             constraints=Constraints(),
         )
-        executor.execute(store, goal)
-        art = store.get(ArtifactId("cobol_source"))
+        result = executor.execute(store, goal)
+        art = self._get_created(result, "cobol_source")
         assert art is not None
 
 
@@ -289,7 +294,7 @@ class TestCOBOLRefactorerExecutor:
     def test_refactors_existing_source(self, llm):
         executor = COBOLRefactorerExecutor(llm=llm)
         store = MemoryStore()
-        store.create(Artifact(
+        store.write(Artifact(
             id=ArtifactId("cobol_source"),
             kind=ArtifactKind.SOURCE,
             content=_SAMPLE_COBOL,
@@ -299,9 +304,11 @@ class TestCOBOLRefactorerExecutor:
             desired_state=DesiredProjectState(frozenset()),
             constraints=Constraints(),
         )
-        executor.execute(store, goal)
-        art = store.get(ArtifactId("cobol_source"))
-        assert art is not None
+        result = executor.execute(store, goal)
+        # Refactorer produces a modified artifact in delta
+        modified_ids = {a.id for a in result.delta.modified}
+        created_ids = {a.id for a in result.delta.created}
+        assert "cobol_source" in modified_ids or "cobol_source" in created_ids
 
     def test_returns_error_when_no_source(self, llm):
         executor = COBOLRefactorerExecutor(llm=llm)
@@ -320,6 +327,9 @@ class TestCOBOLRefactorerExecutor:
 # ---------------------------------------------------------------------------
 
 class TestRequirementsElicitationExecutor:
+    def _get_created(self, result, artifact_id: str):
+        return next((a for a in result.delta.created if a.id == artifact_id), None)
+
     def test_creates_elicitation_report(self, llm, goal):
         executor = RequirementsElicitationExecutor(llm=llm)
         store = MemoryStore()
@@ -328,8 +338,8 @@ class TestRequirementsElicitationExecutor:
             desired_state=DesiredProjectState(frozenset()),
             constraints=Constraints(),
         )
-        executor.execute(store, goal_elicit)
-        art = store.get(ArtifactId("elicitation_report"))
+        result = executor.execute(store, goal_elicit)
+        art = self._get_created(result, "elicitation_report")
         assert art is not None
         # SimulatedLLM may not produce valid JSON — just check artifact created
         assert len(art.content) > 0
@@ -343,6 +353,6 @@ class TestRequirementsElicitationExecutor:
             desired_state=DesiredProjectState(frozenset()),
             constraints=Constraints(),
         )
-        executor.execute(store, goal)
-        art = store.get(ArtifactId("elicitation_report"))
+        result = executor.execute(store, goal)
+        art = self._get_created(result, "elicitation_report")
         assert art is not None

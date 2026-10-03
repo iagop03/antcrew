@@ -91,12 +91,12 @@ class COBOLRefactorerExecutor(BaseExecutor):
             kind    = ArtifactKind.SOURCE,
             content = refactored,
         )
-        return CapabilityResult(delta=ArtifactDelta(updated=(artifact,)))
+        return CapabilityResult(delta=ArtifactDelta(modified=(artifact,)))
 
     @staticmethod
     def _get_artifact(store: "ArtifactStore", artifact_id: str) -> str | None:
         try:
-            art = store.get(ArtifactId(artifact_id))
+            art = store.read(ArtifactId(artifact_id))
             return art.content if art else None
         except Exception:
             return None

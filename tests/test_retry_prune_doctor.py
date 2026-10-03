@@ -298,13 +298,14 @@ class TestTraceLogPrune:
         calls = tl.get_calls(old_id)
         assert calls == []
 
-    def test_prune_zero_days_deletes_all(self, tmp_path):
+    def test_prune_zero_days_raises(self, tmp_path):
         tl = self._make_tl(tmp_path)
         self._insert_run(tl, "2020-01-01T00:00:00+00:00")
         self._insert_run(tl, "2021-01-01T00:00:00+00:00")
-        deleted = tl.prune(days=0)
-        assert deleted == 2
-        assert tl.list_runs() == []
+        with pytest.raises(ValueError, match="days must be >= 1"):
+            tl.prune(days=0)
+        # Nothing deleted
+        assert len(tl.list_runs()) == 2
 
     def test_prune_negative_days_raises(self, tmp_path):
         tl = self._make_tl(tmp_path)
