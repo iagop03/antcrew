@@ -354,7 +354,7 @@ def _run_sync(
     initial_memory: Optional[dict] = None,
     kv_out: Optional[list] = None,
     cli_working_dir: Optional[str] = None,
-    docs_config: Optional[dict] = None,
+    doc_manager=None,
 ):
     """Run a team synchronously in the executor thread.
 
@@ -366,7 +366,7 @@ def _run_sync(
     org_context: pre-populate ProjectKB before running (keys: decisions, tech_stack, dependencies).
     replay_run_id: inject artifacts from a past ChromaMemory run as context for BA and PM.
     per_agent_channels: mutable list; per-agent PlatformChannels are appended so _bg() can set run_id.
-    docs_config: S3 docs config dict; when set, indexes docs and injects DocumentationManager into all agents.
+    doc_manager: pre-built DocumentationManager; when set, indexes docs and injects into all agents.
     """
     _pac = per_agent_channels if per_agent_channels is not None else []
 
@@ -423,18 +423,12 @@ def _run_sync(
                 except Exception as _e:
                     log.warning("runner: LLM override for %s failed: %s", _atype, _e)
 
-    # Inject documentation manager if workspace has S3 docs configured
-    if docs_config:
+    if doc_manager is not None:
         try:
-            from antcrew_engine.documentation import DocumentationManager as _DocMgr
-            _doc_mgr = _DocMgr(storage_type="s3", storage_config=docs_config)
-            if docs_config.get("schema_yaml"):
-                import yaml as _yaml
-                _doc_mgr.load_schema_from_dict(_yaml.safe_load(docs_config["schema_yaml"]))
-            _doc_mgr.index_from_storage()
+            doc_manager.index_from_storage()
             for _ag in all_agents:
                 if hasattr(_ag, "set_documentation"):
-                    _ag.set_documentation(_doc_mgr)
+                    _ag.set_documentation(doc_manager)
         except Exception as _doc_exc:
             log.warning("runner: docs setup failed: %s", _doc_exc)
 

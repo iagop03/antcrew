@@ -111,7 +111,7 @@ async def dispatch(
     _github_installation_id: Optional[int] = None
     _agent_llm_configs: dict = {}
     _cli_working_dir: Optional[str] = None
-    _docs_config: Optional[dict] = None
+    _doc_mgr = None
     if workspace_id is not None:
         from sqlmodel import select as _sel
 
@@ -133,20 +133,11 @@ async def dispatch(
                 from app.services.runner_base import resolve_workspace_llm_config
                 _byok_api_key, _byok_base_url = await resolve_workspace_llm_config(_sess, _ws, model or "claude")
                 _cli_working_dir = getattr(_ws, "cli_working_dir", None)
-                # Docs S3 config — inject DocumentationManager into agents if configured
-                if getattr(_ws, "docs_s3_bucket", None):
-                    try:
-                        from app.api.workspaces_docs import _decrypt as _d
-                        _docs_config = {
-                            "bucket": _ws.docs_s3_bucket,
-                            "prefix": _ws.docs_s3_prefix or "",
-                            "region": _ws.docs_s3_region or "us-east-1",
-                            "aws_access_key_id": _d(_ws.docs_s3_access_key_enc) if _ws.docs_s3_access_key_enc else None,
-                            "aws_secret_access_key": _d(_ws.docs_s3_secret_key_enc) if _ws.docs_s3_secret_key_enc else None,
-                            "schema_yaml": _ws.docs_schema_yaml or "",
-                        }
-                    except Exception as _docs_exc:
-                        log.debug("runner: could not read docs config: %s", _docs_exc)
+                try:
+                    from app.api.workspaces_docs import build_doc_manager_for_workspace as _bdm
+                    _doc_mgr = _bdm(_ws)
+                except Exception as _docs_exc:
+                    log.debug("runner: could not build doc manager: %s", _docs_exc)
                 # Apply cost routing policy as the lowest-priority override layer
                 _routing_policy = getattr(_ws, "cost_routing_policy", "none") or "none"
                 if _routing_policy != "none":
@@ -299,7 +290,7 @@ async def dispatch(
                 _run_sync, team_name, effective_request, thread_id,
                 max_cost_usd, platform_channel, force_hitl, _byok_api_key, _byok_base_url, model,
                 _agent_llm_configs or None, dry_run, org_context, replay_run_id, _per_agent_channels,
-                _initial_memory, _kv_out, _cli_working_dir, _docs_config,
+                _initial_memory, _kv_out, _cli_working_dir, _doc_mgr,
             )
             if _ws_semaphore is not None:
                 async with _ws_semaphore:
