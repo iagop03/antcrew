@@ -375,3 +375,132 @@ def test_cli_trace_detail_hints_when_no_full_trace(tmp_path):
     result = runner.invoke(app, ["trace", str(db), "--run", run_id])
     assert result.exit_code == 0
     assert "--full-trace" in result.output
+
+
+# ---------------------------------------------------------------------------
+# prune()
+# ---------------------------------------------------------------------------
+
+class TestPrune:
+    def _populated_db(self, tmp_path):
+        """Return (tlog, old_run_id, new_run_id) with one old and one recent run."""
+        import sqlite3
+        from datetime import timedelta
+
+        tlog = TraceLog(tmp_path / "p.db")
+        new_run_id = tlog.begin_run(thread_id="new", request="recent", team="T")
+        tlog.record_call(run_id=new_run_id, agent_name="a", duration_ms=1.0)
+
+        # Manually insert an old run (started 100 days ago)
+        old_start = (
+            __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            - __import__("datetime").timedelta(days=100)
+        ).isoformat()
+        import uuid
+        old_run_id = str(uuid.uuid4())
+        tlog._conn.execute(
+            "INSERT INTO runs(id,thread_id,request,team,started_at,status) VALUES(?,?,?,?,?,?)",
+            (old_run_id, "old", "old run", "T", old_start, "done"),
+        )
+        tlog._conn.execute(
+            "INSERT INTO agent_calls(run_id,agent_name,started_at,duration_ms) VALUES(?,?,?,?)",
+            (old_run_id, "b", old_start, 2.0),
+        )
+        tlog._conn.execute(
+            "INSERT INTO hitl_decisions(run_id,step,decision,decided_at) VALUES(?,?,?,?)",
+            (old_run_id, "arch_review", "approve", old_start),
+        )
+        tlog._conn.commit()
+        return tlog, old_run_id, new_run_id
+
+    def test_prune_zero_raises(self, tmp_path):
+        tlog = TraceLog(tmp_path / "p.db")
+        with pytest.raises(ValueError, match="days must be >= 1"):
+            tlog.prune(0)
+        tlog.close()
+
+    def test_prune_negative_raises(self, tmp_path):
+        tlog = TraceLog(tmp_path / "p.db")
+        with pytest.raises(ValueError):
+            tlog.prune(-1)
+        tlog.close()
+
+    def test_prune_deletes_old_run(self, tmp_path):
+        tlog, old_run_id, new_run_id = self._populated_db(tmp_path)
+        deleted = tlog.prune(30)
+        assert deleted == 1
+        assert tlog.get_run(old_run_id) is None
+        assert tlog.get_run(new_run_id) is not None
+        tlog.close()
+
+    def test_prune_cascades_to_agent_calls(self, tmp_path):
+        tlog, old_run_id, new_run_id = self._populated_db(tmp_path)
+        tlog.prune(30)
+        assert tlog.get_calls(old_run_id) == []
+        assert len(tlog.get_calls(new_run_id)) == 1
+        tlog.close()
+
+    def test_prune_cascades_to_hitl_decisions(self, tmp_path):
+        tlog, old_run_id, new_run_id = self._populated_db(tmp_path)
+        tlog.prune(30)
+        assert tlog.get_hitl_decisions(old_run_id) == []
+        tlog.close()
+
+    def test_prune_dry_run_returns_count_without_deleting(self, tmp_path):
+        tlog, old_run_id, new_run_id = self._populated_db(tmp_path)
+        count = tlog.prune(30, dry_run=True)
+        assert count == 1
+        # Nothing deleted
+        assert tlog.get_run(old_run_id) is not None
+        tlog.close()
+
+    def test_prune_nothing_to_delete(self, tmp_path):
+        tlog = TraceLog(tmp_path / "p.db")
+        tlog.begin_run(thread_id="t1", request="r", team="T")
+        deleted = tlog.prune(7)
+        assert deleted == 0
+        tlog.close()
+
+
+# ---------------------------------------------------------------------------
+# record_hitl / get_hitl_decisions
+# ---------------------------------------------------------------------------
+
+class TestRecordHitl:
+    def test_record_and_retrieve(self, tmp_path):
+        tlog = TraceLog(tmp_path / "h.db")
+        run_id = tlog.begin_run(thread_id="t1", request="r", team="T")
+        row_id = tlog.record_hitl(
+            run_id=run_id,
+            step="arch_review",
+            decision="approved",
+            reviewer_id="alice@acme.com",
+            reason="Looks good",
+        )
+        assert isinstance(row_id, int)
+        decisions = tlog.get_hitl_decisions(run_id)
+        assert len(decisions) == 1
+        d = decisions[0]
+        assert d["step"] == "arch_review"
+        assert d["decision"] == "approved"
+        assert d["reviewer_id"] == "alice@acme.com"
+        assert d["reason"] == "Looks good"
+        assert d["decided_at"] is not None
+        tlog.close()
+
+    def test_multiple_hitl_decisions_ordered(self, tmp_path):
+        tlog = TraceLog(tmp_path / "h.db")
+        run_id = tlog.begin_run(thread_id="t1", request="r", team="T")
+        for step in ("prd_gate", "arch_review", "final_approval"):
+            tlog.record_hitl(run_id=run_id, step=step, decision="approved")
+        decisions = tlog.get_hitl_decisions(run_id)
+        assert [d["step"] for d in decisions] == ["prd_gate", "arch_review", "final_approval"]
+        tlog.close()
+
+    def test_reviewer_id_defaults_to_empty(self, tmp_path):
+        tlog = TraceLog(tmp_path / "h.db")
+        run_id = tlog.begin_run(thread_id="t1", request="r", team="T")
+        tlog.record_hitl(run_id=run_id, step="s", decision="approved")
+        d = tlog.get_hitl_decisions(run_id)[0]
+        assert d["reviewer_id"] == ""
+        tlog.close()
