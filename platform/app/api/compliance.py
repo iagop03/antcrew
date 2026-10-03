@@ -154,6 +154,23 @@ async def _build_attestation(run: Any, session: Any) -> dict:
             "entries": len(_tracelog) if isinstance(_tracelog, list) else 1,
         }
 
+    # Document→code traceability: list of docs indexed during this run with content hashes
+    _doc_trace = _state.get("doc_traceability")
+    if _doc_trace and isinstance(_doc_trace, dict):
+        body["doc_traceability"] = {
+            "indexed_at": _doc_trace.get("indexed_at"),
+            "document_count": len(_doc_trace.get("documents", [])),
+            "documents": [
+                {
+                    "doc_id": d.get("doc_id"),
+                    "doc_type": d.get("doc_type"),
+                    "source_file": d.get("source_file"),
+                    "content_hash": d.get("content_hash"),
+                }
+                for d in _doc_trace.get("documents", [])
+            ],
+        }
+
     body["document_hash"] = "sha256:" + hashlib.sha256(
         json.dumps(body, sort_keys=True).encode()
     ).hexdigest()
@@ -677,12 +694,30 @@ async def export_attestations(
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # 1. Per-run attestation JSONs
+        # 1. Per-run attestation JSONs — collect all first so traceability can reference them
+        attestation_docs: list[dict] = []
         for run in runs:
             doc = await _build_attestation(run, session)
+            attestation_docs.append(doc)
             zf.writestr(
                 f"attestations/attestation-{run.run_id[:12]}.json",
                 json.dumps(doc, indent=2, default=str),
+            )
+
+        # 1b. Document traceability per run (included when attestation has doc_traceability)
+        all_doc_traces = []
+        for run, doc in zip(runs, attestation_docs):
+            dt = doc.get("doc_traceability")
+            if dt:
+                all_doc_traces.append({
+                    "run_id": run.run_id,
+                    "created_at": run.created_at.isoformat() if run.created_at else None,
+                    **dt,
+                })
+        if all_doc_traces:
+            zf.writestr(
+                "doc_traceability.json",
+                json.dumps(all_doc_traces, indent=2, default=str),
             )
 
         # 2. Keybridge audit log (opt-in)

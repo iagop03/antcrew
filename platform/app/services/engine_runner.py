@@ -49,6 +49,39 @@ _executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="ant
 # ---------------------------------------------------------------------------
 
 _cancel_events: dict[str, _threading.Event] = {}
+_doc_trace_by_run: dict[str, dict] = {}  # run_id → doc_traceability, cleared after persist
+
+
+def _build_doc_traceability(doc_manager) -> dict:
+    """Build a doc traceability snapshot: {doc_id: sha256_of_content}."""
+    import hashlib
+    trace: dict = {"documents": [], "indexed_at": None}
+    try:
+        from datetime import datetime, timezone
+        trace["indexed_at"] = datetime.now(timezone.utc).isoformat()
+        storage = doc_manager.storage
+        for doc_id in storage.list_documents():
+            try:
+                content = storage.load(doc_id)
+                digest = "sha256:" + hashlib.sha256(content).hexdigest()
+            except Exception:
+                digest = "error"
+            meta: dict = {}
+            if hasattr(storage, "load_metadata"):
+                try:
+                    meta = storage.load_metadata(doc_id) or {}
+                except Exception:
+                    pass
+            trace["documents"].append({
+                "doc_id": doc_id,
+                "doc_type": meta.get("doc_type"),
+                "source_file": meta.get("source_file"),
+                "size_bytes": meta.get("size_bytes"),
+                "content_hash": digest,
+            })
+    except Exception:
+        pass
+    return trace
 
 
 def cancel_engine_run(run_id: str) -> bool:
@@ -511,6 +544,7 @@ def _run_engine_sync(
             for _reg_exec in registry.all():
                 if hasattr(_reg_exec, "set_documentation"):
                     _reg_exec.set_documentation(doc_manager)
+            _doc_trace_by_run[run_id] = _build_doc_traceability(doc_manager)
         except Exception as _doc_exc:
             log.warning("engine runner: docs setup failed: %s", _doc_exc)
 
@@ -847,6 +881,9 @@ async def _store_engine_state(
         "conditions_satisfied": satisfied_conditions or [],
         "conditions_expected": expected_conditions or [],
     }
+    _dt = _doc_trace_by_run.pop(run_id, None)
+    if _dt:
+        state["doc_traceability"] = _dt
 
     # For MemoryStore runs (no disk), serialize artifact content into Run.state.
     # FilesystemStore runs skip this — the /artifacts endpoint reads from output_dir directly.
