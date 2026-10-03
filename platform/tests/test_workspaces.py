@@ -1,0 +1,794 @@
+"""Tests for workspace CRUD."""
+from __future__ import annotations
+
+import pytest
+from httpx import AsyncClient
+
+from app.models.run import Workspace
+
+
+@pytest.mark.asyncio
+async def test_list_workspaces_empty(client: AsyncClient):
+    r = await client.get("/workspaces/")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_workspace(client: AsyncClient):
+    r = await client.post("/workspaces/", json={"name": "Backend Team", "slug": "backend-team"})
+    assert r.status_code == 201
+    data = r.json()
+    assert data["slug"] == "backend-team"
+    assert data["name"] == "Backend Team"
+    assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_create_workspace_duplicate_slug(client: AsyncClient):
+    await client.post("/workspaces/", json={"name": "W1", "slug": "shared-slug"})
+    r = await client.post("/workspaces/", json={"name": "W2", "slug": "shared-slug"})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_create_workspace_invalid_slug(client: AsyncClient):
+    r = await client.post("/workspaces/", json={"name": "Bad", "slug": "Has Spaces"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_workspace(client: AsyncClient, session):
+    ws = Workspace(name="My WS", slug="my-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.get(f"/workspaces/{ws.id}")
+    assert r.status_code == 200
+    assert r.json()["slug"] == "my-ws"
+
+
+@pytest.mark.asyncio
+async def test_get_workspace_not_found(client: AsyncClient):
+    r = await client.get("/workspaces/999999")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_multiple_workspaces(client: AsyncClient, session):
+    session.add(Workspace(name="Alpha", slug="alpha"))
+    session.add(Workspace(name="Beta", slug="beta"))
+    await session.commit()
+
+    r = await client.get("/workspaces/")
+    slugs = [w["slug"] for w in r.json()]
+    assert "alpha" in slugs
+    assert "beta" in slugs
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace(client: AsyncClient, session):
+    ws = Workspace(name="ToDelete", slug="to-delete")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.delete(f"/workspaces/{ws.id}")
+    assert r.status_code == 204
+
+    r2 = await client.get(f"/workspaces/{ws.id}")
+    assert r2.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_not_found(client: AsyncClient):
+    r = await client.delete("/workspaces/999999")
+    assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Workspace-scoped API key enforcement
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_workspace_scoped_key_filters_runs(client: AsyncClient, session):
+    """API key with workspace_id only returns runs from that workspace."""
+    import hashlib
+    from app.models.run import ApiKey, Run
+
+    ws1 = Workspace(name="Team A", slug="team-a-runs")
+    ws2 = Workspace(name="Team B", slug="team-b-runs")
+    session.add(ws1)
+    session.add(ws2)
+    await session.commit()
+    await session.refresh(ws1)
+    await session.refresh(ws2)
+
+    raw_key = "scoped-key-for-ws1"
+    session.add(ApiKey(
+        label="ws1-key",
+        key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+        workspace_id=ws1.id,
+    ))
+    session.add(Run(run_id="ws1-run", team="DevTeam", request="x", status="success", workspace_id=ws1.id))
+    session.add(Run(run_id="ws2-run", team="DevTeam", request="y", status="success", workspace_id=ws2.id))
+    await session.commit()
+
+    r = await client.get("/runs/", headers={"X-Api-Key": raw_key})
+    assert r.status_code == 200
+    run_ids = [d["run_id"] for d in r.json()]
+    assert "ws1-run" in run_ids
+    assert "ws2-run" not in run_ids
+
+
+@pytest.mark.asyncio
+async def test_workspace_scoped_key_filters_stats(client: AsyncClient, session):
+    """Stats are scoped to the API key's workspace."""
+    import hashlib
+    from app.models.run import ApiKey, Run
+
+    ws1 = Workspace(name="Stats WS", slug="stats-ws")
+    session.add(ws1)
+    await session.commit()
+    await session.refresh(ws1)
+
+    raw_key = "scoped-stats-key"
+    session.add(ApiKey(
+        label="stats-ws-key",
+        key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+        workspace_id=ws1.id,
+    ))
+    session.add(Run(run_id="ws-s1", team="DevTeam", request="x", status="success", cost_usd=0.05, workspace_id=ws1.id))
+    session.add(Run(run_id="ws-s2", team="DevTeam", request="y", status="error", cost_usd=0.0, workspace_id=None))
+    await session.commit()
+
+    r = await client.get("/runs/stats", headers={"X-Api-Key": raw_key})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 1
+    assert data["success"] == 1
+    assert data["error"] == 0
+
+
+@pytest.mark.asyncio
+async def test_create_api_key_with_workspace(client: AsyncClient, session):
+    """API key creation accepts workspace_id."""
+    ws = Workspace(name="Key WS", slug="key-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.post("/api-keys/", json={"label": "ws-scoped-key", "workspace_id": ws.id})
+    assert r.status_code == 201
+    assert "key" in r.json()
+
+
+# ---------------------------------------------------------------------------
+# Fix 3+4: GET /tickets/ scoped by workspace
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_workspace_scoped_key_filters_tickets(client: AsyncClient, session):
+    """API key with workspace_id only returns tickets from that workspace's runs."""
+    import hashlib
+    from app.models.run import ApiKey, Run, Ticket
+
+    ws1 = Workspace(name="Ticket WS-A", slug="ticket-ws-a")
+    ws2 = Workspace(name="Ticket WS-B", slug="ticket-ws-b")
+    session.add(ws1)
+    session.add(ws2)
+    await session.commit()
+    await session.refresh(ws1)
+    await session.refresh(ws2)
+
+    raw_key = "tickets-scoped-key"
+    session.add(ApiKey(
+        label="ticket-key",
+        key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+        workspace_id=ws1.id,
+    ))
+    # Run and ticket in ws1
+    session.add(Run(run_id="tws1-run", team="DevTeam", request="x", status="success", workspace_id=ws1.id))
+    session.add(Ticket(ticket_id="TW1", run_id="tws1-run", title="Auth endpoint"))
+    # Run and ticket in ws2
+    session.add(Run(run_id="tws2-run", team="DevTeam", request="y", status="success", workspace_id=ws2.id))
+    session.add(Ticket(ticket_id="TW2", run_id="tws2-run", title="Payment endpoint"))
+    await session.commit()
+
+    r = await client.get("/tickets/", headers={"X-Api-Key": raw_key})
+    assert r.status_code == 200
+    ids = [t["ticket_id"] for t in r.json()]
+    assert "TW1" in ids
+    assert "TW2" not in ids
+
+
+# ---------------------------------------------------------------------------
+# Fix 5: GET /reviews/ scoped by workspace
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_workspace_scoped_key_filters_reviews(client: AsyncClient, session):
+    """API key with workspace_id only returns HITL reviews from that workspace's runs."""
+    import hashlib
+    from app.models.run import ApiKey, Run, HitlReview
+
+    ws1 = Workspace(name="Review WS-A", slug="review-ws-a")
+    ws2 = Workspace(name="Review WS-B", slug="review-ws-b")
+    session.add(ws1)
+    session.add(ws2)
+    await session.commit()
+    await session.refresh(ws1)
+    await session.refresh(ws2)
+
+    raw_key = "reviews-scoped-key"
+    session.add(ApiKey(
+        label="review-key",
+        key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+        workspace_id=ws1.id,
+    ))
+    session.add(Run(run_id="rws1-run", team="DevTeam", request="x", status="running", workspace_id=ws1.id))
+    session.add(Run(run_id="rws2-run", team="DevTeam", request="y", status="running", workspace_id=ws2.id))
+    session.add(HitlReview(
+        review_id="rev-ws1", run_id="rws1-run", agent_name="pm",
+        artifact_json="{}", options_json='["approve"]', status="pending",
+    ))
+    session.add(HitlReview(
+        review_id="rev-ws2", run_id="rws2-run", agent_name="pm",
+        artifact_json="{}", options_json='["approve"]', status="pending",
+    ))
+    await session.commit()
+
+    r = await client.get("/reviews/", headers={"X-Api-Key": raw_key})
+    assert r.status_code == 200
+    ids = [rv["review_id"] for rv in r.json()]
+    assert "rev-ws1" in ids
+    assert "rev-ws2" not in ids
+
+
+# ---------------------------------------------------------------------------
+# Fix 6: ANTCREW_TEAMS env var registers custom teams
+# ---------------------------------------------------------------------------
+
+def test_antcrew_teams_env_var_registers_custom_team(monkeypatch):
+    """Custom teams from ANTCREW_TEAMS are added to the runner registry."""
+    monkeypatch.setenv("ANTCREW_TEAMS", "myorg.teams.invoice:InvoiceTeam,myorg.teams.data:DataPipelineTeam")
+    monkeypatch.setenv("ANTCREW_TEAMS_ALLOWED_PREFIXES", "myorg.")
+    from app.services.runner import _build_team_registry
+    registry = _build_team_registry()
+
+    assert "InvoiceTeam" in registry
+    assert registry["InvoiceTeam"] == ("myorg.teams.invoice", "InvoiceTeam")
+    assert "DataPipelineTeam" in registry
+    assert registry["DataPipelineTeam"] == ("myorg.teams.data", "DataPipelineTeam")
+    # Built-in teams still present
+    assert "DevTeam" in registry
+    assert "ResearchTeam" in registry
+
+
+def test_antcrew_teams_invalid_entry_is_skipped(monkeypatch, caplog):
+    """Malformed ANTCREW_TEAMS entries are logged and skipped, not crashing."""
+    import logging
+    monkeypatch.setenv("ANTCREW_TEAMS", "BadEntry,good.module:GoodTeam")
+    monkeypatch.setenv("ANTCREW_TEAMS_ALLOWED_PREFIXES", "good.")
+    from app.services.runner import _build_team_registry
+    with caplog.at_level(logging.WARNING, logger="app.services.runner"):
+        registry = _build_team_registry()
+    assert "GoodTeam" in registry
+    assert any("BadEntry" in m for m in caplog.messages)
+
+
+def test_antcrew_teams_disallowed_prefix_is_rejected(monkeypatch, caplog):
+    """ANTCREW_TEAMS entries with a disallowed module prefix are rejected with a warning."""
+    import logging
+    monkeypatch.setenv("ANTCREW_TEAMS", "subprocess:Popen,antcrew.teams.dev_team:DevTeam")
+    monkeypatch.delenv("ANTCREW_TEAMS_ALLOWED_PREFIXES", raising=False)
+    from app.services.runner import _build_team_registry
+    with caplog.at_level(logging.WARNING, logger="app.services.runner"):
+        registry = _build_team_registry()
+    assert "Popen" not in registry, "subprocess module must be rejected"
+    # Built-in and antcrew.* entries are allowed
+    assert "DevTeam" in registry
+    assert any("subprocess" in m for m in caplog.messages)
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: workspace enforcement on detail routes
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_run_detail_blocked_by_wrong_workspace(client: AsyncClient, session):
+    """GET /runs/:id returns 403 when API key's workspace doesn't match the run."""
+    import hashlib
+    from app.models.run import ApiKey, Run
+
+    ws1 = Workspace(name="Detail WS-A", slug="detail-ws-a")
+    ws2 = Workspace(name="Detail WS-B", slug="detail-ws-b")
+    session.add(ws1)
+    session.add(ws2)
+    await session.commit()
+    await session.refresh(ws1)
+    await session.refresh(ws2)
+
+    raw_key = "detail-scoped-key"
+    session.add(ApiKey(
+        label="detail-key",
+        key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+        workspace_id=ws1.id,
+    ))
+    # Run belongs to ws2 — key is scoped to ws1
+    session.add(Run(run_id="detail-ws2-run", team="DevTeam", request="x",
+                    status="success", workspace_id=ws2.id))
+    await session.commit()
+
+    r = await client.get("/runs/detail-ws2-run", headers={"X-Api-Key": raw_key})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_run_detail_allowed_for_own_workspace(client: AsyncClient, session):
+    """GET /runs/:id returns 200 when API key's workspace matches the run."""
+    import hashlib
+    from app.models.run import ApiKey, Run
+
+    ws = Workspace(name="Own WS", slug="own-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    raw_key = "own-ws-key"
+    session.add(ApiKey(
+        label="own-key",
+        key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+        workspace_id=ws.id,
+    ))
+    session.add(Run(run_id="own-ws-run", team="DevTeam", request="x",
+                    status="success", workspace_id=ws.id))
+    await session.commit()
+
+    r = await client.get("/runs/own-ws-run", headers={"X-Api-Key": raw_key})
+    assert r.status_code == 200
+    assert r.json()["run_id"] == "own-ws-run"
+
+
+@pytest.mark.asyncio
+async def test_submit_review_blocked_by_wrong_workspace(client: AsyncClient, session):
+    """POST /reviews/:id returns 403 when the review's run belongs to a different workspace."""
+    import hashlib
+    from app.models.run import ApiKey, Run, HitlReview
+
+    ws1 = Workspace(name="Review Block WS-A", slug="rb-ws-a")
+    ws2 = Workspace(name="Review Block WS-B", slug="rb-ws-b")
+    session.add(ws1)
+    session.add(ws2)
+    await session.commit()
+    await session.refresh(ws1)
+    await session.refresh(ws2)
+
+    raw_key = "review-block-key"
+    session.add(ApiKey(
+        label="rb-key",
+        key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+        workspace_id=ws1.id,
+    ))
+    # Run in ws2, review for that run
+    session.add(Run(run_id="rb-ws2-run", team="DevTeam", request="x",
+                    status="running", workspace_id=ws2.id))
+    session.add(HitlReview(
+        review_id="rb-rev-001", run_id="rb-ws2-run", agent_name="pm",
+        artifact_json="{}", options_json='["approve","reject"]', status="pending",
+    ))
+    await session.commit()
+
+    r = await client.post(
+        "/reviews/rb-rev-001",
+        json={"decision": "approve"},
+        headers={"X-Api-Key": raw_key},
+    )
+    assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: upsert_tickets_from_run batch SELECT (correctness, not just performance)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_upsert_tickets_batch_creates_and_updates(session):
+    """upsert_tickets_from_run handles both new and existing tickets in one call."""
+    from sqlmodel import select
+    from app.models.run import Run, Ticket
+    from app.services.runs import upsert_tickets_from_run
+
+    run = Run(run_id="batch-run", team="DevTeam", request="x", status="success")
+    session.add(run)
+    # Pre-existing ticket
+    session.add(Ticket(ticket_id="BT1", run_id="batch-run", title="Old title"))
+    await session.commit()
+
+    state = {
+        "tickets": [
+            {"id": "BT1", "title": "Updated title", "priority": "high", "status": "open"},
+            {"id": "BT2", "title": "Brand new ticket", "priority": "medium", "status": "open"},
+        ],
+        "prd": {"title": "Test PRD"},
+    }
+
+    count = await upsert_tickets_from_run(session, "batch-run", state)
+    await session.commit()
+
+    assert count == 2
+
+    result = await session.exec(select(Ticket).where(Ticket.run_id == "batch-run"))
+    tickets = {t.ticket_id: t for t in result.all()}
+    assert tickets["BT1"].title == "Updated title"
+    assert tickets["BT1"].priority == "high"
+    assert tickets["BT2"].title == "Brand new ticket"
+
+
+# ---------------------------------------------------------------------------
+# Fix 4a: HITL_TIMEOUT_S env var is read from environment
+# ---------------------------------------------------------------------------
+
+def test_hitl_timeout_default():
+    """Default HITL timeout is 3600s when env var not set."""
+    import os
+    os.environ.pop("HITL_TIMEOUT_S", None)
+    import importlib
+    import app.core.channel as ch_mod
+    importlib.reload(ch_mod)
+    assert ch_mod._REVIEW_TIMEOUT_S == 3600.0
+
+
+def test_hitl_timeout_env_var(monkeypatch):
+    """HITL_TIMEOUT_S env var overrides the default timeout."""
+    monkeypatch.setenv("HITL_TIMEOUT_S", "300")
+    import importlib
+    import app.core.channel as ch_mod
+    importlib.reload(ch_mod)
+    assert ch_mod._REVIEW_TIMEOUT_S == 300.0
+
+
+# ---------------------------------------------------------------------------
+# Security: SSRF guard on slack_webhook_url
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_slack_webhook_ssrf_rejected(client: AsyncClient, session):
+    """PATCH /workspaces/{id}/slack must reject URLs targeting private/internal hosts."""
+    ws = Workspace(name="SSRF WS", slug="ssrf-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    for bad_url in [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://localhost/admin",
+        "http://127.0.0.1:6379/",
+        "ftp://example.com/",
+    ]:
+        r = await client.patch(
+            f"/workspaces/{ws.id}/slack",
+            json={"slack_webhook_url": bad_url},
+        )
+        assert r.status_code == 400, f"Expected 400 for {bad_url!r}, got {r.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_slack_webhook_valid_url_accepted(client: AsyncClient, session):
+    """A valid HTTPS Slack webhook URL must be accepted."""
+    ws = Workspace(name="Slack WS", slug="slack-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.patch(
+        f"/workspaces/{ws.id}/slack",
+        json={"slack_webhook_url": "https://hooks.slack.com/services/T00/B00/abc"},
+    )
+    assert r.status_code == 200
+    assert r.json()["slack_webhook_url"] == "https://hooks.slack.com/services/T00/B00/abc"
+
+
+@pytest.mark.asyncio
+async def test_slack_webhook_null_clears_without_validation(client: AsyncClient, session):
+    """Passing null must clear the webhook URL without triggering URL validation."""
+    ws = Workspace(name="Clear WS", slug="clear-ws", slack_webhook_url="https://hooks.slack.com/old")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.patch(
+        f"/workspaces/{ws.id}/slack",
+        json={"slack_webhook_url": None},
+    )
+    assert r.status_code == 200
+    assert r.json()["slack_webhook_url"] is None
+
+
+# ---------------------------------------------------------------------------
+# PL-P17 — SSRF: IPv6 loopback and link-local variants
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_slack_webhook_ssrf_ipv6_rejected(client: AsyncClient, session):
+    """PATCH /workspaces/{id}/slack must reject IPv6 loopback and private variants."""
+    ws = Workspace(name="SSRF IPv6 WS", slug="ssrf-ipv6-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    bad_urls = [
+        "http://[::1]/admin",                   # IPv6 loopback
+        "http://[::ffff:127.0.0.1]/",           # IPv4-mapped loopback
+        "http://[fe80::1]/resource",            # link-local
+        "http://[fd00::1]/internal",            # ULA (private range)
+        "http://[0:0:0:0:0:0:0:1]/",           # full-form IPv6 loopback
+    ]
+    for bad_url in bad_urls:
+        r = await client.patch(
+            f"/workspaces/{ws.id}/slack",
+            json={"slack_webhook_url": bad_url},
+        )
+        assert r.status_code == 400, (
+            f"Expected 400 for IPv6 SSRF variant {bad_url!r}, got {r.status_code}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# PL-P16 — Workspace deletion cascade
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(reason="Cascade delete from Workspace→Run not yet implemented (PL-P16)")
+async def test_delete_workspace_cascades_to_associated_runs(client: AsyncClient, session):
+    """Deleting a workspace makes its runs no longer accessible (cascade or scope)."""
+    from app.models.run import Run
+
+    ws = Workspace(name="CascadeWS", slug="cascade-del-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    session.add(Run(
+        run_id="cascade-del-run",
+        team="DevTeam",
+        request="x",
+        status="success",
+        workspace_id=ws.id,
+    ))
+    await session.commit()
+
+    # Confirm run exists before deletion
+    r_before = await client.get("/runs/cascade-del-run")
+    assert r_before.status_code == 200
+
+    # Delete the workspace
+    r_del = await client.delete(f"/workspaces/{ws.id}")
+    assert r_del.status_code == 204
+
+    # Workspace must be gone
+    r_ws = await client.get(f"/workspaces/{ws.id}")
+    assert r_ws.status_code == 404
+
+    # Run scoped to deleted workspace must now be inaccessible (deleted or 404)
+    r_run = await client.get("/runs/cascade-del-run")
+    assert r_run.status_code == 404, (
+        "Run associated with deleted workspace must be removed (cascade) or unreachable"
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_cascades_to_presets(client: AsyncClient, session):
+    """Presets belonging to a deleted workspace must be removed."""
+    ws = Workspace(name="CascadePresetWS", slug="cascade-preset-ws")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r_preset = await client.post(
+        f"/workspaces/{ws.id}/presets",
+        json={"name": "ToDelete", "team": "DevTeam"},
+    )
+    assert r_preset.status_code == 201
+    preset_id = r_preset.json()["id"]
+
+    await client.delete(f"/workspaces/{ws.id}")
+
+    # Preset from deleted workspace must no longer be accessible
+    r_list = await client.get(f"/workspaces/{ws.id}/presets")
+    assert r_list.status_code in (404, 200)
+    if r_list.status_code == 200:
+        ids = [p["id"] for p in r_list.json()]
+        assert preset_id not in ids
+
+
+# ---------------------------------------------------------------------------
+# Run presets (GET / POST / DELETE /{workspace_id}/presets)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_presets_empty(client: AsyncClient, session):
+    ws = Workspace(name="Preset WS", slug="preset-ws-list")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.get(f"/workspaces/{ws.id}/presets")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_preset(client: AsyncClient, session):
+    ws = Workspace(name="Preset WS2", slug="preset-ws-create")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    payload = {
+        "name": "Groq Sprint",
+        "team": "DevTeam",
+        "model_overrides": {"BackendDevAgent": "groq:llama-3.3-70b-versatile"},
+    }
+    r = await client.post(f"/workspaces/{ws.id}/presets", json=payload)
+    assert r.status_code == 201
+    data = r.json()
+    assert data["name"] == "Groq Sprint"
+    assert data["team"] == "DevTeam"
+    assert data["model_overrides"] == {"BackendDevAgent": "groq:llama-3.3-70b-versatile"}
+    assert data["workspace_id"] == ws.id
+    assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_create_and_list_presets(client: AsyncClient, session):
+    ws = Workspace(name="Preset WS3", slug="preset-ws-both")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    await client.post(f"/workspaces/{ws.id}/presets", json={"name": "Alpha", "team": "DevTeam"})
+    await client.post(f"/workspaces/{ws.id}/presets", json={"name": "Beta", "team": "ResearchTeam"})
+
+    r = await client.get(f"/workspaces/{ws.id}/presets")
+    assert r.status_code == 200
+    names = [p["name"] for p in r.json()]
+    assert "Alpha" in names
+    assert "Beta" in names
+
+
+@pytest.mark.asyncio
+async def test_list_presets_filter_by_team(client: AsyncClient, session):
+    ws = Workspace(name="Preset WS4", slug="preset-ws-filter")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    await client.post(f"/workspaces/{ws.id}/presets", json={"name": "Dev preset", "team": "DevTeam"})
+    await client.post(f"/workspaces/{ws.id}/presets", json={"name": "Research preset", "team": "ResearchTeam"})
+
+    r = await client.get(f"/workspaces/{ws.id}/presets?team=DevTeam")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "Dev preset"
+
+
+@pytest.mark.asyncio
+async def test_delete_preset(client: AsyncClient, session):
+    ws = Workspace(name="Preset WS5", slug="preset-ws-delete")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r_create = await client.post(f"/workspaces/{ws.id}/presets", json={"name": "ToDelete", "team": "DevTeam"})
+    assert r_create.status_code == 201
+    preset_id = r_create.json()["id"]
+
+    r_del = await client.delete(f"/workspaces/{ws.id}/presets/{preset_id}")
+    assert r_del.status_code == 204
+
+    r_list = await client.get(f"/workspaces/{ws.id}/presets")
+    assert r_list.json() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_preset_wrong_workspace_returns_404(client: AsyncClient, session):
+    ws1 = Workspace(name="WS-A", slug="preset-ws-a-del")
+    ws2 = Workspace(name="WS-B", slug="preset-ws-b-del")
+    session.add(ws1)
+    session.add(ws2)
+    await session.commit()
+    await session.refresh(ws1)
+    await session.refresh(ws2)
+
+    r_create = await client.post(f"/workspaces/{ws1.id}/presets", json={"name": "P", "team": "DevTeam"})
+    preset_id = r_create.json()["id"]
+
+    # Attempt to delete from ws2 — must 404
+    r = await client.delete(f"/workspaces/{ws2.id}/presets/{preset_id}")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_preset_null_model_overrides(client: AsyncClient, session):
+    ws = Workspace(name="Preset WS6", slug="preset-ws-null")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.post(f"/workspaces/{ws.id}/presets", json={"name": "Bare", "team": "ContentTeam"})
+    assert r.status_code == 201
+    assert r.json()["model_overrides"] is None
+
+
+# ---------------------------------------------------------------------------
+# PATCH /{workspace_id}/agent-models
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_set_agent_models(client: AsyncClient, session):
+    ws = Workspace(name="AM WS", slug="agent-models-set")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await client.patch(f"/workspaces/{ws.id}/agent-models", json={
+        "agent_models": {
+            "default": "groq:llama-3.3-70b-versatile",
+            "BackendDevAgent": "claude:claude-sonnet-5",
+        }
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["agent_models"]["default"] == "groq:llama-3.3-70b-versatile"
+    assert data["agent_models"]["BackendDevAgent"] == "claude:claude-sonnet-5"
+
+
+@pytest.mark.asyncio
+async def test_clear_agent_models(client: AsyncClient, session):
+    ws = Workspace(name="AM WS2", slug="agent-models-clear")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    await client.patch(f"/workspaces/{ws.id}/agent-models", json={"agent_models": {"default": "simulated"}})
+    r = await client.patch(f"/workspaces/{ws.id}/agent-models", json={"agent_models": None})
+    assert r.status_code == 200
+    assert r.json()["agent_models"] is None
+
+
+@pytest.mark.asyncio
+async def test_agent_models_returned_in_workspace_get(client: AsyncClient, session):
+    """agent_models is included in GET /workspaces/{id} response."""
+    ws = Workspace(name="AM WS3", slug="agent-models-get")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    await client.patch(f"/workspaces/{ws.id}/agent-models", json={
+        "agent_models": {"default": "deepseek:deepseek-chat"}
+    })
+
+    r = await client.get(f"/workspaces/{ws.id}")
+    assert r.status_code == 200
+    assert r.json()["agent_models"] == {"default": "deepseek:deepseek-chat"}
+
+
+@pytest.mark.asyncio
+async def test_agent_models_returned_in_workspace_list(client: AsyncClient, session):
+    """agent_models is included in GET /workspaces/ list response."""
+    ws = Workspace(name="AM WS4", slug="agent-models-list")
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    await client.patch(f"/workspaces/{ws.id}/agent-models", json={
+        "agent_models": {"default": "simulated"}
+    })
+
+    r = await client.get("/workspaces/")
+    assert r.status_code == 200
+    match = next((w for w in r.json() if w["slug"] == "agent-models-list"), None)
+    assert match is not None
+    assert match["agent_models"]["default"] == "simulated"

@@ -1,0 +1,17 @@
+# Local E2E test environment: app + MailHog
+#
+# Usage:
+#   docker-compose -f docker-compose.test.yml up -d
+#   SMTP_HOST=localhost SMTP_PORT=1025 SMTP_TLS=none \
+#     uvicorn app.main:app --port 8000
+#   pytest tests/e2e/ -v
+
+version: "3.9"
+
+services:
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"   # SMTP (app → MailHog)
+      - "8025:8025"   # HTTP API + web UI (tests + browser)
+    restart: unless-stopped

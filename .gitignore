@@ -227,3 +227,16 @@ __marimo__/
 antcrew-watch-latest.json
 antcrew-watch-*.json
 coverage.json
+
+# platform — runtime artifacts
+platform/platform.db
+platform/antcrew_trace.db
+platform/.env
+platform/antcrew_platform.egg-info/
+
+# docs — build output
+docs/site/
+
+# node / dashboard
+dashboard/node_modules/
+dashboard/dist/

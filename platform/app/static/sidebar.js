@@ -1,0 +1,606 @@
+/* antcrew — collapsible left sidebar v2 */
+(function () {
+  'use strict';
+
+  var EXP = 220, COL = 52;
+  var SK = 'ac_sidebar_collapsed';
+  var GK = 'ac_cfg_open';
+  var AK = 'ac_adm_open';
+
+  var NAV = [
+    { group: 'Trabajo diario' },
+    { label: 'Dashboard',  href: '/dashboard', icon: 'ti-layout-dashboard', ac: '/dashboard', i18n: 'nav.dashboard' },
+    { label: 'Runs',       href: '/runs',      icon: 'ti-player-play',      ac: '/runs',      i18n: 'nav.runs' },
+    { label: 'Tickets',    href: '/tickets',   icon: 'ti-checklist',        ac: '/tickets',   i18n: 'nav.tickets' },
+    { label: 'Reviews',    href: '/reviews',   icon: 'ti-eye-check',        ac: '/reviews',   i18n: 'nav.reviews', badge: 'sb-rev-badge' },
+    { group: 'Construir' },
+    { label: 'Discover',   href: '/discover',                icon: 'ti-message-dots',  ac: '/discover' },
+    { label: 'Pipelines',  href: '/pipelines',               icon: 'ti-sitemap',       ac: '/pipelines', i18n: 'nav.pipelines' },
+    { label: 'Compare',    href: '/compare',                 icon: 'ti-scale',         ac: '/compare',   i18n: 'nav.compare' },
+    { group: 'Observar' },
+    { label: 'Evals',      href: '/evals',           icon: 'ti-chart-bar',  ac: '/evals',           i18n: 'nav.evals' },
+    { label: 'Agents',     href: '/agent-analytics', icon: 'ti-chart-dots', ac: '/agent-analytics' },
+    { label: 'Webhooks',   href: '/webhooks',         icon: 'ti-webhook',    ac: '/webhooks',         i18n: 'nav.webhooks' },
+    { group: 'Configurar', collapsible: true },
+    { label: 'Workspaces', href: '/settings?tab=workspaces', icon: 'ti-building', ac: '/settings', acTab: 'workspaces', cfg: true },
+    { label: 'LLM / BYOK', href: '/settings?tab=llm',       icon: 'ti-robot',        ac: '/settings', acTab: 'llm',       cfg: true },
+    { label: 'Schedules',  href: '/settings?tab=schedules',  icon: 'ti-calendar',     ac: '/settings', acTab: 'schedules', cfg: true },
+    { label: 'GitHub App', href: '/settings?tab=github',     icon: 'ti-brand-github', ac: '/settings', acTab: 'github',    cfg: true },
+    { label: 'Security',   href: '/settings?tab=security',   icon: 'ti-shield',       ac: '/settings', acTab: 'security',  cfg: true },
+    { label: 'Docs',       href: '/settings?tab=docs',       icon: 'ti-books',        ac: '/settings', acTab: 'docs',       cfg: true },
+    { label: 'Compliance', href: '/settings?tab=compliance', icon: 'ti-shield-check', ac: '/settings', acTab: 'compliance', cfg: true },
+    { label: 'Reviewers',  href: '/settings?tab=reviewers',  icon: 'ti-key',          ac: '/settings', acTab: 'reviewers', cfg: true },
+    { label: 'Facturación', href: '/settings?tab=billing',  icon: 'ti-receipt',      ac: '/settings', acTab: 'billing',   cfg: true },
+  ];
+
+  // ── Active state ──────────────────────────────────────────────────────────
+  function getTabParam() {
+    var m = location.search.match(/[?&]tab=([^&]*)/);
+    return m ? m[1] : null;
+  }
+
+  function isActive(item) {
+    var p = location.pathname;
+    if (!item.ac) return false;
+    var pathOk = item.ac === '/dashboard'
+      ? (p === '/' || p === '/dashboard')
+      : (p === item.ac || p.startsWith(item.ac + '/'));
+    if (!pathOk) return false;
+    if (item.acTab) {
+      var t = getTabParam();
+      return t === item.acTab || (!t && item.acTab === 'workspaces');
+    }
+    if (item.ac === '/settings') return false;
+    return true;
+  }
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  var collapsed = localStorage.getItem(SK) === '1';
+  var anyCfgActive = NAV.some(function (i) { return i.cfg && isActive(i); });
+  var cfgOpen = anyCfgActive || localStorage.getItem(GK) !== '0';
+  var _ADM_PATHS = ['/admin', '/accounting', '/analytics', '/campaigns', '/users', '/workspaces_admin'];
+  var admOpen = _ADM_PATHS.indexOf(location.pathname) !== -1 || localStorage.getItem(AK) !== '0';
+
+  // ── Inject CSS ────────────────────────────────────────────────────────────
+  var style = document.createElement('style');
+  style.id = 'ac-sb-style';
+  style.textContent =
+    '#ac-sb{position:fixed;left:0;top:0;height:100%;z-index:50;' +
+      'background:#080F1C;border-right:1px solid #1E2D42;' +
+      'display:flex;flex-direction:column;overflow:hidden;' +
+      'transition:width .2s ease;will-change:width;box-sizing:border-box;' +
+      'font-family:"IBM Plex Sans",system-ui,sans-serif;' +
+      'view-transition-name:sidebar;}' +
+    '.ac-sbi{display:flex;align-items:center;gap:9px;padding:6px 10px 6px 14px;' +
+      'text-decoration:none;color:#4E6A85;font-size:.8rem;font-weight:500;' +
+      'border-radius:2px;margin:1px 8px;transition:background .1s,color .1s;cursor:pointer;' +
+      'white-space:nowrap;min-height:32px;box-sizing:border-box;}' +
+    '.ac-sbi:hover{background:#162235;color:#E8EDF5;}' +
+    '.ac-sbi.on{background:rgba(13,148,136,.12);color:#2DD4BF;' +
+      'box-shadow:inset 2px 0 0 #0D9488;padding-left:12px;}' +
+    '.ac-sbi-ic{font-size:15px;width:20px;text-align:center;flex-shrink:0;line-height:1;}' +
+    '.ac-sbl{white-space:nowrap;overflow:hidden;min-width:0;flex:1;' +
+      'transition:opacity .15s,max-width .2s;}' +
+    '.ac-sbg{font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;' +
+      'color:#354E65;padding:11px 14px 3px;font-weight:600;' +
+      'white-space:nowrap;overflow:hidden;transition:opacity .15s,max-height .2s,padding .2s;' +
+      'max-height:40px;}' +
+    '#ac-cfg-tog,#ac-adm-tog{width:100%;background:none;border:none;cursor:pointer;' +
+      'display:flex;align-items:center;text-align:left;' +
+      'font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;' +
+      'color:#354E65;padding:11px 14px 3px;font-weight:600;' +
+      'white-space:nowrap;overflow:hidden;transition:opacity .15s,max-height .2s,padding .2s;' +
+      'max-height:40px;box-sizing:border-box;font-family:"IBM Plex Sans",system-ui,sans-serif;}' +
+    '#ac-cfg-tog:hover,#ac-adm-tog:hover{color:#4E6A85;}' +
+    '.ac-sb-div{height:1px;background:#1E2D42;margin:6px 12px;}' +
+    '#ac-sb.ac-collapsed .ac-sbi{justify-content:center;padding:6px;gap:0;}' +
+    '#ac-sb.ac-collapsed .ac-sbi.on{padding:6px;padding-left:6px;box-shadow:none;}' +
+    '#ac-sb.ac-collapsed #ac-sb-u{justify-content:center;}' +
+    '#ac-sb.ac-collapsed #ac-sb-tut-btn{width:auto;}' +
+    '@media(max-width:767px){' +
+      '#ac-sb{transform:translateX(-100%);transition:transform .22s ease,width .2s ease;}' +
+      '#ac-sb.open{transform:translateX(0);}' +
+      'body{padding-left:0!important;padding-top:44px;}' +
+      '#ac-sb-bd{display:none!important;position:fixed;inset:0;z-index:49;background:rgba(0,0,0,.55);}' +
+      '#ac-sb-bd.open{display:block!important;}' +
+      '#ac-sb-mbar{display:flex!important;}' +
+    '}' +
+    '#ac-sb-mbar{display:none;position:fixed;top:0;left:0;right:0;z-index:40;height:44px;' +
+      'align-items:center;gap:8px;padding:0 12px;' +
+      'background:rgba(3,7,18,.96);border-bottom:1px solid rgba(31,41,55,.8);' +
+      'backdrop-filter:blur(10px);}' +
+    // Prevent white flash on browsers that don't yet support view-transitions
+    'html{background:#030712;}' +
+    // Cross-document view transitions (Chrome 126+, Edge 126+; ignored elsewhere)
+    '@view-transition{navigation:auto;}' +
+    // Keep the sidebar visually locked — no fade in/out during page transitions
+    '::view-transition-old(sidebar),::view-transition-new(sidebar){animation:none;mix-blend-mode:normal;}' +
+    // Uniform fade for the content area (old fades out, new fades in after Alpine has time to init)
+    '::view-transition-old(root){animation:120ms ease both ac-vt-out;}' +
+    '::view-transition-new(root){animation:180ms 300ms ease both ac-vt-in;}' +
+    '@keyframes ac-vt-out{to{opacity:0}}' +
+    '@keyframes ac-vt-in{from{opacity:0}}' +
+    '@keyframes ac-spin{to{transform:rotate(360deg)}}' +
+    '#ac-nav-sp{position:fixed;top:14px;right:18px;z-index:9999;width:18px;height:18px;' +
+      'border:2px solid rgba(45,212,191,.25);border-top-color:#2DD4BF;border-radius:50%;' +
+      'animation:ac-spin .6s linear infinite;opacity:0;transition:opacity .12s ease;pointer-events:none;}';
+  document.head.appendChild(style);
+
+  // Tabler icons — inject early so font is ready when sidebar renders
+  if (!document.querySelector('link[href*="tabler-icons"]')) {
+    var ico = document.createElement('link');
+    ico.rel = 'stylesheet';
+    ico.href = '/static/tabler-icons/tabler-icons.min.css';
+    document.head.insertBefore(ico, document.head.firstChild);
+  }
+
+  // ── Build nav HTML ────────────────────────────────────────────────────────
+  function buildNav() {
+    return NAV.map(function (item) {
+      if (item.divider) {
+        return '<div class="ac-sb-div"></div>';
+      }
+      if (item.group) {
+        if (item.collapsible) {
+          return '<button id="ac-cfg-tog">' +
+            '<span class="ac-sbl" style="flex:1;">' + item.group + '</span>' +
+            '<i class="ti ti-chevron-right ac-sbl" id="ac-cfg-chev" ' +
+              'style="font-size:10px;margin-right:2px;flex-shrink:0;transition:transform .15s;"></i>' +
+            '</button>';
+        }
+        return '<div class="ac-sbg">' + item.group + '</div>';
+      }
+      if (item.external) {
+        return '<a href="' + item.href + '" target="_blank" rel="noopener" class="ac-sbi">' +
+          '<i class="ti ' + item.icon + ' ac-sbi-ic"></i>' +
+          '<span class="ac-sbl">' + item.label + '</span>' +
+          '<i class="ti ti-external-link ac-sbl" style="font-size:9px;margin-left:auto;flex-shrink:0;opacity:.5;"></i>' +
+          '</a>';
+      }
+      var on = isActive(item);
+      var cls = 'ac-sbi' + (on ? ' on' : '') + (item.cfg ? ' ac-cfg-item' : '');
+      var i18n = item.i18n ? ' data-i18n="' + item.i18n + '"' : '';
+      return (
+        '<a href="' + item.href + '" class="' + cls + '">' +
+        '<i class="ti ' + item.icon + ' ac-sbi-ic"></i>' +
+        '<span class="ac-sbl"' + i18n + '>' + item.label + '</span>' +
+        (item.badge
+          ? '<span id="' + item.badge + '" style="display:none;margin-left:auto;min-width:18px;height:18px;' +
+            'padding:0 4px;border-radius:9px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;' +
+            'flex-shrink:0;align-items:center;justify-content:center;box-sizing:border-box;"></span>'
+          : '') +
+        '</a>'
+      );
+    }).join('');
+  }
+
+  // ── Assemble sidebar ──────────────────────────────────────────────────────
+  var w0 = collapsed ? COL : EXP;
+  var sb = document.createElement('aside');
+  sb.id = 'ac-sb';
+  sb.style.width = w0 + 'px';
+
+  // Header
+  var hdr = document.createElement('div');
+  hdr.id = 'ac-sb-hdr';
+  hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;height:48px;' +
+    'padding:0 8px 0 14px;flex-shrink:0;border-bottom:1px solid rgba(31,41,55,.5);';
+  hdr.innerHTML =
+    '<a href="/dashboard" id="ac-sb-la" style="flex:1;display:flex;align-items:center;' +
+      'gap:8px;text-decoration:none;overflow:hidden;min-width:0;">' +
+      '<span id="ac-sb-ant" style="width:24px;height:24px;flex-shrink:0;display:none;">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="24" height="24">' +
+          '<g transform="rotate(-30,50,52)">' +
+            '<ellipse cx="50" cy="72" rx="14" ry="18" fill="white"/>' +
+            '<ellipse cx="50" cy="52" rx="8" ry="7.5" fill="white"/>' +
+            '<circle cx="50" cy="37" r="10" fill="white"/>' +
+            '<line x1="45" y1="28" x2="32" y2="15" stroke="white" stroke-width="1.5" stroke-linecap="round"/>' +
+            '<line x1="55" y1="28" x2="68" y2="15" stroke="white" stroke-width="1.5" stroke-linecap="round"/>' +
+            '<polyline points="42,47 28,44 22,37" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<polyline points="42,53 26,53 20,47" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<polyline points="42,59 28,62 22,71" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<polyline points="58,47 72,44 78,37" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<polyline points="58,53 74,53 80,47" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '<polyline points="58,59 72,62 78,71" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '</g></svg>' +
+      '</span>' +
+      '<span id="ac-sb-lt" style="font-family:monospace;font-weight:700;color:#2DD4BF;' +
+        'font-size:.875rem;white-space:nowrap;overflow:hidden;flex:1;">antcrew</span>' +
+    '</a>' +
+    '<button id="ac-sb-tog" title="Collapse sidebar" style="width:28px;height:28px;border:none;' +
+      'background:none;cursor:pointer;color:rgb(107,114,128);display:flex;align-items:center;' +
+      'justify-content:center;border-radius:4px;flex-shrink:0;padding:0;">' +
+      '<i id="ac-sb-tog-ic" class="ti ti-layout-sidebar-left-collapse" style="font-size:18px;"></i>' +
+    '</button>';
+  sb.appendChild(hdr);
+
+  // Scroll area
+  var navEl = document.createElement('div');
+  navEl.style.cssText = 'flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 0;' +
+    'scrollbar-width:thin;scrollbar-color:rgba(31,41,55,1) transparent;';
+  navEl.innerHTML = buildNav();
+  sb.appendChild(navEl);
+
+  // Footer (user card + menu)
+  var foot = document.createElement('div');
+  foot.id = 'ac-sb-foot';
+  foot.style.cssText = 'flex-shrink:0;border-top:1px solid rgba(31,41,55,.5);padding:6px;';
+  foot.innerHTML =
+    '<div style="height:1px;background:rgba(31,41,55,.5);margin:2px 8px 4px;"></div>' +
+    '<a href="https://docs.antcrew.org" target="_blank" rel="noopener" class="ac-sbi">' +
+      '<i class="ti ti-book-2 ac-sbi-ic"></i>' +
+      '<span class="ac-sbl">Docs</span>' +
+      '<i class="ti ti-external-link ac-sbl" style="font-size:9px;margin-left:auto;flex-shrink:0;opacity:.5;"></i>' +
+    '</a>' +
+    '<button id="ac-sb-tut-btn" class="ac-sbi" ' +
+      'style="width:calc(100% - 16px);background:none;border:none;text-align:left;cursor:pointer;color:rgb(107,114,128);">' +
+      '<i class="ti ti-school ac-sbi-ic"></i>' +
+      '<span class="ac-sbl">Tutorial</span>' +
+    '</button>' +
+    '<div style="height:1px;background:rgba(31,41,55,.5);margin:4px 8px 2px;"></div>' +
+    '<div id="ac-sb-u" style="display:flex;align-items:center;gap:8px;padding:5px 6px;' +
+      'border-radius:6px;cursor:pointer;overflow:hidden;" title="Account">' +
+      '<div id="ac-sb-av" style="width:26px;height:26px;border-radius:50%;background:#1E4D6B;' +
+        'color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;' +
+        'justify-content:center;flex-shrink:0;line-height:1;">?</div>' +
+      '<div class="ac-sbl" style="min-width:0;flex:1;overflow:hidden;">' +
+        '<p id="ac-sb-un" style="font-size:.8rem;font-weight:500;color:#f3f4f6;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap;margin:0;line-height:1.35;"></p>' +
+        '<p id="ac-sb-ue" style="font-size:.67rem;color:#6b7280;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap;margin:0;line-height:1.35;"></p>' +
+      '</div>' +
+      '<i id="ac-sb-chev" class="ti ti-chevron-up ac-sbl" style="font-size:10px;color:#6b7280;' +
+        'flex-shrink:0;transition:transform .15s;"></i>' +
+    '</div>' +
+    '<div id="ac-sb-umenu" style="display:none;background:#111827;border:1px solid #1f2937;' +
+      'border-radius:6px;overflow:hidden;margin:4px 0 2px;">' +
+      '<a href="/settings?tab=profile" class="ac-sbi" ' +
+        'style="margin:2px 4px;font-size:.8rem;" data-i18n="nav.profile">' +
+        '<i class="ti ti-user ac-sbi-ic"></i>' +
+        '<span data-i18n="nav.profile">My profile</span></a>' +
+      '<button id="ac-sb-logout" class="ac-sbi" ' +
+        'style="margin:2px 4px;width:calc(100% - 8px);background:none;border:none;' +
+        'text-align:left;font-size:.8rem;">' +
+        '<i class="ti ti-logout ac-sbi-ic"></i>' +
+        '<span data-i18n="nav.logout">Log out</span>' +
+      '</button>' +
+      '<div style="padding:5px 10px;border-top:1px solid #1f2937;display:flex;align-items:center;gap:4px;">' +
+        '<span data-i18n="nav.lang" style="font-size:.67rem;color:#4b5563;flex:1;">Language</span>' +
+        '<button data-lang-btn="en" onclick="window.__i18n&&window.__i18n.setLang(\'en\')" ' +
+          'style="font-size:.72rem;background:none;border:none;cursor:pointer;padding:2px 5px;' +
+          'border-radius:3px;color:#9ca3af;">EN</button>' +
+        '<span style="font-size:.67rem;color:#374151;">|</span>' +
+        '<button data-lang-btn="es" onclick="window.__i18n&&window.__i18n.setLang(\'es\')" ' +
+          'style="font-size:.72rem;background:none;border:none;cursor:pointer;padding:2px 5px;' +
+          'border-radius:3px;color:#9ca3af;">ES</button>' +
+      '</div>' +
+    '</div>';
+  sb.appendChild(foot);
+
+  document.body.insertBefore(sb, document.body.firstChild);
+
+  // Tutorial button — lazy-loads tutorial-modal.js on first click
+  var tutBtnEl = document.getElementById('ac-sb-tut-btn');
+  if (tutBtnEl) {
+    tutBtnEl.addEventListener('click', function () {
+      if (window.acTutorial) { window.acTutorial.open(); return; }
+      var s = document.createElement('script');
+      s.src = '/static/tutorial-modal.js';
+      s.onload = function () { window.acTutorial && window.acTutorial.open(); };
+      document.head.appendChild(s);
+    });
+  }
+  document.body.style.paddingLeft = w0 + 'px';
+
+  // Mobile bar
+  var mbar = document.createElement('div');
+  mbar.id = 'ac-sb-mbar';
+  mbar.innerHTML =
+    '<button id="ac-sb-mbtog" style="width:32px;height:32px;border:none;background:none;' +
+      'cursor:pointer;color:#9ca3af;display:flex;align-items:center;justify-content:center;' +
+      'border-radius:4px;padding:0;">' +
+      '<i class="ti ti-menu-2" style="font-size:20px;"></i></button>' +
+    '<a href="/dashboard" style="font-family:monospace;font-weight:700;color:#2DD4BF;' +
+      'font-size:.875rem;text-decoration:none;">antcrew</a>' +
+    '<span id="sb-mb-rev-badge" style="display:none;margin-left:auto;min-width:20px;height:20px;' +
+      'padding:0 5px;border-radius:10px;background:#f59e0b;color:#000;font-size:11px;' +
+      'font-weight:700;align-items:center;justify-content:center;box-sizing:border-box;"></span>';
+  document.body.insertBefore(mbar, sb.nextSibling);
+
+  // Backdrop
+  var bd = document.createElement('div');
+  bd.id = 'ac-sb-bd';
+  document.body.insertBefore(bd, mbar.nextSibling);
+
+  // Navigation spinner — shown on nav click, disappears when new page loads
+  var sp = document.createElement('div');
+  sp.id = 'ac-nav-sp';
+  document.body.appendChild(sp);
+
+  // ── Admin group state ──────────────────────────────────────────────────────
+  function applyAdmState(open) {
+    admOpen = open;
+    localStorage.setItem(AK, open ? '1' : '0');
+    var chev = document.getElementById('ac-adm-chev');
+    var tog = document.getElementById('ac-adm-tog');
+    var items = sb.querySelectorAll('.ac-adm-item');
+    items.forEach(function (el) {
+      el.style.display = (collapsed || open) ? 'flex' : 'none';
+    });
+    if (chev) chev.style.transform = open ? 'rotate(90deg)' : '';
+    if (tog) {
+      tog.style.maxHeight = collapsed ? '0' : '40px';
+      tog.style.opacity = collapsed ? '0' : '1';
+      tog.style.padding = collapsed ? '0 14px' : '';
+      tog.style.overflow = 'hidden';
+    }
+  }
+
+  // ── Configurar group state ─────────────────────────────────────────────────
+  function applyCfgState(open) {
+    cfgOpen = open;
+    localStorage.setItem(GK, open ? '1' : '0');
+    var chev = document.getElementById('ac-cfg-chev');
+    var tog = document.getElementById('ac-cfg-tog');
+    var items = sb.querySelectorAll('.ac-cfg-item');
+
+    // In collapsed sidebar: always show cfg items (icons only via .ac-sbl hiding)
+    // In expanded sidebar: show based on open state
+    items.forEach(function (el) {
+      el.style.display = (collapsed || open) ? 'flex' : 'none';
+    });
+
+    if (chev) chev.style.transform = open ? 'rotate(90deg)' : '';
+    // Hide the group header button when sidebar is collapsed
+    if (tog) {
+      tog.style.maxHeight = collapsed ? '0' : '40px';
+      tog.style.opacity = collapsed ? '0' : '1';
+      tog.style.padding = collapsed ? '0 14px' : '';
+      tog.style.overflow = 'hidden';
+    }
+  }
+
+  // ── Collapse / expand ─────────────────────────────────────────────────────
+  function applyState(c) {
+    collapsed = c;
+    localStorage.setItem(SK, c ? '1' : '0');
+    sb.style.width = (c ? COL : EXP) + 'px';
+    document.body.style.paddingLeft = (c ? COL : EXP) + 'px';
+    sb.classList.toggle('ac-collapsed', c);
+
+    // Header: show ant SVG when collapsed, antcrew text when expanded
+    var hdrEl = document.getElementById('ac-sb-hdr');
+    var ant = document.getElementById('ac-sb-ant');
+    var lt = document.getElementById('ac-sb-lt');
+    var tog = document.getElementById('ac-sb-tog');
+
+    if (hdrEl) {
+      hdrEl.style.justifyContent = c ? 'center' : 'space-between';
+      hdrEl.style.padding = c ? '0' : '0 8px 0 14px';
+    }
+    var la = document.getElementById('ac-sb-la');
+    if (la) la.style.flex = c ? '0 0 auto' : '1';
+    if (ant) ant.style.display = c ? 'block' : 'none';
+    if (lt) lt.style.display = c ? 'none' : '';
+    if (tog) tog.style.display = c ? 'none' : 'flex';
+
+    var togIc = document.getElementById('ac-sb-tog-ic');
+    if (togIc) togIc.className = 'ti ' + (c ? 'ti-layout-sidebar-left-expand' : 'ti-layout-sidebar-left-collapse');
+
+    // Labels and group headers (non-collapsible)
+    sb.querySelectorAll('.ac-sbl').forEach(function (el) {
+      el.style.maxWidth = c ? '0' : '';
+      el.style.opacity = c ? '0' : '1';
+    });
+    sb.querySelectorAll('.ac-sbg').forEach(function (el) {
+      el.style.maxHeight = c ? '0' : '40px';
+      el.style.opacity = c ? '0' : '1';
+      el.style.padding = c ? '0 14px' : '';
+    });
+
+    // Re-apply cfg and admin group state
+    applyCfgState(cfgOpen);
+    applyAdmState(admOpen);
+
+    if (c) {
+      var um = document.getElementById('ac-sb-umenu');
+      if (um) um.style.display = 'none';
+      var userChev = document.getElementById('ac-sb-chev');
+      if (userChev) userChev.style.transform = '';
+    }
+  }
+
+  // Initial render
+  applyState(collapsed);
+
+  // Logo link: navigate normally when expanded; expand sidebar when collapsed
+  document.getElementById('ac-sb-la').addEventListener('click', function (e) {
+    if (collapsed) {
+      e.preventDefault();
+      applyState(false);
+    }
+  });
+
+  document.getElementById('ac-sb-tog').addEventListener('click', function () {
+    applyState(!collapsed);
+  });
+
+  // Configurar toggle
+  var cfgTogEl = document.getElementById('ac-cfg-tog');
+  if (cfgTogEl) {
+    cfgTogEl.addEventListener('click', function () {
+      applyCfgState(!cfgOpen);
+    });
+  }
+
+  // User menu
+  var uEl = document.getElementById('ac-sb-u');
+  var umEl = document.getElementById('ac-sb-umenu');
+  var chevEl = document.getElementById('ac-sb-chev');
+  uEl.addEventListener('mouseover', function () { uEl.style.background = 'rgba(31,41,55,.5)'; });
+  uEl.addEventListener('mouseout', function () { uEl.style.background = ''; });
+  uEl.addEventListener('click', function () {
+    if (collapsed) { applyState(false); return; }
+    var open = umEl.style.display !== 'none';
+    umEl.style.display = open ? 'none' : 'block';
+    if (chevEl) chevEl.style.transform = open ? '' : 'rotate(180deg)';
+  });
+
+  document.getElementById('ac-sb-logout').addEventListener('click', function () {
+    fetch('/auth/token', { method: 'DELETE', credentials: 'same-origin' })
+      .then(function () {
+        localStorage.removeItem('antcrew_api_key');
+        try { sessionStorage.removeItem('ac_me_v1'); } catch (_) {}
+        window.location.replace('/login');
+      });
+  });
+
+  document.addEventListener('click', function (e) {
+    if (umEl && foot && !foot.contains(e.target)) umEl.style.display = 'none';
+  });
+
+  // Mobile toggle
+  document.getElementById('ac-sb-mbtog').addEventListener('click', function () {
+    sb.classList.toggle('open');
+    bd.classList.toggle('open');
+  });
+  bd.addEventListener('click', function () {
+    sb.classList.remove('open');
+    bd.classList.remove('open');
+  });
+
+  // Show spinner when an internal nav link is clicked (stays in old-page snapshot)
+  navEl.addEventListener('click', function (e) {
+    var link = e.target.closest('a.ac-sbi');
+    if (!link || link.target === '_blank') return;
+    sp.style.opacity = '1';
+  });
+
+  // ── Data fetches ──────────────────────────────────────────────────────────
+  var apiKey = localStorage.getItem('antcrew_api_key');
+  var hdrs = { 'Content-Type': 'application/json' };
+  if (apiKey) hdrs['X-Api-Key'] = apiKey;
+
+  fetch('/reviews/?status=pending&limit=100', { headers: hdrs, credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d || !d.length) return;
+      var cnt = d.length > 99 ? '99+' : String(d.length);
+      ['sb-rev-badge', 'sb-mb-rev-badge'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) { el.textContent = cnt; el.style.display = 'inline-flex'; }
+      });
+    })
+    .catch(function () {});
+
+  // ── /auth/me — cached in sessionStorage to eliminate admin-section flash ──
+  // TTL: 5 min — new deploys propagate to active sessions within that window.
+  var _ME_KEY = 'ac_me_v1';
+  var _ME_TTL = 5 * 60 * 1000;
+  var _cachedMe = null;
+  try {
+    var _raw = JSON.parse(sessionStorage.getItem(_ME_KEY) || 'null');
+    if (_raw && (Date.now() - (_raw._ts || 0)) < _ME_TTL) _cachedMe = _raw;
+  } catch (_) {}
+
+  function _fillUser(me) {
+    var un = document.getElementById('ac-sb-un');
+    var ue = document.getElementById('ac-sb-ue');
+    var av = document.getElementById('ac-sb-av');
+    if (un) un.textContent = me.display_name || '';
+    if (ue) ue.textContent = me.email || '';
+    if (av) {
+      var s = (me.display_name || me.email || '').trim();
+      var pts = s.split(/\s+/);
+      av.textContent = (pts.length > 1 ? pts[0][0] + pts[pts.length - 1][0] : s.slice(0, 2)).toUpperCase();
+    }
+  }
+
+  function _injectAdmin(me) {
+    if (!me.is_platform_admin || !me.mfa_enabled) return;
+    if (document.getElementById('ac-adm-tog')) return; // already injected
+    var admItems = [
+      { label: 'Analytics',  href: '/analytics',        icon: 'ti-trending-up'  },
+      { label: 'Campaigns',  href: '/campaigns',        icon: 'ti-speakerphone' },
+      { label: 'Workspaces', href: '/workspaces_admin', icon: 'ti-crown'        },
+      { label: 'Users',      href: '/users',            icon: 'ti-users'        },
+    ];
+    if (me.accounting_access) {
+      admItems.push({ label: 'Contabilidad', href: '/accounting', icon: 'ti-calculator' });
+    }
+    var admHtml = '<button id="ac-adm-tog">' +
+      '<span class="ac-sbl" style="flex:1;">Admin</span>' +
+      '<i class="ti ti-chevron-right ac-sbl" id="ac-adm-chev" style="font-size:10px;margin-right:2px;flex-shrink:0;transition:transform .15s;"></i>' +
+      '</button>';
+    admItems.forEach(function (item) {
+      var on = location.pathname === item.href;
+      admHtml += '<a href="' + item.href + '" class="ac-sbi ac-adm-item' + (on ? ' on' : '') + '">' +
+        '<i class="ti ' + item.icon + ' ac-sbi-ic"></i>' +
+        '<span class="ac-sbl">' + item.label + '</span>' +
+        '</a>';
+    });
+    var admDiv = document.createElement('div');
+    admDiv.innerHTML = admHtml;
+    navEl.appendChild(admDiv);
+    var admTogEl = document.getElementById('ac-adm-tog');
+    if (admTogEl) admTogEl.addEventListener('click', function () { applyAdmState(!admOpen); });
+    applyAdmState(admOpen);
+  }
+
+  // Apply cached data immediately — no network round-trip needed on subsequent page loads
+  if (_cachedMe) {
+    _fillUser(_cachedMe);
+    _injectAdmin(_cachedMe);
+  }
+
+  fetch('/auth/me', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (me) {
+      if (!me) { try { sessionStorage.removeItem(_ME_KEY); } catch (_) {} return; }
+      if (!me.email_verified) {
+        try { sessionStorage.removeItem(_ME_KEY); } catch (_) {}
+        window.location.replace('/onboard');
+        return;
+      }
+      try { sessionStorage.setItem(_ME_KEY, JSON.stringify(Object.assign({}, me, { _ts: Date.now() }))); } catch (_) {}
+      _fillUser(me);    // always refresh in case display_name/email changed
+      _injectAdmin(me); // no-op if already injected from cache
+    })
+    .catch(function () {});
+
+  // ── Global toast ──────────────────────────────────────────────────────────
+  window.acToast = function (msg, type) {
+    var el = document.getElementById('ac-toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'ac-toast';
+      el.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;' +
+        'padding:10px 16px;border-radius:8px;font-size:13px;font-weight:500;' +
+        'max-width:360px;box-shadow:0 4px 12px rgba(0,0,0,.45);' +
+        'transition:opacity .25s;opacity:0;pointer-events:none;';
+      document.body.appendChild(el);
+    }
+    var palette = {
+      error:   { bg: '#7f1d1d', color: '#fca5a5', border: '1px solid #991b1b' },
+      success: { bg: '#052e16', color: '#4ade80', border: '1px solid #065f46' },
+      info:    { bg: '#1e3a5f', color: '#93c5fd', border: '1px solid #1d4ed8' },
+    };
+    var p = palette[type || 'info'];
+    el.style.background = p.bg;
+    el.style.color = p.color;
+    el.style.border = p.border;
+    el.textContent = msg;
+    el.style.opacity = '1';
+    clearTimeout(el._tid);
+    el._tid = setTimeout(function () { el.style.opacity = '0'; }, 3500);
+  };
+
+  // Re-apply i18n after sidebar injects data-i18n elements
+  if (window.__i18n) {
+    window.__i18n.applyAll();
+  } else {
+    document.addEventListener('i18nReady', function () {
+      if (window.__i18n) window.__i18n.applyAll();
+    });
+  }
+})();

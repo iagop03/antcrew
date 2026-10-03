@@ -1,0 +1,567 @@
+"""API key authentication for antcrew-platform.
+
+Auth modes (evaluated in order):
+  1. PLATFORM_API_KEY env set → single-key mode (no DB hit)
+  2. ApiKey rows in DB → multi-key mode (prefix-indexed bcrypt lookup)
+  3. Neither → open mode (dev/local, no auth required)
+
+Lookup strategy:
+  New keys: WHERE key_prefix = sha256(raw)[:16] → 1 row → 1 bcrypt.checkpw()  O(1)
+  Legacy keys (no prefix yet): scan sha256 keys, set prefix + rehash on success  O(n) → shrinks
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import logging
+import os
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from fastapi import Depends, HTTPException, Request, Security
+from fastapi.security import APIKeyHeader
+
+from app.core.database import get_session
+
+log = logging.getLogger(__name__)
+
+_KEY_HEADER = APIKeyHeader(name="X-Api-Key", auto_error=False)
+
+
+def _key_prefix(raw_key: str) -> str:
+    """Fast lookup index: first 16 hex chars of SHA256(raw_key). Stable, collision-resistant."""
+    return hashlib.sha256(raw_key.encode()).hexdigest()[:16]
+
+
+def _hash_token(raw: str) -> str:
+    """One-way SHA-256 hash for high-entropy session/client tokens (192+ bits).
+    Stored in DB instead of plaintext — DB read access no longer grants token access.
+    """
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _hash(key: str) -> str:
+    """Hash a new API key with bcrypt (cost factor 12)."""
+    import bcrypt
+    return bcrypt.hashpw(key.encode(), bcrypt.gensalt(rounds=12)).decode()
+
+
+def _verify(raw_key: str, stored_hash: str) -> bool:
+    """Verify key against stored hash. Accepts bcrypt and legacy sha256."""
+    if stored_hash.startswith(("$2b$", "$2a$", "$2y$")):
+        try:
+            import bcrypt as _bcrypt
+            return _bcrypt.checkpw(raw_key.encode(), stored_hash.encode())
+        except Exception:
+            return False
+    return hmac.compare_digest(stored_hash, hashlib.sha256(raw_key.encode()).hexdigest())
+
+
+def _is_legacy_hash(stored_hash: str) -> bool:
+    return not stored_hash.startswith(("$2b$", "$2a$", "$2y$"))
+
+
+_VALID_ROLES = frozenset({"admin", "write", "read", "reviewer", "viewer", "compliance_viewer"})
+
+# Paths accessible to compliance_viewer — all others return 403
+_COMPLIANCE_VIEWER_PATHS = ("/compliance/",)
+
+
+@dataclass
+class WorkspaceContext:
+    """Auth context propagated to route handlers."""
+    workspace_id: Optional[int]
+    created_by: Optional[str]  # API key label or "env_key"
+    role: str = "write"         # admin | write | read | reviewer | viewer — never "admin" by accident
+    membership_ids: list[int] = field(default_factory=list)
+    client_label: Optional[str] = None  # set for viewer keys scoped to a specific client
+
+    @property
+    def workspace_ids(self) -> Optional[list[int]]:
+        ids: list[int] = list(self.membership_ids)
+        if self.workspace_id is not None and self.workspace_id not in ids:
+            ids.insert(0, self.workspace_id)
+        return ids if ids else None
+
+
+async def _authenticate(raw_key: Optional[str], session) -> WorkspaceContext:
+    """Auth lookup using the provided session (injectable → testable).
+
+    Fast path (new keys with key_prefix set): 1 indexed SELECT + 1 bcrypt.checkpw().
+    Slow path (legacy keys without prefix): SHA256 scan, then upgrades on success.
+    """
+    from sqlmodel import select
+
+    from app.models.run import ApiKey
+
+    if raw_key:
+        prefix = _key_prefix(raw_key)
+        key: Optional[ApiKey] = None
+
+        # Fast path — indexed prefix lookup (O(1))
+        candidates = (await session.exec(
+            select(ApiKey).where(
+                ApiKey.key_prefix == prefix,
+                ApiKey.revoked_at == None,  # noqa: E711
+            )
+        )).all()
+        if candidates:
+            key = next((k for k in candidates if _verify(raw_key, k.key_hash)), None)
+
+        # Slow path — legacy keys without prefix (shrinks as they log in)
+        if key is None:
+            legacy = (await session.exec(
+                select(ApiKey).where(
+                    ApiKey.key_prefix == None,  # noqa: E711
+                    ApiKey.revoked_at == None,  # noqa: E711
+                )
+            )).all()
+            if legacy:
+                key = next((k for k in legacy if _verify(raw_key, k.key_hash)), None)
+
+        if key is not None:
+            # Snapshot attrs before any commit
+            key_id = key.id
+            workspace_id = key.workspace_id
+            label = key.label
+            role = key.role
+            key_user_id = key.user_id  # may be None for service/anonymous keys
+            key_client_label = getattr(key, "client_label", None)
+
+            # Upgrade legacy key: set prefix and/or rehash sha256 → bcrypt
+            if key.key_prefix is None or _is_legacy_hash(key.key_hash):
+                try:
+                    key.key_prefix = prefix
+                    if _is_legacy_hash(key.key_hash):
+                        key.key_hash = _hash(raw_key)
+                    session.add(key)
+                    await session.commit()
+                except Exception as exc:
+                    log.warning("auth: could not upgrade legacy key %r: %s", label, exc)
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        pass
+
+            from app.models.run import WorkspaceMembership
+            memberships = list((await session.exec(
+                select(WorkspaceMembership).where(WorkspaceMembership.api_key_id == key_id)
+            )).all())
+
+            # Also resolve memberships tied directly to the user (user_id path).
+            # This covers memberships created after migration 047 and memberships
+            # shared across multiple API keys belonging to the same user.
+            if key_user_id is not None:
+                known_ws = {m.workspace_id for m in memberships}
+                user_memberships = (await session.exec(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.user_id == key_user_id
+                    )
+                )).all()
+                memberships += [m for m in user_memberships if m.workspace_id not in known_ws]
+
+            return WorkspaceContext(
+                workspace_id=workspace_id,
+                created_by=label,
+                role=role if role in _VALID_ROLES else "read",
+                membership_ids=[m.workspace_id for m in memberships],
+                client_label=key_client_label,
+            )
+
+        # Key provided but not found — check if multi-key mode is active
+        any_key = (await session.exec(
+            select(ApiKey).where(ApiKey.revoked_at == None).limit(1)  # noqa: E711
+        )).first()
+        if any_key is not None:
+            raise HTTPException(401, "Invalid X-Api-Key")
+        return WorkspaceContext(workspace_id=None, created_by=None, role="admin")  # open mode
+    else:
+        any_key = (await session.exec(
+            select(ApiKey).where(ApiKey.revoked_at == None).limit(1)  # noqa: E711
+        )).first()
+        if any_key is None:
+            return WorkspaceContext(workspace_id=None, created_by=None, role="admin")  # open mode
+        raise HTTPException(401, "X-Api-Key header required")
+
+
+async def _session_context(token: str, session) -> Optional[WorkspaceContext]:
+    """Resolve a session cookie token to a WorkspaceContext.
+
+    Returns None when the token is not found, expired, or revoked (caller may
+    fall back to X-Api-Key).  Raises HTTPException only on genuine errors.
+    Uses lazy imports to avoid circular dependencies.
+    """
+    from datetime import datetime, timezone
+
+    from sqlmodel import select
+
+    from app.models.run import (  # lazy — avoids circular
+        ApiKey,
+        UserSession,
+        WorkspaceMembership,
+    )
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    token_hash = _hash_token(token)
+    # New sessions are indexed by token_hash; legacy sessions by plaintext token.
+    # token column is NULL for all sessions after migration 070; lookup by token_hash only.
+    user_session = (await session.exec(
+        select(UserSession).where(
+            UserSession.token_hash == token_hash,
+            UserSession.revoked == False,  # noqa: E712
+            UserSession.expires_at > now,
+        )
+    )).first()
+
+    if user_session is None or user_session.api_key_id is None:
+        return None
+
+    key = (await session.exec(
+        select(ApiKey).where(
+            ApiKey.id == user_session.api_key_id,
+            ApiKey.revoked_at == None,  # noqa: E711
+        )
+    )).first()
+
+    if key is None:
+        return None
+
+    memberships = list((await session.exec(
+        select(WorkspaceMembership).where(WorkspaceMembership.api_key_id == key.id)
+    )).all())
+
+    # Also resolve memberships tied directly to the session user (user_id path).
+    # This covers memberships granted to the user account rather than to a specific key.
+    if user_session.user_id is not None:
+        known_ws = {m.workspace_id for m in memberships}
+        user_memberships = (await session.exec(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.user_id == user_session.user_id
+            )
+        )).all()
+        memberships += [m for m in user_memberships if m.workspace_id not in known_ws]
+
+    return WorkspaceContext(
+        workspace_id=key.workspace_id,
+        created_by=key.label,
+        role=key.role if key.role in _VALID_ROLES else "read",
+        membership_ids=[m.workspace_id for m in memberships],
+    )
+
+
+async def get_workspace_context(
+    request: Request,
+    x_api_key: str | None = Security(_KEY_HEADER),
+    session=Depends(get_session),
+) -> WorkspaceContext:
+    """FastAPI dependency: authenticate, rate-limit, and return workspace context.
+
+    Priority (highest → lowest):
+      1. PLATFORM_API_KEY env var   — single-key admin override
+      2. antcrew_session cookie     — browser session (email+password or token exchange)
+      3. X-Api-Key header           — programmatic API key access
+    """
+    from app.core import rate_limit
+
+    env_key = os.environ.get("PLATFORM_API_KEY")
+
+    # 1. PLATFORM_API_KEY matches header — immediate admin grant (no DB hit)
+    if env_key and x_api_key and hmac.compare_digest(x_api_key, env_key):
+        ctx = WorkspaceContext(workspace_id=None, created_by="env_key", role="admin")
+        await rate_limit.check(request, ctx.workspace_id, ctx.created_by)
+        return ctx
+
+    # 2. Session cookie — browser users authenticated via /login
+    session_token = request.cookies.get("antcrew_session")
+    if session_token:
+        try:
+            ctx = await _session_context(session_token, session)
+            if ctx is not None:
+                await rate_limit.check(request, ctx.workspace_id, ctx.created_by)
+                return ctx
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.warning("auth: session cookie lookup failed: %s", exc)
+
+    # 3. X-Api-Key header against DB keys — always tried regardless of PLATFORM_API_KEY
+    #    (PLATFORM_API_KEY is a super-admin shortcut, not an exclusion of DB keys)
+    try:
+        ctx = await _authenticate(x_api_key, session)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("auth: DB error during authentication: %s", exc)
+        raise HTTPException(503, "Authentication service temporarily unavailable")
+
+    # When PLATFORM_API_KEY is set, open mode (no DB keys configured) is not allowed —
+    # _authenticate returns created_by=None for open mode; reject it here.
+    if env_key and ctx.created_by is None:
+        raise HTTPException(401, "Invalid or missing X-Api-Key header")
+
+    # ANTCREW_REQUIRE_AUTH per-request guard — blocks open mode at runtime even without
+    # PLATFORM_API_KEY. Catches "all keys revoked after startup" and "env var failed to load".
+    if ctx.created_by is None:
+        _require_auth = os.environ.get("ANTCREW_REQUIRE_AUTH", "").lower() in ("1", "true", "yes")
+        if _require_auth:
+            raise HTTPException(
+                401,
+                "No API credentials configured. "
+                "ANTCREW_REQUIRE_AUTH is set — open mode is blocked. "
+                "Set PLATFORM_API_KEY or create API keys via POST /api-keys/.",
+            )
+
+    # compliance_viewer keys are restricted to /compliance/* paths only
+    if ctx.role == "compliance_viewer":
+        path = request.url.path
+        if not any(path.startswith(p) for p in _COMPLIANCE_VIEWER_PATHS):
+            raise HTTPException(
+                403,
+                "compliance_viewer keys are restricted to /compliance/* endpoints. "
+                "Use a key with role 'read' or higher for other paths.",
+            )
+
+    await rate_limit.check(request, ctx.workspace_id, ctx.created_by)
+
+    # PostgreSQL RLS — inject workspace_id as a transaction-scoped GUC so that
+    # the policies in migration 073 can filter rows per-request.
+    # Only active when ANTCREW_ENABLE_RLS=true and a specific workspace is set.
+    if (
+        os.environ.get("ANTCREW_ENABLE_RLS", "").lower() in ("1", "true", "yes")
+        and ctx.workspace_id is not None
+    ):
+        from sqlalchemy import text as _sa_text
+        await session.exec(  # type: ignore[arg-type]
+            _sa_text("SELECT set_config('app.workspace_id', :wid, true)").bindparams(
+                wid=str(ctx.workspace_id)
+            )
+        )
+
+    return ctx
+
+
+require_api_key = get_workspace_context
+
+
+def require_role(*roles: str):
+    """FastAPI dependency factory: raise 403 unless the caller has one of the given roles."""
+    from fastapi import Depends as _Depends
+
+    async def _check(ctx: WorkspaceContext = _Depends(get_workspace_context)):
+        if ctx.role not in roles:
+            raise HTTPException(
+                403,
+                f"This action requires role {' or '.join(roles)!r}. "
+                f"Your key has role {ctx.role!r}.",
+            )
+        return ctx
+
+    return _check
+
+
+def require_verified_session():
+    """FastAPI dependency: require email verification for browser-session users.
+
+    API-key callers and open-mode requests pass through unconditionally — verification
+    only applies to users who authenticated via email+password (session cookie).
+    """
+    from fastapi import Depends as _Depends
+
+    async def _check(request: Request, session=_Depends(get_session)):
+        from datetime import datetime, timezone
+
+        from sqlmodel import select as _select
+
+        from app.models.run import User, UserSession
+
+        cookie = request.cookies.get("antcrew_session")
+        if not cookie:
+            return  # API-key or open-mode — no restriction
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        _th = _hash_token(cookie)
+        user_session = (await session.exec(
+            _select(UserSession).where(
+                UserSession.token_hash == _th,
+                UserSession.revoked == False,  # noqa: E712
+                UserSession.expires_at > now,
+            )
+        )).first()
+        if user_session is None:  # fallback for pre-033 sessions
+            user_session = (await session.exec(
+                _select(UserSession).where(
+                    UserSession.token == cookie,
+                    UserSession.revoked == False,  # noqa: E712
+                    UserSession.expires_at > now,
+                )
+            )).first()
+        if user_session is None or user_session.user_id is None:
+            return  # not a user session
+
+        user = (await session.exec(
+            _select(User).where(User.id == user_session.user_id)
+        )).first()
+        if user is not None and user.email_verified_at is None:
+            raise HTTPException(
+                403,
+                "Email verification required. "
+                "Check your inbox and use POST /auth/verify-email with your 6-digit code.",
+            )
+
+    return _check
+
+
+def ws_filter(stmt: Any, column: Any, ctx: WorkspaceContext) -> Any:
+    """Apply workspace scoping to a SQLModel select statement."""
+    ids = ctx.workspace_ids
+    if ids is None:
+        return stmt
+    if len(ids) == 1:
+        return stmt.where(column == ids[0])
+    return stmt.where(column.in_(ids))
+
+
+def ws_accessible(workspace_id: Optional[int], ctx: WorkspaceContext) -> bool:
+    """Return True when workspace_id is accessible under ctx."""
+    ids = ctx.workspace_ids
+    if ids is None:
+        return True
+    return workspace_id in ids
+
+
+@dataclass(frozen=True)
+class WsAuth:
+    """WebSocket auth result. workspace_ids=None means unrestricted global access."""
+    workspace_ids: Optional[frozenset]  # frozenset[int] | None
+
+
+async def resolve_ws_session_token(token: str) -> Optional[WsAuth]:
+    """Validate a session cookie token for WebSocket auth. Returns WsAuth or None if invalid."""
+    try:
+        from datetime import datetime, timezone
+
+        from sqlmodel import select
+        from sqlmodel.ext.asyncio.session import AsyncSession
+
+        from app.core.database import engine
+        from app.models.run import ApiKey, UserSession, WorkspaceMembership
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            _th = _hash_token(token)
+            user_session = (await session.exec(
+                select(UserSession).where(
+                    UserSession.token_hash == _th,
+                    UserSession.revoked == False,  # noqa: E712
+                    UserSession.expires_at > now,
+                )
+            )).first()
+            if user_session is None:  # fallback for pre-033 sessions
+                user_session = (await session.exec(
+                    select(UserSession).where(
+                        UserSession.token == token,
+                        UserSession.revoked == False,  # noqa: E712
+                        UserSession.expires_at > now,
+                    )
+                )).first()
+            if user_session is None or user_session.api_key_id is None:
+                return None
+            key = (await session.exec(
+                select(ApiKey).where(
+                    ApiKey.id == user_session.api_key_id,
+                    ApiKey.revoked_at == None,  # noqa: E711
+                )
+            )).first()
+            if key is None:
+                return None
+            memberships = (await session.exec(
+                select(WorkspaceMembership).where(WorkspaceMembership.api_key_id == key.id)
+            )).all()
+            ws_ids: set[int] = set()
+            if key.workspace_id is not None:
+                ws_ids.add(key.workspace_id)
+            ws_ids.update(m.workspace_id for m in memberships)
+            return WsAuth(workspace_ids=frozenset(ws_ids) if ws_ids else None)
+    except Exception:
+        return None  # fail closed
+
+
+async def resolve_ws_api_key(api_key: str | None) -> Optional[WsAuth]:
+    """Validate an API key for WebSocket auth. Returns WsAuth or None if invalid."""
+    env_key = os.environ.get("PLATFORM_API_KEY")
+    if env_key:
+        if hmac.compare_digest(api_key or "", env_key):
+            return WsAuth(workspace_ids=None)  # global access
+        return None
+
+    try:
+        from sqlmodel import select
+        from sqlmodel.ext.asyncio.session import AsyncSession
+
+        from app.core.database import engine
+        from app.models.run import ApiKey, WorkspaceMembership
+
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            any_key = (await session.exec(
+                select(ApiKey).where(ApiKey.revoked_at == None).limit(1)  # noqa: E711
+            )).first()
+            if any_key is None:
+                _require_auth = os.environ.get("ANTCREW_REQUIRE_AUTH", "").lower() in ("1", "true", "yes")
+                if _require_auth:
+                    return None  # fail closed — ANTCREW_REQUIRE_AUTH blocks open mode
+                return WsAuth(workspace_ids=None)  # open mode — global access
+            if not api_key:
+                return None
+
+            prefix = _key_prefix(api_key)
+
+            # Fast path
+            candidates = (await session.exec(
+                select(ApiKey).where(
+                    ApiKey.key_prefix == prefix,
+                    ApiKey.revoked_at == None,  # noqa: E711
+                )
+            )).all()
+            matched = next((k for k in candidates if _verify(api_key, k.key_hash)), None)
+
+            # Slow path for legacy keys
+            if matched is None:
+                legacy = (await session.exec(
+                    select(ApiKey).where(
+                        ApiKey.key_prefix == None,  # noqa: E711
+                        ApiKey.revoked_at == None,  # noqa: E711
+                    )
+                )).all()
+                matched = next((k for k in legacy if _verify(api_key, k.key_hash)), None)
+
+            if matched is None:
+                return None
+
+            if matched.key_prefix is None or _is_legacy_hash(matched.key_hash):
+                try:
+                    matched.key_prefix = prefix
+                    if _is_legacy_hash(matched.key_hash):
+                        matched.key_hash = _hash(api_key)
+                    session.add(matched)
+                    await session.commit()
+                except Exception:
+                    pass
+
+            memberships = (await session.exec(
+                select(WorkspaceMembership).where(WorkspaceMembership.api_key_id == matched.id)
+            )).all()
+            ws_ids: set[int] = set()
+            if matched.workspace_id is not None:
+                ws_ids.add(matched.workspace_id)
+            ws_ids.update(m.workspace_id for m in memberships)
+            return WsAuth(workspace_ids=frozenset(ws_ids) if ws_ids else None)
+    except Exception:
+        return None  # fail closed
+
+
+async def check_ws_session_token(token: str) -> bool:
+    return (await resolve_ws_session_token(token)) is not None
+
+
+async def check_ws_api_key(api_key: str | None) -> bool:
+    return (await resolve_ws_api_key(api_key)) is not None

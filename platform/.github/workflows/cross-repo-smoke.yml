@@ -1,0 +1,133 @@
+name: Cross-repo smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    name: Smoke (antcrew + platform + keybridge — imports + runtime)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout antcrew-platform
+        uses: actions/checkout@v4
+        with:
+          path: antcrew-platform
+
+      - name: Checkout antcrew
+        uses: actions/checkout@v4
+        with:
+          repository: iagop03/antcrew
+          path: antcrew
+
+      - name: Checkout keybridge
+        uses: actions/checkout@v4
+        with:
+          repository: iagop03/keybridge
+          path: keybridge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install all packages from local source
+        run: |
+          pip install -e antcrew
+          pip install -e "antcrew-platform[dev]"
+          pip install -e "keybridge[dev]"
+
+      - name: Smoke — antcrew_engine build_llm (bundled in antcrew)
+        run: |
+          python -c "
+          from antcrew_engine.config import build_llm
+          from antcrew_engine.models.anthropic_model import AnthropicModel
+          from antcrew_engine.models.openai_model import OpenAIModel
+
+          llm = build_llm('simulated')
+          assert llm is not None, 'build_llm returned None'
+          assert hasattr(llm, 'system'), 'build_llm result missing .system() method'
+          assert callable(AnthropicModel), 'AnthropicModel not callable'
+          assert callable(OpenAIModel), 'OpenAIModel not callable'
+
+          print('antcrew_engine: OK')
+          "
+
+      - name: Smoke — antcrew_engine EngineLoop real execution
+        run: |
+          python -c "
+          from antcrew_engine import (
+              EngineLoop, EngineLoopError,
+              CapabilityRegistry, MemoryStore, Goal, DesiredProjectState,
+          )
+          from antcrew_engine.engine.events import EventLog
+
+          store     = MemoryStore()
+          event_log = EventLog()
+          registry  = CapabilityRegistry()
+
+          goal = Goal(
+              description='smoke',
+              desired_state=DesiredProjectState(conditions=frozenset()),
+          )
+
+          loop = EngineLoop(registry, [], event_log, max_iterations=1)
+          try:
+              result = loop.run(store, goal)
+              assert hasattr(result, 'satisfied'), f'unexpected return type: {type(result)}'
+              print(f'antcrew_engine EngineLoop: OK (satisfied={result.satisfied})')
+          except EngineLoopError as e:
+              assert hasattr(e, 'kind'), 'EngineLoopError missing .kind'
+              print(f'antcrew_engine EngineLoop: OK (EngineLoopError.{e.kind.name} as expected)')
+          "
+
+      - name: Smoke — platform HTTP health check (executes real request path)
+        run: |
+          python -c "
+          import asyncio, os
+          os.environ.setdefault('DATABASE_URL', 'sqlite+aiosqlite:///:memory:')
+          os.environ.setdefault('SECRET_KEY', 'ci-test-key')
+          os.environ.setdefault('ANTCREW_TESTING', '1')
+
+          from httpx import AsyncClient, ASGITransport
+          from app.main import app
+
+          async def run():
+              async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as c:
+                  r = await c.get('/health')
+                  assert r.status_code == 200, f'/health returned {r.status_code}: {r.text}'
+                  body = r.json()
+                  assert body.get('status') == 'ok', f'unexpected body: {body}'
+                  print(f'antcrew-platform /health: OK ({body})')
+
+          asyncio.run(run())
+          "
+        env:
+          PYTHONPATH: antcrew-platform
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          SECRET_KEY: ci-test-key
+
+      - name: Smoke — platform critical imports
+        run: |
+          python -c "
+          from app.core.auth import resolve_ws_api_key, resolve_ws_session_token, WsAuth
+          from app.api.stream import register_run, deregister_run
+          from app.services.runner_base import resolve_workspace_llm_config
+          from app.api.security_audit import router as audit_router
+          print('antcrew-platform imports: OK')
+          "
+        env:
+          PYTHONPATH: antcrew-platform
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          SECRET_KEY: ci-test-key
+
+      - name: Smoke — keybridge imports and version
+        run: |
+          python -c "
+          import os
+          os.environ['PROXY_TOKEN'] = 'ci-smoke'
+          from keybridge.main import app, __version__
+          assert __version__ >= '2.2.0', f'unexpected version: {__version__}'
+          print(f'keybridge: OK (v{__version__})')
+          "

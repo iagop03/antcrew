@@ -1,0 +1,93 @@
+name: CI (SQLite)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff>=0.5
+      - run: ruff check app/
+
+  test:
+    name: Test (Python ${{ matrix.python-version }}, SQLite)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        # TEST_DB_URL unset → conftest defaults to sqlite+aiosqlite:///:memory:
+        run: pytest -v --tb=short
+        env:
+          ANTCREW_SANDBOX: none
+          LOG_FORMAT: text
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and security tools
+        run: |
+          pip install -e ".[dev]"
+          pip install "bandit[toml]" pip-audit
+
+      - name: bandit — static security analysis (MEDIUM+)
+        # -ll  skip LOW severity   -ii  skip LOW confidence
+        # Scans app/ only; tests/ excluded (assert statements are intentional there).
+        run: bandit -r app/ -ll -ii
+
+      - name: pip-audit — dependency CVE scan
+        run: pip-audit
+
+      - name: semgrep — SAST (application logic)
+        run: |
+          pip install semgrep
+          semgrep --config p/python --config p/fastapi --config p/owasp-top-ten app/ --error --quiet
+
+  changelog:
+    name: CHANGELOG
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check CHANGELOG entry for current version
+        run: |
+          python3 - << 'PYEOF'
+          import tomllib, sys
+          with open("pyproject.toml", "rb") as f:
+              v = tomllib.load(f)["project"]["version"]
+          with open("CHANGELOG.md") as f:
+              content = f.read()
+          if f"## v{v}" not in content and f"## [{v}]" not in content:
+              print(f"::error::CHANGELOG.md is missing an entry for version {v}")
+              sys.exit(1)
+          print(f"OK: CHANGELOG.md has entry for v{v}")
+          PYEOF

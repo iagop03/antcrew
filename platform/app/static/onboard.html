@@ -1,0 +1,760 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crear cuenta — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>
+// If user is already authenticated, verified, AND has a workspace, go straight to dashboard.
+// If verified but no workspace: stay here (init() will advance to the right step).
+(function() {
+  fetch('/auth/me', { credentials: 'same-origin' })
+    .then(function(r) {
+      if (r.ok) return r.json();
+    })
+    .then(function(d) {
+      if (d && d.email_verified && d.workspace_id) window.location.replace('/dashboard');
+    })
+    .catch(function() {});
+})();
+</script>
+<style>[x-cloak]{display:none!important}</style>
+    <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+  </head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center p-6"
+  x-data="onboard()">
+
+<div class="w-full max-w-lg">
+
+  <!-- Logo -->
+  <div class="text-center mb-8">
+    <span class="font-mono font-bold text-2xl text-indigo-400">antcrew</span>
+    <p class="text-gray-500 text-sm mt-1">Crea tu cuenta y workspace</p>
+  </div>
+
+  <!-- Progress -->
+  <div class="flex items-start mb-8">
+    <template x-for="(label, i) in steps" :key="i">
+      <div class="flex-1 flex flex-col items-center">
+        <div class="flex items-center w-full">
+          <div class="flex-1 h-px" :class="i === 0 ? 'invisible' : (step > i + 1 ? 'bg-green-800' : 'bg-gray-800')"></div>
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition"
+            :class="{
+              'bg-indigo-600 text-white': step === i + 1,
+              'bg-green-700 text-white': step > i + 1,
+              'bg-gray-800 text-gray-500': step < i + 1
+            }">
+            <span x-show="step <= i + 1" x-text="i + 1"></span>
+            <span x-show="step > i + 1">✓</span>
+          </div>
+          <div class="flex-1 h-px" :class="i === steps.length - 1 ? 'invisible' : (step > i + 1 ? 'bg-green-800' : 'bg-gray-800')"></div>
+        </div>
+        <span class="text-xs mt-1.5 text-center hidden sm:block"
+          :class="step === i + 1 ? 'text-gray-200' : 'text-gray-600'"
+          x-text="label"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- ── STEP 1 ── Cuenta ────────────────────────────────────────────── -->
+  <div x-show="step === 1" x-cloak>
+    <h2 class="text-lg font-semibold mb-1">Crea tu cuenta</h2>
+    <p class="text-gray-400 text-sm mb-6">Email y contraseña para acceder a la plataforma.</p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs text-gray-400 mb-1.5">Email</label>
+        <input x-model="email" type="email" placeholder="tu@empresa.com"
+          @keydown.enter="createAccount()"
+          class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 placeholder-gray-600">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1.5">Contraseña</label>
+        <input x-model="password" type="password" placeholder="Mínimo 8 caracteres"
+          @keydown.enter="createAccount()"
+          class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 placeholder-gray-600">
+      </div>
+    </div>
+
+    <p x-show="step1Error" x-cloak class="text-red-400 text-xs mt-3" x-text="step1Error"></p>
+
+    <button @click="createAccount()"
+      :disabled="step1Loading || !email.trim() || password.length < 8"
+      class="mt-6 w-full py-2.5 rounded-lg font-medium text-sm transition
+        bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!step1Loading">Continuar →</span>
+      <span x-show="step1Loading" style="display:none">Creando…</span>
+    </button>
+
+    <p class="text-center text-xs text-gray-600 mt-5">
+      ¿Ya tienes cuenta?
+      <a href="/login" class="text-indigo-400 hover:text-indigo-300 transition">Inicia sesión</a>
+    </p>
+  </div>
+
+  <!-- ── STEP 2 ── Verificar email ──────────────────────────────────── -->
+  <div x-show="step === 2" x-cloak style="display:none">
+    <h2 class="text-lg font-semibold mb-1">Verifica tu email</h2>
+    <p class="text-gray-400 text-sm mb-6">
+      Hemos enviado un código de 6 dígitos a <strong x-text="email"></strong>.
+    </p>
+
+    <div class="mb-4">
+      <label class="block text-xs text-gray-400 mb-1.5">Código de verificación</label>
+      <input x-model="verifyCode" type="text" inputmode="numeric" maxlength="6"
+        placeholder="123456"
+        @keydown.enter="verifyEmail()"
+        class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-3 text-2xl text-center font-mono tracking-[0.5em] focus:outline-none focus:border-indigo-500 placeholder-gray-700">
+    </div>
+
+    <p x-show="step2Error" x-cloak class="text-red-400 text-xs mb-3" x-text="step2Error"></p>
+
+    <button @click="verifyEmail()"
+      :disabled="step2Loading || verifyCode.length !== 6"
+      class="w-full py-2.5 rounded-lg font-medium text-sm transition
+        bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!step2Loading">Verificar →</span>
+      <span x-show="step2Loading" style="display:none">Verificando…</span>
+    </button>
+
+    <div class="mt-4 text-center">
+      <button @click="resendCode()"
+        :disabled="resendCooldown > 0"
+        class="text-xs text-gray-500 hover:text-indigo-400 transition disabled:cursor-not-allowed">
+        <span x-show="resendCooldown === 0">¿No recibiste el código? Reenviar</span>
+        <span x-show="resendCooldown > 0">Reenviar en <span x-text="resendCooldown"></span>s</span>
+      </button>
+      <p x-show="resendMsg" x-cloak class="text-xs mt-1.5"
+        :class="resendOk ? 'text-green-400' : 'text-red-400'"
+        x-text="resendMsg"></p>
+    </div>
+  </div>
+
+  <!-- ── STEP 3 ── Workspace ────────────────────────────────────────── -->
+  <div x-show="step === 3" x-cloak style="display:none">
+    <h2 class="text-lg font-semibold mb-1">Tu workspace</h2>
+    <p class="text-gray-400 text-sm mb-6">Dale un nombre a tu espacio de trabajo. Podrás cambiarlo más tarde desde Settings.</p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs text-gray-400 mb-1.5">Nombre del workspace</label>
+        <input x-model="wsName" type="text" placeholder="Acme Corp"
+          @input="autoSlug()"
+          @keydown.enter="saveWorkspace()"
+          class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 placeholder-gray-600">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-400 mb-1.5">Slug <span class="text-gray-700">(URL-friendly, solo minúsculas y guiones)</span></label>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-600 text-sm font-mono shrink-0">antcrew.io/</span>
+          <input x-model="wsSlug" type="text" placeholder="acme-corp"
+            @keydown.enter="saveWorkspace()"
+            class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-indigo-500 placeholder-gray-600">
+        </div>
+        <p x-show="slugError" class="text-red-400 text-xs mt-1.5" x-text="slugError"></p>
+      </div>
+    </div>
+
+    <p x-show="step3Error" x-cloak class="text-red-400 text-xs mt-3" x-text="step3Error"></p>
+
+    <button @click="saveWorkspace()"
+      :disabled="step3Loading || !wsName.trim() || !wsSlug.trim()"
+      class="mt-6 w-full py-2.5 rounded-lg font-medium text-sm transition
+        bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!step3Loading">Continuar →</span>
+      <span x-show="step3Loading" style="display:none">Guardando…</span>
+    </button>
+  </div>
+
+  <!-- ── STEP 4 ── Perfil ───────────────────────────────────────────── -->
+  <div x-show="step === 4" x-cloak style="display:none">
+    <h2 class="text-lg font-semibold mb-1">Cuéntanos un poco</h2>
+    <p class="text-gray-400 text-sm mb-6">Nos ayuda a mostrarte los recursos y plantillas más relevantes.</p>
+
+    <!-- Use case -->
+    <div class="mb-5">
+      <label class="block text-xs text-gray-400 mb-2">¿Para qué vas a usar antcrew principalmente?</label>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <template x-for="opt in [
+          {id:'software_dev', label:'Desarrollo de software'},
+          {id:'customer_support', label:'Atención al cliente'},
+          {id:'internal_automation', label:'Automatización interna'},
+          {id:'data_analysis', label:'Análisis de datos'},
+          {id:'other', label:'Otro'}
+        ]" :key="opt.id">
+          <label class="flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition"
+            :class="useCase === opt.id
+              ? 'border-indigo-500 bg-indigo-950/40'
+              : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'">
+            <input type="radio" x-model="useCase" :value="opt.id" class="accent-indigo-500 shrink-0">
+            <span class="text-sm" x-text="opt.label"></span>
+          </label>
+        </template>
+      </div>
+    </div>
+
+    <!-- Team size -->
+    <div class="mb-5">
+      <label class="block text-xs text-gray-400 mb-2">¿Cuántas personas hay en tu equipo?</label>
+      <div class="flex gap-2 flex-wrap">
+        <template x-for="sz in ['solo', '2-5', '6-15', '15+']" :key="sz">
+          <button @click="teamSize = sz"
+            :class="teamSize === sz
+              ? 'bg-indigo-600 text-white border-indigo-600'
+              : 'bg-gray-900 text-gray-400 border-gray-700 hover:border-gray-500'"
+            class="px-4 py-2 rounded-lg border text-sm transition"
+            x-text="sz">
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <p x-show="step4Error" x-cloak class="text-red-400 text-xs mb-3" x-text="step4Error"></p>
+
+    <button @click="saveProfile()"
+      :disabled="step4Loading"
+      class="w-full py-2.5 rounded-lg font-medium text-sm transition
+        bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!step4Loading">Continuar →</span>
+      <span x-show="step4Loading" style="display:none">Guardando…</span>
+    </button>
+
+    <button @click="step = 5" class="mt-3 w-full text-xs text-gray-600 hover:text-gray-400 transition">
+      Saltar este paso
+    </button>
+  </div>
+
+  <!-- ── STEP 5 ── API Keys ─────────────────────────────────────────── -->
+  <div x-show="step === 5" x-cloak style="display:none">
+    <h2 class="text-lg font-semibold mb-1">Configuración LLM</h2>
+    <p class="text-gray-400 text-sm mb-6">¿Cómo quieres que antcrew acceda a los modelos de lenguaje?</p>
+
+    <!-- Campaign banner -->
+    <template x-if="activeCampaign">
+      <div class="mb-4 p-3 rounded-xl border border-emerald-800/60 bg-emerald-950/40 flex items-start gap-3">
+        <span class="text-emerald-400 shrink-0 mt-0.5">✦</span>
+        <div>
+          <p class="text-sm font-medium text-emerald-300" x-text="activeCampaign.name"></p>
+          <p class="text-xs text-emerald-600/80 mt-0.5">
+            <span x-text="Math.round((1 - activeCampaign.multiplier) * 100) + '% de descuento en todos los modos'"></span>
+            · hasta <span x-text="new Date(activeCampaign.ends_at).toLocaleDateString('es-ES', {day:'numeric',month:'short'})"></span>
+          </p>
+        </div>
+      </div>
+    </template>
+
+    <!-- Mode selector -->
+    <div class="space-y-3 mb-5">
+      <!-- Managed -->
+      <label x-show="availableModes.managed" class="flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition"
+        :class="llmMode === 'managed' ? 'border-indigo-500 bg-indigo-950/40' : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'">
+        <input type="radio" x-model="llmMode" value="managed" class="mt-0.5 accent-indigo-500 shrink-0">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">Claves de la plataforma</span>
+            <template x-if="activeCampaign">
+              <span class="flex items-center gap-1">
+                <span class="text-xs text-gray-600 line-through font-mono">×3.0</span>
+                <span class="text-xs px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-400 font-mono"
+                  x-text="'×' + (3.0 * activeCampaign.multiplier).toFixed(1)"></span>
+              </span>
+            </template>
+            <template x-if="!activeCampaign">
+              <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-500 font-mono">×3.0</span>
+            </template>
+          </div>
+          <p class="text-xs text-gray-500 mt-1">antcrew gestiona las claves. Empieza sin configuración, ideal para equipos pequeños.</p>
+        </div>
+      </label>
+
+      <!-- BYOK -->
+      <label x-show="availableModes.byok" class="flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition"
+        :class="llmMode === 'byok' ? 'border-emerald-600 bg-emerald-950/30' : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'">
+        <input type="radio" x-model="llmMode" value="byok" class="mt-0.5 accent-emerald-500 shrink-0">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">Mis propias claves (BYOK)</span>
+            <template x-if="activeCampaign">
+              <span class="flex items-center gap-1">
+                <span class="text-xs text-gray-600 line-through font-mono">×0.4</span>
+                <span class="text-xs px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-400 font-mono"
+                  x-text="'×' + (0.4 * activeCampaign.multiplier).toFixed(2)"></span>
+              </span>
+            </template>
+            <template x-if="!activeCampaign">
+              <span class="text-xs px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-400 font-mono">×0.4</span>
+            </template>
+          </div>
+          <p class="text-xs text-gray-500 mt-1">Aportas tus claves de Anthropic, OpenAI, etc. Máximo control y coste mínimo.</p>
+        </div>
+      </label>
+
+      <!-- Proxy -->
+      <label x-show="availableModes.proxy" class="flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition"
+        :class="llmMode === 'proxy' ? 'border-violet-600 bg-violet-950/30' : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'">
+        <input type="radio" x-model="llmMode" value="proxy" class="mt-0.5 accent-violet-500 shrink-0">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">Proxy local</span>
+            <template x-if="activeCampaign">
+              <span class="flex items-center gap-1">
+                <span class="text-xs text-gray-600 line-through font-mono">×0.7</span>
+                <span class="text-xs px-1.5 py-0.5 rounded bg-violet-900/60 text-violet-400 font-mono"
+                  x-text="'×' + (0.7 * activeCampaign.multiplier).toFixed(2)"></span>
+              </span>
+            </template>
+            <template x-if="!activeCampaign">
+              <span class="text-xs px-1.5 py-0.5 rounded bg-violet-900/60 text-violet-400 font-mono">×0.7</span>
+            </template>
+          </div>
+          <p class="text-xs text-gray-500 mt-1">Ejecutas <code class="text-gray-400 bg-gray-800 px-1 rounded">antcrew-proxy</code> en tu infraestructura. La plataforma nunca ve tu clave.</p>
+        </div>
+      </label>
+    </div>
+
+    <!-- BYOK / Proxy: info note -->
+    <div x-show="llmMode !== 'managed'" x-cloak
+      class="mb-4 p-3 rounded-lg bg-gray-900 border border-gray-800 text-xs text-gray-400 leading-relaxed">
+      <span x-show="llmMode === 'byok'">Añade tus claves en <strong class="text-gray-200">Settings → LLM Mode</strong> después de crear la cuenta. Puedes hacerlo ahora o más tarde.</span>
+      <span x-show="llmMode === 'proxy'">Configura el endpoint de proxy en <strong class="text-gray-200">Settings → LLM Mode</strong> después de crear la cuenta.</span>
+    </div>
+
+    <!-- Per-model fallback toggle (visible for byok and proxy) -->
+    <div x-show="llmMode !== 'managed'" x-cloak
+      class="mb-5 flex items-start gap-3 p-4 rounded-xl bg-gray-900 border border-gray-800">
+      <input type="checkbox" id="fallback-toggle" x-model="byokManagedFallback"
+        class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 accent-indigo-500 shrink-0 cursor-pointer">
+      <label for="fallback-toggle" class="cursor-pointer">
+        <p class="text-sm text-gray-200 select-none">Usar claves de la plataforma como respaldo</p>
+        <p class="text-xs text-gray-500 mt-0.5">Si un modelo no tiene clave configurada, antcrew usa su propia clave (×3.0 para esos modelos).</p>
+      </label>
+    </div>
+
+    <p x-show="step5Error" x-cloak class="text-red-400 text-xs mb-3" x-text="step5Error"></p>
+
+    <button @click="saveLlmMode()"
+      :disabled="step5Loading"
+      class="w-full py-2.5 rounded-lg font-medium text-sm transition
+        bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!step5Loading">Continuar →</span>
+      <span x-show="step5Loading" style="display:none">Guardando…</span>
+    </button>
+  </div>
+
+  <!-- ── STEP 6 ── Listo ──────────────────────────────────────────────── -->
+  <div x-show="step === 6" x-cloak style="display:none">
+    <div class="text-center mb-6">
+      <div class="text-5xl mb-3">✓</div>
+      <h2 class="text-lg font-semibold mb-1">¡Todo listo!</h2>
+      <p class="text-gray-400 text-sm">Tu cuenta y workspace están configurados.</p>
+    </div>
+
+    <!-- Summary card -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5 space-y-3">
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500">Cuenta</span>
+        <span class="text-sm font-medium" x-text="email"></span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500">Workspace</span>
+        <span class="text-sm font-mono text-gray-300" x-text="wsName || email.split('@')[0]"></span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-500">Modo LLM</span>
+        <span class="text-xs font-mono px-2 py-0.5 rounded"
+          :class="llmMode === 'byok' ? 'bg-emerald-900/50 text-emerald-400' : llmMode === 'proxy' ? 'bg-violet-900/50 text-violet-400' : 'bg-gray-800 text-gray-400'"
+          x-text="llmMode === 'managed'
+            ? 'managed ×' + (activeCampaign ? (3.0 * activeCampaign.multiplier).toFixed(1) : '3.0')
+            : llmMode === 'byok'
+              ? 'byok ×' + (activeCampaign ? (0.4 * activeCampaign.multiplier).toFixed(2) : '0.4')
+              : 'proxy ×' + (activeCampaign ? (0.7 * activeCampaign.multiplier).toFixed(2) : '0.7')"></span>
+      </div>
+      <div class="flex justify-between items-center pt-1">
+        <span class="text-xs text-gray-500">Plan</span>
+        <span class="text-sm font-mono text-emerald-400">Prueba gratuita activa</span>
+      </div>
+    </div>
+
+    <!-- Quick start -->
+    <div class="bg-gray-900 border border-indigo-900/40 rounded-xl p-5 mb-5">
+      <p class="text-xs text-indigo-400 uppercase tracking-wide mb-3">Prueba ahora — sin configuración</p>
+      <p class="text-sm text-gray-300 mb-3 leading-relaxed">
+        Con <strong class="text-white">Quick Run</strong> defines agentes en una sola línea y tienes algo funcionando en segundos.
+      </p>
+      <div class="bg-gray-950 rounded-lg p-3 mb-4 overflow-x-auto">
+        <code class="text-xs text-indigo-300 whitespace-pre" x-text="'antcrew quick &quot;Analiza RAG en 2025&quot; \\\n  &quot;Investigador: Busca los 5 papers más relevantes&quot; \\\n  &quot;Redactor: Escribe un resumen ejecutivo&quot; \\\n  --push https://antcrew.org --api-key acw_...'"></code>
+      </div>
+      <a href="/runs?quick=1"
+        class="block w-full py-2.5 rounded-lg font-medium text-sm text-center transition bg-indigo-600 hover:bg-indigo-500 text-white">
+        ⚡ Iniciar un Quick Run en la plataforma
+      </a>
+    </div>
+
+    <!-- Invite teammates -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+      <p class="text-xs text-gray-500 uppercase tracking-wide mb-3">Invita a tu equipo (opcional)</p>
+      <div class="flex gap-2 mb-3">
+        <input x-model="inviteEmail" type="email" placeholder="colega@empresa.com"
+          @keydown.enter="sendInvite()"
+          class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder-gray-600">
+        <select x-model="inviteRole"
+          class="bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-indigo-500">
+          <option value="write">write</option>
+          <option value="reviewer">reviewer</option>
+          <option value="read">read</option>
+          <option value="admin">admin</option>
+        </select>
+        <button @click="sendInvite()"
+          :disabled="inviteLoading || !inviteEmail.trim()"
+          class="px-4 py-2 rounded-lg text-sm font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 transition disabled:opacity-50">
+          <span x-show="!inviteLoading">Invitar</span>
+          <span x-show="inviteLoading" style="display:none">…</span>
+        </button>
+      </div>
+      <p x-show="inviteError" x-cloak class="text-red-400 text-xs mb-2" x-text="inviteError"></p>
+      <div class="space-y-1.5">
+        <template x-for="(inv, i) in sentInvites" :key="i">
+          <div class="flex items-center gap-2 text-xs text-gray-400">
+            <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+            <span x-text="inv.email"></span>
+            <span class="text-gray-600">·</span>
+            <span class="text-gray-500" x-text="inv.role"></span>
+            <span class="ml-auto text-green-600">Invitación enviada</span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div class="flex gap-3">
+      <a href="/dashboard"
+        class="flex-1 py-2.5 rounded-lg font-medium text-sm text-center transition bg-indigo-600 hover:bg-indigo-500 text-white">
+        Ir al dashboard
+      </a>
+      <a href="/settings?tab=llm"
+        class="flex-1 py-2.5 rounded-lg font-medium text-sm text-center transition bg-gray-800 hover:bg-gray-700 text-gray-200">
+        Configurar LLM
+      </a>
+    </div>
+  </div>
+
+</div><!-- /card -->
+
+<script>
+function onboard() {
+  return {
+    step: 1,
+    steps: ['Cuenta', 'Verificar email', 'Workspace', 'Perfil', 'API Keys', 'Listo'],
+
+    // Step 1
+    email: '',
+    password: '',
+    step1Loading: false,
+    step1Error: '',
+    workspaceId: null,
+
+    // Step 2
+    verifyCode: '',
+    step2Loading: false,
+    step2Error: '',
+    resendCooldown: 0,
+    resendMsg: '',
+    resendOk: false,
+
+    // Step 3 — workspace
+    wsName: '',
+    wsSlug: '',
+    slugError: '',
+    step3Loading: false,
+    step3Error: '',
+
+    // Step 4 — Perfil
+    useCase: '',
+    teamSize: '',
+    step4Loading: false,
+    step4Error: '',
+
+    // Step 5 — LLM
+    llmMode: 'managed',
+    byokManagedFallback: false,
+    step5Loading: false,
+    step5Error: '',
+    activeCampaign: null,
+    availableModes: { managed: true, byok: true, proxy: true },
+
+    // Step 6
+    inviteEmail: '',
+    inviteRole: 'write',
+    inviteLoading: false,
+    inviteError: '',
+    sentInvites: [],
+
+    // UI
+    copied: '',
+
+    async init() {
+      try {
+        const r = await fetch('/auth/me', { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const me = await r.json();
+        if (!me) return;
+        this.email = me.email || '';
+        if (!me.email_verified) {
+          // Account created but email not yet verified — resume at step 2
+          this.step = 2;
+          this._startResendCooldown(0);
+        } else if (!me.workspace_id) {
+          // Email verified but workspace not yet created — resume at step 3
+          this.step = 3;
+          this._fetchCampaign();
+          const prefix = this.email.split('@')[0].replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40);
+          if (!this.wsSlug) this.wsSlug = prefix;
+        }
+      } catch (_) {}
+    },
+
+    async createAccount() {
+      this.step1Error = '';
+      this.step1Loading = true;
+      try {
+        const r = await fetch('/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: this.email.trim().toLowerCase(),
+            password: this.password,
+          }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          if (r.status === 409) {
+            this.step1Error = 'Ya existe una cuenta con ese email. ¿Quieres iniciar sesión?';
+          } else {
+            this.step1Error = d.detail || `Error ${r.status}`;
+          }
+          return;
+        }
+        const data = await r.json();
+        this.workspaceId = data.workspace_id;
+        this.step = 2;
+        this._startResendCooldown(60);
+        this._fetchCampaign();
+      } catch (e) {
+        this.step1Error = e.message;
+      } finally {
+        this.step1Loading = false;
+      }
+    },
+
+    async verifyEmail() {
+      this.step2Error = '';
+      this.step2Loading = true;
+      try {
+        const r = await fetch('/auth/verify-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: this.verifyCode.trim() }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          this.step2Error = d.detail || `Error ${r.status}`;
+          return;
+        }
+        // Pre-fill slug from email prefix
+        const prefix = this.email.split('@')[0].replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40);
+        this.wsName = '';
+        this.wsSlug = prefix;
+        this.step = 3;
+      } catch (e) {
+        this.step2Error = e.message;
+      } finally {
+        this.step2Loading = false;
+      }
+    },
+
+    autoSlug() {
+      this.wsSlug = this.wsName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48);
+      this.slugError = '';
+    },
+
+    async saveWorkspace() {
+      this.slugError = '';
+      this.step3Error = '';
+      const slug = this.wsSlug.trim().toLowerCase();
+      if (!/^[a-z0-9-]+$/.test(slug)) {
+        this.slugError = 'Solo minúsculas, números y guiones';
+        return;
+      }
+      if (!this.wsName.trim()) {
+        this.step3Error = 'El nombre no puede estar vacío';
+        return;
+      }
+      this.step3Loading = true;
+      try {
+        const r = await fetch(`/workspaces/${this.workspaceId}/name`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Key': this.adminKey },
+          body: JSON.stringify({ name: this.wsName.trim(), slug }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          if (r.status === 409) {
+            this.slugError = 'Ese slug ya está en uso, elige otro';
+          } else {
+            this.step3Error = d.detail || `Error ${r.status}`;
+          }
+          return;
+        }
+        this.step = 4;
+      } catch (e) {
+        this.step3Error = e.message;
+      } finally {
+        this.step3Loading = false;
+      }
+    },
+
+    async saveProfile() {
+      this.step4Error = '';
+      this.step4Loading = true;
+      try {
+        await fetch('/auth/profile/onboarding', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            use_case: this.useCase || null,
+            team_size: this.teamSize || null,
+          }),
+        });
+        // Proceed even if call fails (non-critical data)
+      } catch {} finally {
+        this.step4Loading = false;
+      }
+      this.step = 5;
+    },
+
+    async saveLlmMode() {
+      this.step5Error = '';
+      this.step5Loading = true;
+      try {
+        const fallback = this.llmMode !== 'managed' ? this.byokManagedFallback : false;
+        await fetch(`/workspaces/${this.workspaceId}/llm-mode`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'managed', byok_managed_fallback: fallback }),
+        });
+        if (this.llmMode !== 'managed') {
+          localStorage.setItem('antcrew_llm_intent', this.llmMode);
+        }
+        this.step = 6;
+      } catch (e) {
+        this.step5Error = e.message;
+      } finally {
+        this.step5Loading = false;
+      }
+    },
+
+    async resendCode() {
+      if (this.resendCooldown > 0) return;
+      this.resendMsg = '';
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10000);
+      try {
+        const r = await fetch('/auth/resend-code', { method: 'POST', signal: ctrl.signal });
+        clearTimeout(timer);
+        if (r.ok) {
+          this.resendOk = true;
+          this.resendMsg = 'Código enviado. Revisa tu correo.';
+          this._startResendCooldown(60);
+        } else {
+          this.resendOk = false;
+          this.resendMsg = 'Error al enviar. Inténtalo de nuevo.';
+        }
+      } catch (e) {
+        clearTimeout(timer);
+        this.resendOk = false;
+        this.resendMsg = e.name === 'AbortError' ? 'Tiempo de espera agotado. Inténtalo de nuevo.' : 'Error de conexión.';
+      }
+      setTimeout(() => { this.resendMsg = ''; }, 5000);
+    },
+
+    _startResendCooldown(seconds) {
+      this.resendCooldown = seconds;
+      const t = setInterval(() => {
+        this.resendCooldown--;
+        if (this.resendCooldown <= 0) clearInterval(t);
+      }, 1000);
+    },
+
+    async _fetchCampaign() {
+      try {
+        const [rc, rm] = await Promise.all([
+          fetch('/public/active-campaign'),
+          fetch('/public/llm-modes'),
+        ]);
+        if (rc.ok) {
+          const d = await rc.json();
+          if (d) this.activeCampaign = d;
+        }
+        if (rm.ok) {
+          const modes = await rm.json();
+          this.availableModes = modes;
+          // Auto-select first enabled mode
+          const order = ['managed', 'byok', 'proxy'];
+          if (!modes[this.llmMode]) {
+            const first = order.find(m => modes[m]);
+            if (first) this.llmMode = first;
+          }
+        }
+      } catch (_) {}
+    },
+
+    async sendInvite() {
+      const em = this.inviteEmail.trim().toLowerCase();
+      if (!em) return;
+      this.inviteError = '';
+      this.inviteLoading = true;
+      try {
+        const r = await fetch(`/workspaces/${this.workspaceId}/invites`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Key': this.adminKey },
+          body: JSON.stringify({ email: em, role: this.inviteRole }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          this.inviteError = d.detail || `Error ${r.status}`;
+          return;
+        }
+        this.sentInvites.push({ email: em, role: this.inviteRole });
+        this.inviteEmail = '';
+      } catch (e) {
+        this.inviteError = e.message;
+      } finally {
+        this.inviteLoading = false;
+      }
+    },
+
+    async copyText(text, id) {
+      try {
+        await navigator.clipboard.writeText(text);
+        this.copied = id;
+        setTimeout(() => { if (this.copied === id) this.copied = ''; }, 2000);
+      } catch {}
+    },
+  };
+}
+</script>
+</body>
+</html>
+

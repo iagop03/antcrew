@@ -1,0 +1,1288 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="theme-color" content="#1E4D6B">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contabilidad — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+<style>
+[x-cloak]{display:none}
+.tab-active { background: #1f2937; color: #fff; }
+.tab-inactive { color: #6b7280; }
+.tab-inactive:hover { color: #d1d5db; }
+.stat-card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px 20px; }
+.bar-gasto { background: #ef4444; }
+.bar-ingreso { background: #10b981; }
+.form-input {
+  width: 100%; background: #1f2937; border: 1px solid #374151;
+  border-radius: 8px; padding: 8px 12px; color: #f9fafb; font-size: 13px;
+  outline: none; transition: border-color .15s;
+}
+.form-input:focus { border-color: #0D9488; }
+.form-input::placeholder { color: #4b5563; }
+select.form-input option { background: #1f2937; }
+.form-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; display: block; }
+.btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: opacity .15s; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: #4f46e5; color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #4338ca; }
+.btn-danger { background: #7f1d1d; color: #fca5a5; }
+.btn-danger:hover:not(:disabled) { background: #991b1b; }
+.btn-ghost { background: #374151; color: #d1d5db; }
+.btn-ghost:hover:not(:disabled) { background: #4b5563; }
+.btn-green { background: #065f46; color: #6ee7b7; }
+.btn-green:hover:not(:disabled) { background: #047857; }
+.status-pending { background: #451a03; color: #fb923c; }
+.status-verified { background: #052e16; color: #4ade80; }
+.status-rejected { background: #450a0a; color: #f87171; }
+.origin-nacional { background: #1e3a5f; color: #93c5fd; }
+.origin-intracomunitario { background: #1e1e3f; color: #a5b4fc; }
+.origin-extracomunitario { background: #3b1f00; color: #fdba74; }
+.isp-badge { background: #451a03; color: #fb923c; }
+.inv-intracom { background: #1e1e3f; color: #a5b4fc; }
+.inv-export { background: #052e16; color: #86efac; }
+.inv-nacional { background: #1e3a5f; color: #93c5fd; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow-y: auto; }
+.modal-box { background: #111827; border: 1px solid #374151; border-radius: 14px; width: 100%; max-width: 680px; }
+.modal-header { padding: 16px 20px; border-bottom: 1px solid #1f2937; display: flex; align-items: center; justify-content: space-between; }
+.modal-body { padding: 20px; }
+.modal-footer { padding: 14px 20px; border-top: 1px solid #1f2937; display: flex; gap: 10px; justify-content: flex-end; }
+.drop-zone { border: 2px dashed #374151; border-radius: 10px; padding: 32px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+.drop-zone:hover, .drop-zone.drag-over { border-color: #0D9488; background: rgba(13,148,136,.05); }
+.table-header { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #4b5563; padding: 8px 12px; border-bottom: 1px solid #1f2937; }
+.table-row { padding: 10px 12px; border-bottom: 1px solid #111827; font-size: 12px; }
+.table-row:hover { background: #0f1724; }
+.tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.priority-high { background: #450a0a; color: #f87171; }
+.alert-bar { background: #292015; border: 1px solid #854d0e; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #fbbf24; display: flex; align-items: center; gap: 8px; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="accounting()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<!-- Access denied -->
+<template x-if="!loading && !hasAccess">
+  <div class="flex items-center justify-center min-h-screen">
+    <div class="text-center max-w-sm">
+      <i class="ti ti-shield-off" style="font-size:48px;color:#6b7280;display:block;margin-bottom:16px;"></i>
+      <h2 class="text-lg font-semibold mb-2">Sin permisos de acceso</h2>
+      <p class="text-gray-500 text-sm mb-4">Necesitas ser administrador de la plataforma con acceso a contabilidad para ver esta sección.</p>
+      <a href="/dashboard" class="text-indigo-400 hover:text-indigo-300 text-sm">← Volver al dashboard</a>
+    </div>
+  </div>
+</template>
+
+<template x-if="!loading && hasAccess">
+  <div class="px-6 py-5 max-w-7xl">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-5 flex-wrap gap-3">
+    <div>
+      <h1 class="text-xl font-semibold">Contabilidad</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Gastos, ingresos y trazabilidad fiscal</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <!-- Period selector -->
+      <select x-model="selectedYear" @change="loadAll()" class="form-input" style="width:90px">
+        <template x-for="y in years" :key="y">
+          <option :value="y" x-text="y"></option>
+        </template>
+      </select>
+      <select x-model="selectedQuarter" @change="loadAll()" class="form-input" style="width:90px">
+        <option value="">Año completo</option>
+        <option value="1">T1 (Ene-Mar)</option>
+        <option value="2">T2 (Abr-Jun)</option>
+        <option value="3">T3 (Jul-Sep)</option>
+        <option value="4">T4 (Oct-Dic)</option>
+      </select>
+      <button @click="exportZip()" :disabled="exporting" class="btn btn-ghost flex items-center gap-1.5">
+        <i class="ti ti-download" style="font-size:14px"></i>
+        <span x-text="exporting ? 'Exportando…' : 'Exportar ZIP'"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <template x-if="summary && (summary.alerts.pending_receipts > 0 || summary.alerts.unconfirmed_isp > 0)">
+    <div class="space-y-2 mb-4">
+      <template x-if="summary.alerts.pending_receipts > 0">
+        <div class="alert-bar">
+          <i class="ti ti-alert-triangle"></i>
+          <span><strong x-text="summary.alerts.pending_receipts"></strong> recibo(s) pendientes de verificar — no se contabilizan como deducibles hasta verificación.</span>
+        </div>
+      </template>
+      <template x-if="summary.alerts.unconfirmed_isp > 0">
+        <div class="alert-bar">
+          <i class="ti ti-alert-triangle"></i>
+          <span><strong x-text="summary.alerts.unconfirmed_isp"></strong> gasto(s) con inversión del sujeto pasivo sin confirmar (Fly.io, Anthropic, etc.) — revisar antes de presentar el 303.</span>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <!-- P&L Cards -->
+  <template x-if="summary">
+    <div class="grid grid-cols-2 gap-3 mb-4" style="grid-template-columns: repeat(4, 1fr);">
+      <div class="stat-card">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Ingresos</div>
+        <div class="text-2xl font-semibold font-mono text-green-400" x-text="formatEur(summary.ingresos)"></div>
+        <div class="text-xs text-gray-600 mt-1" x-text="'Base: ' + formatEur(summary.base_repercutida)"></div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Gastos</div>
+        <div class="text-2xl font-semibold font-mono text-red-400" x-text="formatEur(summary.gastos)"></div>
+        <div class="text-xs text-gray-600 mt-1" x-text="'Base: ' + formatEur(summary.base_soportada)"></div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Resultado</div>
+        <div class="text-2xl font-semibold font-mono"
+          :class="summary.resultado >= 0 ? 'text-green-400' : 'text-red-400'"
+          x-text="formatEur(summary.resultado)"></div>
+        <div class="text-xs text-gray-600 mt-1">Ingresos − Gastos</div>
+      </div>
+      <div class="stat-card">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">IVA a liquidar</div>
+        <div class="text-2xl font-semibold font-mono"
+          :class="summary.iva_a_liquidar >= 0 ? 'text-amber-400' : 'text-indigo-400'"
+          x-text="formatEur(summary.iva_a_liquidar)"></div>
+        <div class="text-xs text-gray-600 mt-1"
+          x-text="'Rep. ' + formatEur(summary.iva_repercutido) + ' / Sop. ' + formatEur(summary.iva_soportado)"></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Chart + Category breakdown -->
+  <template x-if="summary">
+    <div class="grid gap-4 mb-4" style="grid-template-columns: 2fr 1fr;">
+
+      <!-- Bar chart -->
+      <div class="stat-card">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-3">Evolución mensual</div>
+        <template x-if="Object.keys(summary.monthly).length === 0">
+          <p class="text-gray-600 text-sm text-center py-6">Sin datos en el periodo</p>
+        </template>
+        <template x-if="Object.keys(summary.monthly).length > 0">
+          <div style="overflow-x:auto;">
+            <svg :width="chartWidth()" height="140" x-html="renderChart()"></svg>
+            <div class="flex gap-4 mt-2">
+              <span class="flex items-center gap-1.5 text-xs text-gray-500"><span class="inline-block w-3 h-2 rounded bar-ingreso"></span>Ingresos</span>
+              <span class="flex items-center gap-1.5 text-xs text-gray-500"><span class="inline-block w-3 h-2 rounded bar-gasto"></span>Gastos</span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Category breakdown -->
+      <div class="stat-card">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-3">Gastos por categoría</div>
+        <template x-if="Object.keys(summary.by_category).length === 0">
+          <p class="text-gray-600 text-sm text-center py-6">Sin gastos</p>
+        </template>
+        <div class="space-y-2">
+          <template x-for="[cat, amount] in Object.entries(summary.by_category)" :key="cat">
+            <div>
+              <div class="flex items-center justify-between mb-0.5">
+                <span class="text-xs text-gray-400 capitalize" x-text="catLabel(cat)"></span>
+                <span class="text-xs font-mono text-gray-300" x-text="formatEur(amount)"></span>
+              </div>
+              <div class="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full bg-indigo-500 rounded-full"
+                  :style="'width:' + catPct(amount) + '%'"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div>
+  </template>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 bg-gray-900 rounded-lg p-1 w-fit mb-4">
+    <button @click="tab='gastos'" :class="tab==='gastos' ? 'tab-active' : 'tab-inactive'"
+      class="px-4 py-1.5 rounded-md text-sm font-medium transition">
+      Gastos
+      <template x-if="receipts.length > 0">
+        <span class="ml-1.5 text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded-full" x-text="receipts.length"></span>
+      </template>
+    </button>
+    <button @click="tab='ingresos'" :class="tab==='ingresos' ? 'tab-active' : 'tab-inactive'"
+      class="px-4 py-1.5 rounded-md text-sm font-medium transition">
+      Facturas emitidas
+      <template x-if="invoices.length > 0">
+        <span class="ml-1.5 text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded-full" x-text="invoices.length"></span>
+      </template>
+    </button>
+    <button @click="tab='vat'; loadVat()" :class="tab==='vat' ? 'tab-active' : 'tab-inactive'"
+      class="px-4 py-1.5 rounded-md text-sm font-medium transition">
+      Modelos 303 / 349
+    </button>
+  </div>
+
+  <!-- ── Tab: Gastos ────────────────────────────────────────────────────────── -->
+  <div x-show="tab === 'gastos'" x-cloak>
+    <!-- Toolbar -->
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <div class="flex gap-2 flex-wrap">
+        <select x-model="filterCat" class="form-input" style="width:140px">
+          <option value="">Todas las categorías</option>
+          <option value="hosting">Hosting</option>
+          <option value="domain">Dominio</option>
+          <option value="api">API Costs</option>
+          <option value="software">Software</option>
+          <option value="personnel">Personal</option>
+          <option value="legal">Legal</option>
+          <option value="marketing">Marketing</option>
+          <option value="other">Otros</option>
+        </select>
+        <select x-model="filterStatus" class="form-input" style="width:130px">
+          <option value="">Todos los estados</option>
+          <option value="pending">Pendiente</option>
+          <option value="verified">Verificado</option>
+          <option value="rejected">Rechazado</option>
+        </select>
+      </div>
+      <button @click="openReceiptModal()" class="btn btn-primary flex items-center gap-1.5">
+        <i class="ti ti-plus" style="font-size:14px"></i>
+        Subir recibo
+      </button>
+    </div>
+
+    <!-- Receipts table -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="grid table-header" style="grid-template-columns:90px 1fr 1fr 80px 80px 80px 80px 90px 80px">
+        <span>Fecha</span>
+        <span>Proveedor</span>
+        <span>Nº Factura</span>
+        <span>Base</span>
+        <span>IVA</span>
+        <span>Total EUR</span>
+        <span>Origen</span>
+        <span>Estado</span>
+        <span></span>
+      </div>
+      <template x-if="filteredReceipts.length === 0">
+        <div class="px-4 py-8 text-center text-gray-600 text-sm">No hay gastos en este periodo.</div>
+      </template>
+      <template x-for="r in filteredReceipts" :key="r.id">
+        <div class="grid table-row items-center" style="grid-template-columns:90px 1fr 1fr 80px 80px 80px 80px 90px 80px">
+          <span class="font-mono text-xs text-gray-400" x-text="r.date"></span>
+          <div class="min-w-0">
+            <div class="text-sm text-gray-200 truncate" x-text="r.vendor_name"></div>
+            <div class="text-xs text-gray-600 truncate" x-text="r.vendor_nif || r.vendor_country"></div>
+          </div>
+          <span class="font-mono text-xs text-gray-500 truncate" x-text="r.invoice_number || '—'"></span>
+          <span class="font-mono text-xs text-gray-400" x-text="r.base_imponible != null ? formatEur(r.base_imponible) : '—'"></span>
+          <span class="font-mono text-xs text-gray-400" x-text="r.tax_amount != null ? formatEur(r.tax_amount) : '—'"></span>
+          <span class="font-mono text-xs font-medium" x-text="formatEur(r.eur_amount ?? r.total_amount)"></span>
+          <div class="flex gap-1 flex-wrap">
+            <span class="tag text-xs origin-nacional" x-show="r.vat_origin === 'nacional'">ES</span>
+            <span class="tag text-xs origin-intracomunitario" x-show="r.vat_origin === 'intracomunitario'">UE</span>
+            <span class="tag text-xs origin-extracomunitario" x-show="r.vat_origin === 'extracomunitario'">EXT</span>
+            <span class="tag text-xs isp-badge" x-show="r.reverse_charge">ISP</span>
+          </div>
+          <span class="tag text-xs"
+            :class="{
+              'status-pending': r.status === 'pending',
+              'status-verified': r.status === 'verified',
+              'status-rejected': r.status === 'rejected',
+            }"
+            x-text="statusLabel(r.status)"></span>
+          <div class="flex gap-1">
+            <button x-show="r.has_file" @click="downloadFile(r)"
+              title="Descargar adjunto"
+              class="p-1 rounded text-gray-500 hover:text-indigo-400 transition">
+              <i class="ti ti-file-download" style="font-size:14px"></i>
+            </button>
+            <button x-show="r.status === 'pending'" @click="verifyReceipt(r)"
+              title="Verificar"
+              class="p-1 rounded text-gray-500 hover:text-green-400 transition">
+              <i class="ti ti-check" style="font-size:14px"></i>
+            </button>
+            <button x-show="r.status !== 'verified'" @click="deleteReceipt(r)"
+              title="Eliminar"
+              class="p-1 rounded text-gray-500 hover:text-red-400 transition">
+              <i class="ti ti-trash" style="font-size:14px"></i>
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── Tab: Facturas emitidas ─────────────────────────────────────────────── -->
+  <div x-show="tab === 'ingresos'" x-cloak>
+    <div class="flex justify-end mb-3">
+      <button @click="openInvoiceModal()" class="btn btn-primary flex items-center gap-1.5">
+        <i class="ti ti-plus" style="font-size:14px"></i>
+        Nueva factura
+      </button>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div class="grid table-header" style="grid-template-columns:130px 90px 1fr 1fr 90px 80px 80px 90px 80px">
+        <span>Nº Factura</span>
+        <span>Fecha</span>
+        <span>Cliente</span>
+        <span>NIF</span>
+        <span>Tipo op.</span>
+        <span>Base</span>
+        <span>Total</span>
+        <span>Estado</span>
+        <span></span>
+      </div>
+      <template x-if="invoices.length === 0">
+        <div class="px-4 py-8 text-center text-gray-600 text-sm">No hay facturas emitidas en este periodo.</div>
+      </template>
+      <template x-for="inv in invoices" :key="inv.id">
+        <div class="grid table-row items-center" style="grid-template-columns:130px 90px 1fr 1fr 90px 80px 80px 90px 80px">
+          <span class="font-mono text-xs text-indigo-400 font-semibold" x-text="inv.invoice_number"></span>
+          <span class="font-mono text-xs text-gray-400" x-text="inv.date"></span>
+          <span class="text-sm text-gray-200 truncate" x-text="inv.customer_name"></span>
+          <div class="min-w-0">
+            <span class="text-xs text-gray-500 font-mono truncate" x-text="inv.customer_nif || '—'"></span>
+            <template x-if="inv.invoice_type === 'intracomunitaria' && !inv.customer_nif">
+              <span class="ml-1 text-orange-400" title="Sin NIF-IVA — obligatorio para Modelo 349"><i class="ti ti-alert-triangle" style="font-size:11px"></i></span>
+            </template>
+          </div>
+          <span class="tag text-xs"
+            :class="{
+              'inv-nacional': inv.invoice_type === 'nacional',
+              'inv-intracom': inv.invoice_type === 'intracomunitaria',
+              'inv-export': inv.invoice_type === 'exportacion',
+            }"
+            x-text="invTypeLabel(inv.invoice_type)"></span>
+          <span class="font-mono text-xs text-gray-400" x-text="inv.base_imponible != null ? formatEur(inv.base_imponible) : '—'"></span>
+          <span class="font-mono text-xs font-medium text-green-400" x-text="formatEur(inv.total_amount ?? 0)"></span>
+          <span class="tag text-xs"
+            :class="{
+              'bg-gray-800 text-gray-400': inv.status === 'draft',
+              'bg-blue-900/40 text-blue-300': inv.status === 'issued',
+              'status-verified': inv.status === 'paid',
+              'bg-gray-900 text-gray-600 line-through': inv.status === 'void',
+            }"
+            x-text="invoiceStatusLabel(inv.status)"></span>
+          <div class="flex gap-1">
+            <template x-if="inv.status !== 'void'">
+              <button @click="voidInvoice(inv)" title="Anular"
+                class="p-1 rounded text-gray-500 hover:text-red-400 transition">
+                <i class="ti ti-ban" style="font-size:14px"></i>
+              </button>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ── Tab: Modelo 303 ───────────────────────────────────────────────────── -->
+  <div x-show="tab === 'vat'" x-cloak>
+    <template x-if="!selectedQuarter">
+      <p class="text-gray-500 text-sm">Selecciona un trimestre concreto para ver los datos del Modelo 303.</p>
+    </template>
+    <template x-if="selectedQuarter && !vatReport">
+      <div class="text-gray-500 text-sm">Cargando…</div>
+    </template>
+    <template x-if="selectedQuarter && vatReport">
+      <div class="space-y-4">
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-semibold text-gray-200" x-text="'Modelo 303 — ' + vatReport.period"></span>
+          <span class="text-xs text-gray-600" x-text="vatReport.from + ' → ' + vatReport.to"></span>
+          <button @click="copyVatData()" class="btn btn-ghost text-xs flex items-center gap-1">
+            <i class="ti ti-copy" style="font-size:12px"></i>
+            Copiar para gestor
+          </button>
+        </div>
+
+        <!-- Alerts -->
+        <template x-if="vatReport.alerts.unverified_receipts > 0 || vatReport.alerts.missing_nif > 0">
+          <div class="space-y-2">
+            <div x-show="vatReport.alerts.unverified_receipts > 0" class="alert-bar">
+              <i class="ti ti-alert-triangle"></i>
+              <span><strong x-text="vatReport.alerts.unverified_receipts"></strong> recibo(s) sin verificar — las cifras pueden variar.</span>
+            </div>
+            <div x-show="vatReport.alerts.missing_nif > 0" class="alert-bar">
+              <i class="ti ti-alert-triangle"></i>
+              <span><strong x-text="vatReport.alerts.missing_nif"></strong> recibo(s) sin NIF del proveedor — necesario para el libro de facturas.</span>
+            </div>
+          </div>
+        </template>
+
+        <!-- VAT grid -->
+        <div class="grid gap-3" style="grid-template-columns: 1fr 1fr;">
+
+          <!-- IVA repercutido -->
+          <div class="stat-card">
+            <div class="text-xs text-indigo-400 font-semibold uppercase tracking-wide mb-1" x-text="'Casillas ' + vatReport.iva_repercutido.casillas + ' — IVA Repercutido (Ingresos)'"></div>
+            <div class="flex justify-between items-end mt-2">
+              <span class="text-xs text-gray-500">Base imponible</span>
+              <span class="font-mono text-sm font-semibold text-green-400" x-text="formatEur(vatReport.iva_repercutido.base)"></span>
+            </div>
+            <div class="flex justify-between items-end mt-1">
+              <span class="text-xs text-gray-500">Cuota IVA</span>
+              <span class="font-mono text-sm font-semibold text-green-400" x-text="formatEur(vatReport.iva_repercutido.cuota)"></span>
+            </div>
+          </div>
+
+          <!-- Resultado -->
+          <div class="stat-card">
+            <div class="text-xs text-amber-400 font-semibold uppercase tracking-wide mb-1">Casilla 64 — Resultado</div>
+            <template x-if="vatReport.resultado.a_ingresar > 0">
+              <div>
+                <div class="text-xs text-gray-500 mb-1">A ingresar en Hacienda</div>
+                <div class="font-mono text-2xl font-bold text-red-400" x-text="formatEur(vatReport.resultado.a_ingresar)"></div>
+              </div>
+            </template>
+            <template x-if="vatReport.resultado.a_compensar > 0">
+              <div>
+                <div class="text-xs text-gray-500 mb-1">A compensar (a favor)</div>
+                <div class="font-mono text-2xl font-bold text-indigo-400" x-text="formatEur(vatReport.resultado.a_compensar)"></div>
+              </div>
+            </template>
+            <template x-if="vatReport.resultado.a_ingresar === 0 && vatReport.resultado.a_compensar === 0">
+              <div class="font-mono text-2xl font-bold text-gray-400">0,00 €</div>
+            </template>
+          </div>
+
+          <!-- Nacional -->
+          <div class="stat-card">
+            <div class="text-xs text-blue-400 font-semibold uppercase tracking-wide mb-1"
+              x-text="'Casillas ' + vatReport.iva_soportado.nacional.casillas + ' — IVA Soportado Nacional'"></div>
+            <div class="flex justify-between items-end mt-2">
+              <span class="text-xs text-gray-500">Base</span>
+              <span class="font-mono text-sm text-gray-300" x-text="formatEur(vatReport.iva_soportado.nacional.base)"></span>
+            </div>
+            <div class="flex justify-between items-end mt-1">
+              <span class="text-xs text-gray-500">Cuota deducible</span>
+              <span class="font-mono text-sm font-semibold text-blue-400" x-text="formatEur(vatReport.iva_soportado.nacional.cuota)"></span>
+            </div>
+            <div class="text-xs text-gray-600 mt-1.5" x-text="vatReport.iva_soportado.nacional.receipts + ' facturas'"></div>
+          </div>
+
+          <!-- Intracomunitario -->
+          <div class="stat-card">
+            <div class="text-xs text-purple-400 font-semibold uppercase tracking-wide mb-1"
+              x-text="'Casillas ' + vatReport.iva_soportado.intracomunitario.casillas + ' — Intracomunitario (UE)'"></div>
+            <div class="flex justify-between items-end mt-2">
+              <span class="text-xs text-gray-500">Base</span>
+              <span class="font-mono text-sm text-gray-300" x-text="formatEur(vatReport.iva_soportado.intracomunitario.base)"></span>
+            </div>
+            <div class="flex justify-between items-end mt-1">
+              <span class="text-xs text-gray-500">Cuota</span>
+              <span class="font-mono text-sm font-semibold text-purple-400" x-text="formatEur(vatReport.iva_soportado.intracomunitario.cuota)"></span>
+            </div>
+            <div class="text-xs text-gray-600 mt-1.5" x-text="vatReport.iva_soportado.intracomunitario.receipts + ' facturas'"></div>
+          </div>
+
+          <!-- ISP -->
+          <div class="stat-card" style="grid-column: span 2">
+            <div class="text-xs text-orange-400 font-semibold uppercase tracking-wide mb-1"
+              x-text="'Casillas ' + vatReport.inversion_sujeto_pasivo.casillas + ' — Inversión del Sujeto Pasivo'"></div>
+            <p class="text-xs text-gray-600 mb-2" x-text="vatReport.inversion_sujeto_pasivo.note"></p>
+            <div class="grid grid-cols-3 gap-3">
+              <div>
+                <div class="text-xs text-gray-500">Base servicios</div>
+                <div class="font-mono text-sm font-semibold text-orange-400" x-text="formatEur(vatReport.inversion_sujeto_pasivo.base)"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500">Cuota autorepercutida (21%)</div>
+                <div class="font-mono text-sm font-semibold text-orange-400" x-text="formatEur(vatReport.inversion_sujeto_pasivo.cuota_autorepercutida)"></div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500">Nº proveedores ISP</div>
+                <div class="font-mono text-sm font-semibold text-gray-300" x-text="vatReport.inversion_sujeto_pasivo.receipts"></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ── Modelo 349 ────────────────────────────────────────────────────── -->
+        <div style="margin-top:16px; padding-top:16px; border-top: 1px solid #1f2937;">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="text-sm font-semibold text-purple-300">Modelo 349 — Operaciones intracomunitarias emitidas</span>
+            <button @click="loadModelo349()" :disabled="loading349" class="btn btn-ghost text-xs flex items-center gap-1">
+              <i class="ti ti-refresh" style="font-size:12px"></i>
+              <span x-text="loading349 ? 'Cargando…' : 'Cargar 349'"></span>
+            </button>
+          </div>
+
+          <template x-if="!vatReport349">
+            <p class="text-xs text-gray-600">Las facturas emitidas a clientes UE (intracomunitarias) deben declararse trimestralmente en el Modelo 349. Haz click en "Cargar 349" para ver el listado del trimestre seleccionado.</p>
+          </template>
+
+          <template x-if="vatReport349">
+            <div>
+              <template x-if="vatReport349.alerts.length > 0">
+                <div class="space-y-1 mb-3">
+                  <template x-for="alert in vatReport349.alerts" :key="alert">
+                    <div class="alert-bar text-xs" x-text="alert"></div>
+                  </template>
+                </div>
+              </template>
+
+              <template x-if="vatReport349.operations.length === 0">
+                <p class="text-gray-600 text-sm">Sin operaciones intracomunitarias en este trimestre.</p>
+              </template>
+
+              <template x-if="vatReport349.operations.length > 0">
+                <div>
+                  <div class="flex items-center gap-4 mb-3">
+                    <div class="text-xs text-gray-500">Total base: <span class="font-mono font-semibold text-purple-300" x-text="formatEur(vatReport349.total_base)"></span></div>
+                    <div class="text-xs text-gray-500">Operaciones: <span class="font-semibold text-gray-300" x-text="vatReport349.operations.length"></span></div>
+                  </div>
+
+                  <!-- By country summary -->
+                  <template x-if="Object.keys(vatReport349.by_country).length > 1">
+                    <div class="flex gap-3 flex-wrap mb-3">
+                      <template x-for="[cc, base] in Object.entries(vatReport349.by_country)" :key="cc">
+                        <div class="stat-card" style="padding:8px 12px; flex:none">
+                          <div class="text-xs text-gray-500 mb-0.5" x-text="cc"></div>
+                          <div class="font-mono text-sm font-semibold text-purple-300" x-text="formatEur(base)"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+
+                  <!-- Operations table -->
+                  <div class="bg-gray-950 border border-gray-800 rounded-lg overflow-hidden">
+                    <div class="grid table-header" style="grid-template-columns:130px 90px 1fr 130px 60px 100px 80px">
+                      <span>Nº Factura</span>
+                      <span>Fecha</span>
+                      <span>Cliente</span>
+                      <span>NIF-IVA</span>
+                      <span>País</span>
+                      <span>Base imp.</span>
+                      <span></span>
+                    </div>
+                    <template x-for="op in vatReport349.operations" :key="op.invoice_number">
+                      <div class="grid table-row items-center" style="grid-template-columns:130px 90px 1fr 130px 60px 100px 80px">
+                        <span class="font-mono text-xs text-indigo-400 font-semibold" x-text="op.invoice_number"></span>
+                        <span class="font-mono text-xs text-gray-400" x-text="op.date"></span>
+                        <span class="text-xs text-gray-200 truncate" x-text="op.customer_name"></span>
+                        <div>
+                          <span class="font-mono text-xs" :class="op.missing_nif ? 'text-orange-400 font-semibold' : 'text-gray-400'" x-text="op.customer_nif || 'FALTA NIF'"></span>
+                        </div>
+                        <span class="tag text-xs inv-intracom" x-text="op.customer_country"></span>
+                        <span class="font-mono text-xs font-semibold text-purple-300" x-text="formatEur(op.base_imponible)"></span>
+                        <template x-if="op.missing_nif">
+                          <span class="text-xs text-orange-400" title="NIF obligatorio para el Modelo 349"><i class="ti ti-alert-triangle" style="font-size:12px"></i></span>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+
+      </div>
+    </template>
+  </div>
+
+  </div><!-- /hasAccess -->
+</template>
+
+<!-- ── Modal: Subir recibo ────────────────────────────────────────────────── -->
+<div x-show="showReceiptModal" x-cloak class="modal-overlay" @click.self="showReceiptModal = false">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="font-semibold text-sm">Subir recibo / factura recibida</span>
+      <button @click="showReceiptModal = false" class="text-gray-500 hover:text-white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body space-y-4">
+
+      <!-- Drop zone -->
+      <div class="drop-zone"
+        :class="{ 'drag-over': isDragging }"
+        @dragover.prevent="isDragging = true"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="handleFileDrop($event)"
+        @click="$refs.fileInput.click()">
+        <input type="file" x-ref="fileInput" @change="handleFileSelect($event)" accept=".pdf,.jpg,.jpeg,.png,.webp" class="hidden">
+        <template x-if="!form.file">
+          <div>
+            <i class="ti ti-file-upload" style="font-size:28px;color:#4b5563;"></i>
+            <p class="text-gray-500 text-sm mt-2">PDF, JPEG o PNG · máx. 20 MB</p>
+            <p class="text-gray-600 text-xs mt-1">Click o drag &amp; drop</p>
+          </div>
+        </template>
+        <template x-if="form.file">
+          <div class="flex items-center gap-2 justify-center">
+            <i class="ti ti-file-check" style="font-size:20px;color:#6ee7b7;"></i>
+            <span class="text-sm text-gray-200" x-text="form.file.name"></span>
+            <button @click.stop="form.file = null" class="text-gray-500 hover:text-red-400 ml-2"><i class="ti ti-x"></i></button>
+          </div>
+        </template>
+      </div>
+
+      <!-- Row 1 -->
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="form-label">Proveedor *</label>
+          <input x-model="form.vendor_name" class="form-input" placeholder="Fly.io, Hetzner…">
+        </div>
+        <div>
+          <label class="form-label">NIF / VAT</label>
+          <input x-model="form.vendor_nif" class="form-input" placeholder="EU372007819">
+        </div>
+        <div>
+          <label class="form-label">País *</label>
+          <input x-model="form.vendor_country" @input="autoISP()" class="form-input" placeholder="DE, US, ES…" maxlength="2" style="text-transform:uppercase">
+        </div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="form-label">Fecha emisión *</label>
+          <input type="date" x-model="form.date" class="form-input">
+        </div>
+        <div>
+          <label class="form-label">Nº factura proveedor</label>
+          <input x-model="form.invoice_number" class="form-input" placeholder="INV-2025-001">
+        </div>
+        <div>
+          <label class="form-label">Tipo documento *</label>
+          <select x-model="form.doc_type" class="form-input">
+            <option value="factura_completa">Factura completa</option>
+            <option value="simplificada">Simplificada</option>
+            <option value="receipt">Receipt (sin IVA)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 3: importes -->
+      <div class="grid grid-cols-4 gap-3">
+        <div>
+          <label class="form-label">Base imponible</label>
+          <input type="number" step="0.01" x-model="form.base_imponible" @input="calcTax()" class="form-input" placeholder="0.00">
+        </div>
+        <div>
+          <label class="form-label">Tipo IVA %</label>
+          <select x-model="form.tax_rate" @change="calcTax()" class="form-input">
+            <option value="">—</option>
+            <option value="0">0%</option>
+            <option value="4">4%</option>
+            <option value="10">10%</option>
+            <option value="21">21%</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Cuota IVA</label>
+          <input type="number" step="0.01" x-model="form.tax_amount" class="form-input" placeholder="calc. auto">
+        </div>
+        <div>
+          <label class="form-label">Total *</label>
+          <input type="number" step="0.01" x-model="form.total_amount" class="form-input" placeholder="0.00">
+        </div>
+      </div>
+
+      <!-- Row 4 -->
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="form-label">Moneda</label>
+          <select x-model="form.currency" class="form-input">
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+            <option value="GBP">GBP</option>
+          </select>
+        </div>
+        <div x-show="form.currency !== 'EUR'">
+          <label class="form-label">Equiv. EUR</label>
+          <input type="number" step="0.01" x-model="form.eur_amount" class="form-input" placeholder="conversión manual">
+        </div>
+        <div>
+          <label class="form-label">Categoría</label>
+          <select x-model="form.category" class="form-input">
+            <option value="hosting">Hosting</option>
+            <option value="domain">Dominio</option>
+            <option value="api">API Costs</option>
+            <option value="software">Software</option>
+            <option value="personnel">Personal</option>
+            <option value="legal">Legal</option>
+            <option value="marketing">Marketing</option>
+            <option value="other">Otros</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ISP notice -->
+      <div x-show="form.vendor_country && form.vendor_country.toUpperCase() !== 'ES'" class="alert-bar">
+        <i class="ti ti-info-circle"></i>
+        <span>Proveedor no español → <strong>inversión del sujeto pasivo activada</strong>. Declara en casillas 12+13 del 303.</span>
+      </div>
+
+      <!-- Description -->
+      <div>
+        <label class="form-label">Descripción</label>
+        <input x-model="form.description" class="form-input" placeholder="Servidor VPS, acceso API…">
+      </div>
+
+      <div x-show="receiptError" class="text-red-400 text-xs" x-text="receiptError"></div>
+    </div>
+    <div class="modal-footer">
+      <button @click="showReceiptModal = false" class="btn btn-ghost">Cancelar</button>
+      <button @click="submitReceipt()" :disabled="submittingReceipt" class="btn btn-primary"
+        x-text="submittingReceipt ? 'Guardando…' : 'Guardar recibo'"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Nueva factura emitida ──────────────────────────────────────── -->
+<div x-show="showInvoiceModal" x-cloak class="modal-overlay" @click.self="showInvoiceModal = false">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="font-semibold text-sm">Nueva factura emitida</span>
+      <button @click="showInvoiceModal = false" class="text-gray-500 hover:text-white"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body space-y-4">
+
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="form-label">Cliente *</label>
+          <input x-model="invForm.customer_name" class="form-input" placeholder="Acme Corp.">
+        </div>
+        <div>
+          <label class="form-label">
+            NIF cliente
+            <template x-if="invForm.invoice_type === 'intracomunitaria'">
+              <span class="text-orange-400 ml-1">* obligatorio UE</span>
+            </template>
+          </label>
+          <input x-model="invForm.customer_nif" class="form-input"
+            :placeholder="invForm.invoice_type === 'intracomunitaria' ? 'DE123456789 (NIF-IVA)' : 'B12345678'"
+            :class="{ 'border-orange-500': invForm.invoice_type === 'intracomunitaria' && !invForm.customer_nif }">
+        </div>
+        <div>
+          <label class="form-label">País cliente</label>
+          <input x-model="invForm.customer_country" @input="detectInvoiceType()" class="form-input"
+            placeholder="ES" maxlength="2" style="text-transform:uppercase">
+        </div>
+      </div>
+
+      <!-- Operation type notice -->
+      <template x-if="invForm.invoice_type === 'intracomunitaria'">
+        <div class="alert-bar" style="border-color:#4c1d95; background:#1e1e3f; color:#a5b4fc;">
+          <i class="ti ti-building-bank"></i>
+          <span>
+            Operación <strong>intracomunitaria</strong> — aplica <strong>IVA 0%</strong> (Art. 25 LIVA).
+            Debe declararse en el <strong>Modelo 349</strong> del trimestre. NIF-IVA del cliente obligatorio.
+          </span>
+        </div>
+      </template>
+      <template x-if="invForm.invoice_type === 'exportacion'">
+        <div class="alert-bar" style="border-color:#065f46; background:#052e16; color:#86efac;">
+          <i class="ti ti-world"></i>
+          <span>
+            Exportación de servicios a país fuera de la UE — <strong>IVA 0%</strong> (Art. 69 LIVA).
+            No va al Modelo 349. Añade el texto <em>"Exento de IVA — Art. 69 LIVA"</em> en la factura.
+          </span>
+        </div>
+      </template>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="form-label">Fecha emisión *</label>
+          <input type="date" x-model="invForm.date" class="form-input">
+        </div>
+        <div>
+          <label class="form-label">Fecha vencimiento</label>
+          <input type="date" x-model="invForm.due_date" class="form-input">
+        </div>
+      </div>
+
+      <div>
+        <label class="form-label">Concepto / descripción *</label>
+        <input x-model="invForm.description" class="form-input" placeholder="Antcrew platform — acceso mensual Plan Pro">
+      </div>
+
+      <div class="grid grid-cols-4 gap-3">
+        <div>
+          <label class="form-label">Base imponible *</label>
+          <input type="number" step="0.01" x-model="invForm.base_imponible" @input="calcInvTax()" class="form-input" placeholder="0.00">
+        </div>
+        <div>
+          <label class="form-label">Tipo IVA %</label>
+          <select x-model="invForm.tax_rate" @change="calcInvTax()" class="form-input">
+            <option value="0">0%</option>
+            <option value="4">4%</option>
+            <option value="10">10%</option>
+            <option value="21" selected>21%</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Cuota IVA</label>
+          <input type="number" step="0.01" x-model="invForm.tax_amount" class="form-input" placeholder="calc. auto">
+        </div>
+        <div>
+          <label class="form-label">Total</label>
+          <input type="number" step="0.01" x-model="invForm.total_amount" class="form-input" placeholder="calc. auto">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="form-label">Notas</label>
+          <input x-model="invForm.notes" class="form-input" placeholder="Notas internas…">
+        </div>
+        <div>
+          <label class="form-label">Moneda</label>
+          <select x-model="invForm.currency" class="form-input">
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+      </div>
+
+      <div x-show="invoiceError" class="text-red-400 text-xs" x-text="invoiceError"></div>
+    </div>
+    <div class="modal-footer">
+      <button @click="showInvoiceModal = false" class="btn btn-ghost">Cancelar</button>
+      <button @click="submitInvoice()" :disabled="submittingInvoice" class="btn btn-primary"
+        x-text="submittingInvoice ? 'Guardando…' : 'Crear factura'"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+function accounting() {
+  const currentYear = new Date().getFullYear();
+
+  return {
+    // Access
+    loading: true,
+    hasAccess: false,
+
+    // Period
+    selectedYear: currentYear,
+    selectedQuarter: String(Math.ceil((new Date().getMonth() + 1) / 3)),
+    years: Array.from({ length: 5 }, (_, i) => currentYear - i),
+
+    // Data
+    summary: null,
+    receipts: [],
+    invoices: [],
+    vatReport: null,
+    vatReport349: null,
+    loading349: false,
+
+    // UI state
+    tab: 'gastos',
+    filterCat: '',
+    filterStatus: '',
+    exporting: false,
+
+    // Receipt modal
+    showReceiptModal: false,
+    isDragging: false,
+    submittingReceipt: false,
+    receiptError: '',
+    form: {},
+
+    // Invoice modal
+    showInvoiceModal: false,
+    submittingInvoice: false,
+    invoiceError: '',
+    invForm: {},
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    async init() {
+      const me = await fetch('/auth/me', { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null).catch(() => null);
+      this.loading = false;
+      if (!me || !me.is_platform_admin || !me.accounting_access) { this.hasAccess = false; return; }
+      this.hasAccess = true;
+      await this.loadAll();
+    },
+
+    // ── Period helpers ────────────────────────────────────────────────────────
+    periodRange() {
+      const y = this.selectedYear;
+      const q = parseInt(this.selectedQuarter);
+      if (!q) {
+        return { from: `${y}-01-01`, to: `${y}-12-31` };
+      }
+      const sm = (q - 1) * 3 + 1;
+      const em = sm + 2;
+      const lastDay = new Date(y, em, 0).getDate();
+      return { from: `${y}-${String(sm).padStart(2, '0')}-01`, to: `${y}-${String(em).padStart(2, '0')}-${lastDay}` };
+    },
+
+    // ── Data loading ──────────────────────────────────────────────────────────
+    async loadAll() {
+      const { from, to } = this.periodRange();
+      await Promise.all([this.loadSummary(from, to), this.loadReceipts(from, to), this.loadInvoices(from, to)]);
+      if (this.tab === 'vat' && this.selectedQuarter) this.loadVat();
+    },
+
+    _check403(r) {
+      if (r.status === 403) { this.hasAccess = false; return true; }
+      return false;
+    },
+
+    async loadSummary(from, to) {
+      const r = await fetch(`/accounting/summary?from=${from}&to=${to}`, { credentials: 'same-origin' });
+      if (this._check403(r)) return;
+      if (r.ok) this.summary = await r.json();
+    },
+
+    async loadReceipts(from, to) {
+      const r = await fetch(`/accounting/receipts/?from=${from}&to=${to}`, { credentials: 'same-origin' });
+      if (this._check403(r)) return;
+      if (r.ok) this.receipts = await r.json();
+    },
+
+    async loadInvoices(from, to) {
+      const r = await fetch(`/accounting/invoices/?from=${from}&to=${to}`, { credentials: 'same-origin' });
+      if (this._check403(r)) return;
+      if (r.ok) this.invoices = await r.json();
+    },
+
+    async loadVat() {
+      if (!this.selectedQuarter) return;
+      this.vatReport = null;
+      this.vatReport349 = null;
+      const r = await fetch(`/accounting/vat-report?year=${this.selectedYear}&quarter=${this.selectedQuarter}`, { credentials: 'same-origin' });
+      if (this._check403(r)) return;
+      if (r.ok) this.vatReport = await r.json();
+    },
+
+    async loadModelo349() {
+      if (!this.selectedQuarter || this.loading349) return;
+      this.loading349 = true;
+      try {
+        const r = await fetch(`/accounting/modelo349?year=${this.selectedYear}&quarter=${this.selectedQuarter}`, { credentials: 'same-origin' });
+        if (this._check403(r)) return;
+        if (r.ok) this.vatReport349 = await r.json();
+      } finally {
+        this.loading349 = false;
+      }
+    },
+
+    // ── Computed ──────────────────────────────────────────────────────────────
+    get filteredReceipts() {
+      return this.receipts.filter(r => {
+        if (this.filterCat && r.category !== this.filterCat) return false;
+        if (this.filterStatus && r.status !== this.filterStatus) return false;
+        return true;
+      });
+    },
+
+    // ── Format ───────────────────────────────────────────────────────────────
+    formatEur(v) {
+      if (v == null) return '—';
+      return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(v);
+    },
+
+    catLabel(cat) {
+      const map = {
+        hosting: 'Hosting', domain: 'Dominio', api: 'API Costs',
+        software: 'Software', personnel: 'Personal', legal: 'Legal',
+        marketing: 'Marketing', other: 'Otros',
+      };
+      return map[cat] || cat;
+    },
+
+    statusLabel(s) {
+      return { pending: 'Pendiente', verified: 'Verificado', rejected: 'Rechazado' }[s] || s;
+    },
+
+    invoiceStatusLabel(s) {
+      return { draft: 'Borrador', issued: 'Emitida', paid: 'Cobrada', void: 'Anulada' }[s] || s;
+    },
+
+    invTypeLabel(t) {
+      return { nacional: 'Nacional', intracomunitaria: 'Intracom.', exportacion: 'Exportación' }[t] || t;
+    },
+
+    catPct(amount) {
+      const max = Math.max(...Object.values(this.summary?.by_category || {}), 1);
+      return Math.round((amount / max) * 100);
+    },
+
+    // ── Chart ─────────────────────────────────────────────────────────────────
+    chartWidth() {
+      const months = Object.keys(this.summary?.monthly || {}).length;
+      return Math.max(months * 60 + 20, 200);
+    },
+
+    renderChart() {
+      if (!this.summary) return '';
+      const data = this.summary.monthly;
+      const months = Object.keys(data);
+      if (!months.length) return '';
+
+      const maxVal = Math.max(...months.map(m => Math.max(data[m].ingresos, data[m].gastos)), 1);
+      const H = 120, barW = 20, gap = 18, padL = 10;
+      let svg = '';
+
+      months.forEach((m, i) => {
+        const x = padL + i * (barW * 2 + gap);
+        const hI = (data[m].ingresos / maxVal) * H;
+        const hG = (data[m].gastos / maxVal) * H;
+        svg += `<rect x="${x}" y="${H - hI}" width="${barW}" height="${hI}" fill="#10b981" rx="2"/>`;
+        svg += `<rect x="${x + barW + 2}" y="${H - hG}" width="${barW}" height="${hG}" fill="#ef4444" rx="2"/>`;
+        svg += `<text x="${x + barW}" y="${H + 14}" text-anchor="middle" font-size="9" fill="#6b7280">${m.slice(5)}</text>`;
+      });
+      return svg;
+    },
+
+    // ── Export ────────────────────────────────────────────────────────────────
+    async exportZip() {
+      this.exporting = true;
+      const { from, to } = this.periodRange();
+      const r = await fetch(`/accounting/export?from=${from}&to=${to}`, { credentials: 'same-origin' });
+      if (r.ok) {
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `contabilidad_${from}_${to}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      this.exporting = false;
+    },
+
+    // ── Receipt actions ───────────────────────────────────────────────────────
+    openReceiptModal() {
+      this.form = {
+        vendor_name: '', vendor_nif: '', vendor_country: '', date: new Date().toISOString().slice(0, 10),
+        invoice_number: '', doc_type: 'factura_completa', base_imponible: '', tax_rate: '21',
+        tax_amount: '', total_amount: '', currency: 'EUR', eur_amount: '', category: 'other',
+        description: '', file: null,
+      };
+      this.receiptError = '';
+      this.showReceiptModal = true;
+    },
+
+    autoISP() {},
+
+    calcTax() {
+      if (this.form.base_imponible && this.form.tax_rate) {
+        const tax = parseFloat(this.form.base_imponible) * parseFloat(this.form.tax_rate) / 100;
+        this.form.tax_amount = tax.toFixed(2);
+        const total = parseFloat(this.form.base_imponible) + tax;
+        if (!this.form.total_amount) this.form.total_amount = total.toFixed(2);
+      }
+    },
+
+    handleFileDrop(ev) {
+      this.isDragging = false;
+      const f = ev.dataTransfer?.files?.[0];
+      if (f) this.form.file = f;
+    },
+
+    handleFileSelect(ev) {
+      const f = ev.target.files?.[0];
+      if (f) this.form.file = f;
+    },
+
+    async submitReceipt() {
+      if (!this.form.vendor_name || !this.form.date || !this.form.total_amount) {
+        this.receiptError = 'Proveedor, fecha y total son obligatorios.';
+        return;
+      }
+      this.submittingReceipt = true;
+      this.receiptError = '';
+      try {
+        const fd = new FormData();
+        if (this.form.file) fd.append('file', this.form.file);
+        fd.append('vendor_name', this.form.vendor_name);
+        fd.append('date', this.form.date);
+        fd.append('total_amount', this.form.total_amount);
+        if (this.form.invoice_number) fd.append('invoice_number', this.form.invoice_number);
+        if (this.form.vendor_nif) fd.append('vendor_nif', this.form.vendor_nif);
+        fd.append('vendor_country', (this.form.vendor_country || 'ES').toUpperCase());
+        if (this.form.base_imponible) fd.append('base_imponible', this.form.base_imponible);
+        if (this.form.tax_rate) fd.append('tax_rate', this.form.tax_rate);
+        if (this.form.tax_amount) fd.append('tax_amount', this.form.tax_amount);
+        fd.append('currency', this.form.currency);
+        if (this.form.eur_amount) fd.append('eur_amount', this.form.eur_amount);
+        fd.append('doc_type', this.form.doc_type);
+        fd.append('category', this.form.category);
+        if (this.form.description) fd.append('description', this.form.description);
+
+        const r = await fetch('/accounting/receipts/', {
+          method: 'POST', body: fd, credentials: 'same-origin',
+          headers: { 'X-CSRF-Token': this.csrfToken() },
+        });
+        if (r.ok) {
+          this.showReceiptModal = false;
+          await this.loadAll();
+          window.acToast?.('Recibo guardado', 'success');
+        } else {
+          const d = await r.json().catch(() => ({}));
+          this.receiptError = d.detail || `HTTP ${r.status}`;
+        }
+      } finally {
+        this.submittingReceipt = false;
+      }
+    },
+
+    async verifyReceipt(r) {
+      const res = await fetch(`/accounting/receipts/${r.id}/verify`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': this.csrfToken() },
+      });
+      if (res.ok) { await this.loadAll(); window.acToast?.('Recibo verificado', 'success'); }
+      else window.acToast?.('Error al verificar el recibo', 'error');
+    },
+
+    async deleteReceipt(r) {
+      if (!confirm(`Eliminar recibo de ${r.vendor_name}?`)) return;
+      const res = await fetch(`/accounting/receipts/${r.id}`, {
+        method: 'DELETE', credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': this.csrfToken() },
+      });
+      if (res.ok || res.status === 204) { await this.loadAll(); window.acToast?.('Recibo eliminado', 'success'); }
+      else window.acToast?.('Error al eliminar el recibo', 'error');
+    },
+
+    downloadFile(r) {
+      window.open(`/accounting/receipts/${r.id}/file`, '_blank');
+    },
+
+    // ── Invoice actions ───────────────────────────────────────────────────────
+    openInvoiceModal() {
+      this.invForm = {
+        customer_name: '', customer_nif: '', customer_country: 'ES',
+        invoice_type: 'nacional',
+        date: new Date().toISOString().slice(0, 10), due_date: '',
+        description: '', base_imponible: '', tax_rate: '21',
+        tax_amount: '', total_amount: '', currency: 'EUR', notes: '',
+      };
+      this.invoiceError = '';
+      this.showInvoiceModal = true;
+    },
+
+    detectInvoiceType() {
+      const EU = new Set(['AT','BE','BG','CY','CZ','DE','DK','EE','FI','FR','GR','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK']);
+      const cc = (this.invForm.customer_country || '').toUpperCase().trim();
+      if (!cc || cc === 'ES') {
+        this.invForm.invoice_type = 'nacional';
+        this.invForm.tax_rate = '21';
+      } else if (EU.has(cc)) {
+        this.invForm.invoice_type = 'intracomunitaria';
+        this.invForm.tax_rate = '0';
+        this.invForm.tax_amount = '0.00';
+        if (this.invForm.base_imponible) {
+          this.invForm.total_amount = parseFloat(this.invForm.base_imponible).toFixed(2);
+        }
+      } else {
+        this.invForm.invoice_type = 'exportacion';
+        this.invForm.tax_rate = '0';
+        this.invForm.tax_amount = '0.00';
+        if (this.invForm.base_imponible) {
+          this.invForm.total_amount = parseFloat(this.invForm.base_imponible).toFixed(2);
+        }
+      }
+    },
+
+    calcInvTax() {
+      if (this.invForm.base_imponible && this.invForm.tax_rate) {
+        const tax = parseFloat(this.invForm.base_imponible) * parseFloat(this.invForm.tax_rate) / 100;
+        this.invForm.tax_amount = tax.toFixed(2);
+        this.invForm.total_amount = (parseFloat(this.invForm.base_imponible) + tax).toFixed(2);
+      }
+    },
+
+    async submitInvoice() {
+      if (!this.invForm.customer_name || !this.invForm.date || !this.invForm.base_imponible) {
+        this.invoiceError = 'Cliente, fecha y base imponible son obligatorios.';
+        return;
+      }
+      this.submittingInvoice = true;
+      this.invoiceError = '';
+      try {
+        const body = {
+          customer_name: this.invForm.customer_name,
+          customer_nif: this.invForm.customer_nif || null,
+          customer_country: (this.invForm.customer_country || 'ES').toUpperCase(),
+          invoice_type: this.invForm.invoice_type || null,
+          date: this.invForm.date,
+          due_date: this.invForm.due_date || null,
+          line_items: [{ description: this.invForm.description, qty: 1, unit_price: parseFloat(this.invForm.base_imponible), tax_rate: parseFloat(this.invForm.tax_rate) }],
+          base_imponible: parseFloat(this.invForm.base_imponible),
+          tax_rate: parseFloat(this.invForm.tax_rate),
+          tax_amount: this.invForm.tax_amount ? parseFloat(this.invForm.tax_amount) : null,
+          total_amount: this.invForm.total_amount ? parseFloat(this.invForm.total_amount) : null,
+          currency: this.invForm.currency,
+          notes: this.invForm.notes || null,
+        };
+        const r = await fetch('/accounting/invoices/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrfToken() },
+          body: JSON.stringify(body),
+          credentials: 'same-origin',
+        });
+        if (r.ok) {
+          this.showInvoiceModal = false;
+          await this.loadAll();
+          window.acToast?.('Factura creada', 'success');
+        } else {
+          const d = await r.json().catch(() => ({}));
+          this.invoiceError = d.detail || `HTTP ${r.status}`;
+        }
+      } finally {
+        this.submittingInvoice = false;
+      }
+    },
+
+    async voidInvoice(inv) {
+      if (!confirm(`Anular factura ${inv.invoice_number}? Esta acción no se puede deshacer.`)) return;
+      const r = await fetch(`/accounting/invoices/${inv.id}/void`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': this.csrfToken() },
+      });
+      if (r.ok) { await this.loadAll(); window.acToast?.('Factura anulada', 'success'); }
+      else window.acToast?.('Error al anular la factura', 'error');
+    },
+
+    // ── CSRF ─────────────────────────────────────────────────────────────────
+    csrfToken() {
+      const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+      return m ? decodeURIComponent(m[1]) : '';
+    },
+
+    // ── VAT copy ──────────────────────────────────────────────────────────────
+    copyVatData() {
+      if (!this.vatReport) return;
+      const v = this.vatReport;
+      const text = [
+        `Modelo 303 — ${v.period} (${v.from} → ${v.to})`,
+        '',
+        `IVA REPERCUTIDO (casillas ${v.iva_repercutido.casillas})`,
+        `  Base: ${v.iva_repercutido.base} €`,
+        `  Cuota: ${v.iva_repercutido.cuota} €`,
+        '',
+        `IVA SOPORTADO NACIONAL (casillas ${v.iva_soportado.nacional.casillas})`,
+        `  Base: ${v.iva_soportado.nacional.base} €`,
+        `  Cuota: ${v.iva_soportado.nacional.cuota} €`,
+        '',
+        `INTRACOMUNITARIO (casillas ${v.iva_soportado.intracomunitario.casillas})`,
+        `  Base: ${v.iva_soportado.intracomunitario.base} €`,
+        '',
+        `INVERSIÓN SUJETO PASIVO (casillas ${v.inversion_sujeto_pasivo.casillas})`,
+        `  Base servicios: ${v.inversion_sujeto_pasivo.base} €`,
+        `  Cuota autorepercutida: ${v.inversion_sujeto_pasivo.cuota_autorepercutida} €`,
+        '',
+        `RESULTADO (casilla 64)`,
+        v.resultado.a_ingresar > 0 ? `  A INGRESAR: ${v.resultado.a_ingresar} €` : `  A COMPENSAR: ${v.resultado.a_compensar} €`,
+      ].join('\n');
+      navigator.clipboard.writeText(text).catch(() => {});
+    },
+  };
+}
+</script>
+</body>
+</html>
+

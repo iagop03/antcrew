@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compliance Pack — antcrew</title>
+<meta name="description" content="Give your compliance officer a portal. Signed attestations, bulk ZIP export, and a daily digest — no terminal required.">
+<style>
+:root {
+  --bg:          #030712;
+  --surface:     #0f172a;
+  --surface-2:   #1e293b;
+  --border:      #1e293b;
+  --border-2:    #334155;
+  --text:        #f1f5f9;
+  --muted:       #94a3b8;
+  --subtle:      #64748b;
+  --accent:      #0D9488;
+  --accent-h:    #2DD4BF;
+  --accent-sub:  rgba(13,148,136,.12);
+  --green:       #22c55e;
+  --green-sub:   rgba(34,197,94,.12);
+  --red:         #f87171;
+  --mono: ui-monospace,'SFMono-Regular',Consolas,'Liberation Mono',monospace;
+  --sans: -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;min-height:100vh}
+a{color:inherit;text-decoration:none}
+
+nav{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1.25rem 2rem;border-bottom:1px solid var(--border);
+  position:sticky;top:0;
+  background:rgba(3,7,18,.85);backdrop-filter:blur(12px);z-index:10;
+}
+.logo{font-family:var(--mono);font-weight:700;font-size:1.1rem;color:var(--accent-h);letter-spacing:-.02em}
+.nav-links{display:flex;align-items:center;gap:1.5rem}
+.nav-link{font-size:.875rem;color:var(--muted);transition:color .15s}
+.nav-link:hover{color:var(--text)}
+
+.btn{
+  display:inline-flex;align-items:center;gap:.375rem;
+  padding:.5rem 1.125rem;border-radius:.5rem;font-size:.875rem;font-weight:500;
+  cursor:pointer;border:none;transition:background .15s,opacity .15s;text-decoration:none;
+}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-h)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border-2)}
+.btn-ghost:hover{color:var(--text);border-color:var(--subtle)}
+.btn-lg{padding:.75rem 2rem;font-size:1rem;border-radius:.625rem}
+.btn-xl{padding:.9rem 2.5rem;font-size:1.0625rem;border-radius:.75rem}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+.container{max-width:62rem;margin:0 auto;padding:0 1.5rem}
+
+/* hero */
+.hero{padding:6rem 0 4rem;text-align:center}
+.eyebrow{
+  display:inline-block;font-family:var(--mono);font-size:.75rem;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--accent-h);
+  margin-bottom:1.5rem;padding:.25rem .75rem;
+  border:1px solid rgba(13,148,136,.3);border-radius:2rem;background:var(--accent-sub);
+}
+.hero h1{font-size:clamp(2rem,5vw,3.25rem);font-weight:700;line-height:1.15;letter-spacing:-.03em;text-wrap:balance;margin-bottom:1.25rem}
+.hero h1 em{font-style:normal;color:var(--accent-h)}
+.hero-sub{font-size:1.125rem;color:var(--muted);max-width:38rem;margin:0 auto 2.5rem;line-height:1.7;text-wrap:balance}
+.hero-actions{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;margin-bottom:.875rem}
+.hero-note{font-size:.8125rem;color:var(--subtle)}
+
+/* comparison */
+.compare-section{padding:3.5rem 0}
+.section-label{font-size:.75rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--subtle);margin-bottom:.75rem;font-family:var(--mono)}
+h2{font-size:clamp(1.375rem,3vw,1.875rem);font-weight:700;letter-spacing:-.025em;text-wrap:balance;margin-bottom:.5rem}
+.section-sub{font-size:1rem;color:var(--muted);line-height:1.7;max-width:36rem}
+
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-top:2.5rem}
+@media(max-width:600px){.compare-grid{grid-template-columns:1fr}}
+.compare-card{border-radius:1rem;padding:2rem;border:1px solid var(--border)}
+.compare-card.without{background:var(--surface);opacity:.85}
+.compare-card.with{
+  background:linear-gradient(135deg,rgba(13,148,136,.08),rgba(34,197,94,.05));
+  border-color:rgba(13,148,136,.4);
+}
+.compare-tag{display:inline-block;font-family:var(--mono);font-size:.68rem;font-weight:700;
+  letter-spacing:.09em;text-transform:uppercase;padding:.2rem .65rem;border-radius:2rem;margin-bottom:1.125rem}
+.tag-without{background:rgba(100,116,139,.15);color:var(--subtle)}
+.tag-with{background:var(--accent-sub);color:var(--accent-h)}
+.compare-card h3{font-size:1rem;font-weight:600;margin-bottom:1rem;letter-spacing:-.01em}
+.compare-list{list-style:none;display:flex;flex-direction:column;gap:.6rem}
+.compare-list li{font-size:.8125rem;color:var(--muted);display:flex;gap:.625rem;align-items:flex-start;line-height:1.5}
+.compare-list li .icon{flex-shrink:0;margin-top:.1rem}
+.icon-x{color:var(--red)}
+.icon-check{color:var(--green)}
+
+/* features */
+.features-section{padding:3.5rem 0;border-top:1px solid var(--border)}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(17rem,1fr));gap:.75rem;margin-top:2.5rem}
+.feature-card{
+  padding:1.375rem 1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:.875rem;
+}
+.feature-card h4{font-size:.9375rem;font-weight:600;margin-bottom:.375rem;letter-spacing:-.01em}
+.feature-card p{font-size:.8125rem;color:var(--muted);line-height:1.6}
+.feature-tag{font-family:var(--mono);font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent-h);margin-bottom:.625rem;display:block}
+
+/* pricing */
+.pricing-section{padding:4rem 0;border-top:1px solid var(--border)}
+.pricing-card{
+  background:linear-gradient(135deg,rgba(13,148,136,.1) 0%,rgba(34,197,94,.06) 100%);
+  border:1px solid rgba(13,148,136,.4);border-radius:1.25rem;
+  padding:3rem;position:relative;overflow:hidden;
+}
+.pricing-card::before{
+  content:'';position:absolute;top:-3rem;right:-3rem;width:14rem;height:14rem;
+  background:radial-gradient(circle,rgba(13,148,136,.18) 0%,transparent 70%);pointer-events:none;
+}
+.pricing-badge{
+  display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.7rem;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;padding:.3rem .75rem;border-radius:2rem;
+  background:rgba(13,148,136,.18);color:var(--accent-h);border:1px solid rgba(13,148,136,.35);
+  margin-bottom:1.5rem;
+}
+.pricing-card h2{margin-bottom:.375rem}
+.pricing-card .pricing-sub{font-size:.9375rem;color:var(--muted);max-width:34rem;line-height:1.7;margin-bottom:2.25rem}
+.price-toggle{display:flex;align-items:center;gap:.75rem;margin-bottom:1.75rem}
+.toggle-label{font-size:.875rem;color:var(--muted);cursor:pointer}
+.toggle-label.active{color:var(--text);font-weight:500}
+.toggle-switch{position:relative;width:2.75rem;height:1.5rem;cursor:pointer}
+.toggle-switch input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{
+  position:absolute;inset:0;background:var(--surface-2);border:1px solid var(--border-2);
+  border-radius:2rem;transition:background .2s,border-color .2s;
+}
+.toggle-switch input:checked + .toggle-track{background:var(--accent);border-color:var(--accent)}
+.toggle-thumb{
+  position:absolute;top:.25rem;left:.25rem;width:1rem;height:1rem;
+  background:#fff;border-radius:50%;transition:transform .2s;
+}
+.toggle-switch input:checked ~ .toggle-thumb{transform:translateX(1.25rem)}
+.annual-badge{
+  font-family:var(--mono);font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  padding:.175rem .55rem;border-radius:2rem;background:var(--green-sub);color:var(--green);
+  border:1px solid rgba(34,197,94,.3);
+}
+.price-display{display:flex;align-items:baseline;gap:.5rem;margin-bottom:.375rem}
+.price-amount{font-family:var(--mono);font-size:3rem;font-weight:700;color:var(--text);line-height:1}
+.price-unit{font-size:.9375rem;color:var(--muted)}
+.price-note{font-size:.8125rem;color:var(--subtle);margin-bottom:2rem}
+.cta-area{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+#checkout-btn{min-width:12rem}
+.cta-sub{font-size:.8125rem;color:var(--subtle)}
+
+/* verticals */
+.verticals-section{padding:3.5rem 0;border-top:1px solid var(--border)}
+.verticals-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.75rem;margin-top:2.5rem}
+.vertical-card{padding:1.25rem 1.375rem;background:var(--surface);border:1px solid var(--border);border-radius:.875rem}
+.vertical-name{font-size:.875rem;font-weight:600;margin-bottom:.375rem}
+.vertical-regs{display:flex;flex-wrap:wrap;gap:.375rem;margin-bottom:.625rem}
+.reg{font-family:var(--mono);font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  padding:.15rem .5rem;border-radius:2rem;background:var(--surface-2);color:var(--muted);border:1px solid var(--border-2)}
+.vertical-card p{font-size:.8rem;color:var(--muted);line-height:1.55}
+
+/* footer */
+footer{border-top:1px solid var(--border);padding:2rem 0}
+.footer-inner{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.footer-brand{font-family:var(--mono);font-size:.85rem;color:var(--subtle)}
+.footer-links{display:flex;gap:1.5rem}
+.footer-link{font-size:.8125rem;color:var(--subtle);transition:color .15s}
+.footer-link:hover{color:var(--muted)}
+
+/* notification */
+.toast{
+  position:fixed;bottom:1.5rem;right:1.5rem;z-index:100;
+  background:var(--surface);border:1px solid var(--border-2);border-radius:.75rem;
+  padding:.875rem 1.25rem;font-size:.875rem;max-width:22rem;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+  transform:translateY(6rem);opacity:0;transition:transform .3s,opacity .3s;
+}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.toast-ok{border-color:rgba(34,197,94,.4);color:var(--green)}
+.toast.toast-err{border-color:rgba(248,113,113,.4);color:var(--red)}
+
+@media(max-width:640px){
+  nav{padding:1rem 1.25rem}
+  .hero{padding:4rem 0 3rem}
+  .pricing-card{padding:2rem 1.5rem}
+  .footer-inner{flex-direction:column;text-align:center}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">antcrew</a>
+  <div class="nav-links">
+    <a href="/pricing" class="nav-link">Pricing</a>
+    <a href="/dashboard" class="nav-link">Dashboard</a>
+    <a href="/login" class="btn btn-ghost" style="padding:.4rem 1rem">Sign in</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <div class="eyebrow">Compliance Pack</div>
+    <h1>Your compliance officer<br>doesn't open a <em>terminal</em>.</h1>
+    <p class="hero-sub">
+      Every antcrew run produces a signed attestation. The Compliance Pack turns those into
+      a portal your auditor can browse, a ZIP they can file, and a daily digest in their inbox —
+      no developer involved.
+    </p>
+    <div class="hero-actions">
+      <button id="hero-cta" class="btn btn-primary btn-lg">Get started</button>
+      <a href="/compliance/dashboard" class="btn btn-ghost btn-lg">Open dashboard</a>
+    </div>
+    <p class="hero-note">$49 / month · $490 / year · cancel anytime</p>
+  </div>
+</section>
+
+<!-- COMPARISON -->
+<section class="compare-section">
+  <div class="container">
+    <div class="section-label">Before &amp; after</div>
+    <h2>Built for the person who writes the audit report</h2>
+    <p class="section-sub">
+      The audit infrastructure is already running. The pack adds the layer that makes it
+      readable outside your engineering team.
+    </p>
+    <div class="compare-grid">
+      <div class="compare-card without">
+        <span class="compare-tag tag-without">Without pack</span>
+        <h3>Developer-only access</h3>
+        <ul class="compare-list">
+          <li><span class="icon icon-x">✗</span> <span>Compliance officer emails a dev for each trace</span></li>
+          <li><span class="icon icon-x">✗</span> <span>One signed JSON per run, downloaded manually</span></li>
+          <li><span class="icon icon-x">✗</span> <span>No way to search or filter runs by status or team</span></li>
+          <li><span class="icon icon-x">✗</span> <span>Preparing an audit means terminal access and a zip command</span></li>
+          <li><span class="icon icon-x">✗</span> <span>No standing overview of what ran last 24 hours</span></li>
+        </ul>
+      </div>
+      <div class="compare-card with">
+        <span class="compare-tag tag-with">With Compliance Pack</span>
+        <h3>Compliance officer is self-sufficient</h3>
+        <ul class="compare-list">
+          <li><span class="icon icon-check">✓</span> <span>Opens <code>/compliance/dashboard</code> in a browser, no dev needed</span></li>
+          <li><span class="icon icon-check">✓</span> <span>One-click ZIP of HMAC-signed attestations for the last N runs</span></li>
+          <li><span class="icon icon-check">✓</span> <span>Paginated list filterable by status, team, date range</span></li>
+          <li><span class="icon icon-check">✓</span> <span>Auditor-ready export with workspace-stamped filename</span></li>
+          <li><span class="icon icon-check">✓</span> <span>Daily email digest of completed runs — no login required</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features-section">
+  <div class="container">
+    <div class="section-label">What's included</div>
+    <h2>Everything in the pack</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-tag">Dashboard</span>
+        <h4>Browser portal</h4>
+        <p>Compliance officers open <code>/compliance/dashboard</code>, enter their API key once (stored locally), and browse paginated attestations. No terminal, no IT ticket.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-tag">Export</span>
+        <h4>Bulk ZIP for auditors</h4>
+        <p>One click downloads a ZIP of HMAC-signed attestation JSONs for the last N completed runs. Hand it directly to your auditor or upload to your GRC tool.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-tag">Access control</span>
+        <h4>compliance_viewer role</h4>
+        <p>API keys with <code>role=compliance_viewer</code> are hard-restricted to <code>/compliance/*</code> paths. They cannot call run, billing, or admin endpoints under any circumstance.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-tag">Digest</span>
+        <h4>Daily email digest</h4>
+        <p>Compliance officer keys with an email address receive a daily summary of runs completed in the last 24 hours — without opening the dashboard.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-tag">Billing</span>
+        <h4>Self-serve checkout</h4>
+        <p>Purchase directly via Stripe from your workspace settings or via API. Pack enables automatically after payment. Disables immediately if a payment fails.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-tag">Infrastructure</span>
+        <h4>Already running (always free)</h4>
+        <p>TraceLog, governance hash, HMAC-signed attestations, and field encryption at rest are included in every workspace. The pack adds the aggregation layer on top.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing-section">
+  <div class="container">
+    <div class="pricing-card">
+      <div class="pricing-badge">Simple pricing</div>
+      <h2>One add-on. One price.</h2>
+      <p class="pricing-sub">
+        Per workspace. No per-seat fees, no usage limits on exports.
+        Cancel anytime — the pack disables at the end of the billing period.
+      </p>
+
+      <div class="price-toggle">
+        <span class="toggle-label active" id="label-monthly">Monthly</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="billing-toggle">
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+        <span class="toggle-label" id="label-annual">Annual <span class="annual-badge">2 months free</span></span>
+      </div>
+
+      <div class="price-display">
+        <span class="price-amount" id="price-amount">$49</span>
+        <span class="price-unit" id="price-unit">/ month</span>
+      </div>
+      <p class="price-note" id="price-note">Billed monthly. Switch to annual and save $98/year.</p>
+
+      <div class="cta-area">
+        <button id="checkout-btn" class="btn btn-primary btn-xl">Start with Compliance Pack</button>
+        <span class="cta-sub" id="cta-sub">No trial period — pack activates immediately on payment.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VERTICALS -->
+<section class="verticals-section">
+  <div class="container">
+    <div class="section-label">Use cases</div>
+    <h2>Which teams use the Compliance Pack</h2>
+    <p class="section-sub">The pack covers the non-developer side of AI compliance. The underlying infrastructure covers the rest.</p>
+    <div class="verticals-grid">
+      <div class="vertical-card">
+        <div class="vertical-name">FinTech</div>
+        <div class="vertical-regs"><span class="reg">SOC 2</span></div>
+        <p>Governance hash binds model config to each run. Export ZIP is the SOC 2 Type II evidence artifact your auditor files.</p>
+      </div>
+      <div class="vertical-card">
+        <div class="vertical-name">LegalTech</div>
+        <div class="vertical-regs"><span class="reg">Legal hold</span><span class="reg">eDiscovery</span></div>
+        <p>Cite the <code>experiment_id</code> from a ReproducibleResearchPipeline run. Export ZIP goes in the matter file.</p>
+      </div>
+      <div class="vertical-card">
+        <div class="vertical-name">HealthTech</div>
+        <div class="vertical-regs"><span class="reg">HIPAA</span></div>
+        <p>Self-hosted + BYOK keeps PHI on-prem. The pack adds the audit trail review layer for your Privacy Officer.</p>
+      </div>
+      <div class="vertical-card">
+        <div class="vertical-name">Any regulated team</div>
+        <div class="vertical-regs"><span class="reg">GDPR Art. 28</span><span class="reg">ISO 27001</span></div>
+        <p>DPA available for managed deployments. Self-hosted deployments make you Controller + Processor with full data sovereignty.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="toast" class="toast"></div>
+
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <span class="footer-brand">antcrew</span>
+      <div class="footer-links">
+        <a href="/pricing" class="footer-link">Pricing</a>
+        <a href="/privacy" class="footer-link">Privacy</a>
+        <a href="/tos" class="footer-link">Terms</a>
+        <a href="mailto:legal@antcrew.org" class="footer-link">Contact</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const toggle  = document.getElementById('billing-toggle');
+  const amount  = document.getElementById('price-amount');
+  const unit    = document.getElementById('price-unit');
+  const note    = document.getElementById('price-note');
+  const lblM    = document.getElementById('label-monthly');
+  const lblA    = document.getElementById('label-annual');
+
+  toggle.addEventListener('change', function () {
+    const annual = this.checked;
+    amount.textContent = annual ? '$490' : '$49';
+    unit.textContent   = annual ? '/ year' : '/ month';
+    note.textContent   = annual
+      ? 'Billed annually. Equivalent to $40.83/month — you save $98.'
+      : 'Billed monthly. Switch to annual and save $98/year.';
+    lblM.classList.toggle('active', !annual);
+    lblA.classList.toggle('active',  annual);
+  });
+
+  function showToast(msg, ok) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className   = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 4500);
+  }
+
+  async function startCheckout(btn) {
+    const cycle = toggle.checked ? 'annual' : 'monthly';
+    btn.disabled = true;
+    btn.textContent = 'Redirecting…';
+
+    // If the user has a session cookie we can call the API directly.
+    // If not, redirect to /onboard with a return hint.
+    const hasCookie = document.cookie.split(';').some(c => c.trim().startsWith('antcrew_session='));
+    if (!hasCookie) {
+      window.location.href = '/onboard?next=compliance-pack';
+      return;
+    }
+
+    try {
+      const res = await fetch('/compliance/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ billing_cycle: cycle }),
+      });
+
+      if (res.status === 409) {
+        showToast('Compliance Pack is already active for your workspace.', true);
+        btn.disabled    = false;
+        btn.textContent = 'Start with Compliance Pack';
+        return;
+      }
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.detail || 'Something went wrong. Try again.', false);
+        btn.disabled    = false;
+        btn.textContent = 'Start with Compliance Pack';
+        return;
+      }
+
+      const { checkout_url } = await res.json();
+      window.location.href = checkout_url;
+    } catch (e) {
+      showToast('Network error. Check your connection and try again.', false);
+      btn.disabled    = false;
+      btn.textContent = 'Start with Compliance Pack';
+    }
+  }
+
+  document.getElementById('checkout-btn').addEventListener('click', function () {
+    startCheckout(this);
+  });
+  document.getElementById('hero-cta').addEventListener('click', function () {
+    document.querySelector('.pricing-section').scrollIntoView({ behavior: 'smooth' });
+  });
+})();
+</script>
+</body>
+</html>

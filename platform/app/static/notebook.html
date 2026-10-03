@@ -1,0 +1,367 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notebook — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+<link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="notebook()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<div class="px-6 py-5 max-w-4xl">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-semibold text-white">Notebook</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Build multi-agent workflows step by step</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button @click="clearAll()"
+        class="text-xs text-gray-500 hover:text-gray-300 transition px-2 py-1 rounded border border-gray-800 hover:border-gray-700">
+        Clear
+      </button>
+      <button @click="exportJson()"
+        class="text-xs text-gray-500 hover:text-gray-300 transition px-2 py-1 rounded border border-gray-800 hover:border-gray-700">
+        Export JSON
+      </button>
+      <button @click="runWorkflow()"
+        :disabled="cells.length === 0 || running"
+        class="text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white transition">
+        <span x-show="!running">▶ Run workflow</span>
+        <span x-show="running" x-cloak>Running…</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Run result banner -->
+  <template x-if="runResult">
+    <div class="mb-5 rounded-xl border p-4 flex items-center gap-3"
+         :class="runResult.status === 'started'
+           ? 'bg-indigo-950 border-indigo-800'
+           : 'bg-green-950 border-green-800'">
+      <div>
+        <div class="text-sm font-medium text-white" x-text="runResult.status === 'started' ? 'Workflow started' : 'Done'"></div>
+        <a :href="'/run/' + runResult.run_id"
+           class="text-xs text-indigo-300 underline font-mono"
+           x-text="runResult.run_id"></a>
+      </div>
+    </div>
+  </template>
+
+  <!-- Cell list -->
+  <div class="space-y-3 mb-4">
+    <template x-for="(cell, idx) in cells" :key="cell.id">
+      <div class="bg-gray-900 border rounded-xl overflow-hidden transition"
+           :class="cell.focused ? 'border-indigo-700' : 'border-gray-800'">
+
+        <!-- Cell header -->
+        <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-800/60 bg-gray-900/70">
+          <span class="w-5 h-5 rounded text-xs flex items-center justify-center font-mono text-gray-500 bg-gray-800"
+                x-text="idx + 1"></span>
+          <!-- Type selector -->
+          <select x-model="cell.type"
+            class="bg-transparent text-xs text-gray-400 focus:outline-none cursor-pointer border-none">
+            <option value="goal">Goal</option>
+            <option value="agent">Agent step</option>
+            <option value="note">Note</option>
+            <option value="gate">Gate / condition</option>
+          </select>
+          <div class="ml-auto flex items-center gap-1.5">
+            <!-- Move up -->
+            <button @click="moveCell(idx, -1)" :disabled="idx === 0"
+              class="text-gray-600 hover:text-gray-300 disabled:opacity-30 transition text-xs px-1">↑</button>
+            <!-- Move down -->
+            <button @click="moveCell(idx, 1)" :disabled="idx === cells.length - 1"
+              class="text-gray-600 hover:text-gray-300 disabled:opacity-30 transition text-xs px-1">↓</button>
+            <!-- Delete -->
+            <button @click="removeCell(idx)"
+              class="text-gray-600 hover:text-red-400 transition text-xs px-1">✕</button>
+          </div>
+        </div>
+
+        <!-- Cell body -->
+        <div class="px-3 py-3">
+          <!-- Goal cell -->
+          <template x-if="cell.type === 'goal'">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Request / goal</label>
+              <textarea x-model="cell.content" rows="2" @focus="cell.focused = true" @blur="cell.focused = false"
+                placeholder="Describe what you want the agent workflow to achieve…"
+                class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+            </div>
+          </template>
+
+          <!-- Agent cell -->
+          <template x-if="cell.type === 'agent'">
+            <div class="space-y-2">
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="block text-xs text-gray-500 mb-1">Agent name</label>
+                  <input x-model="cell.agentName" @focus="cell.focused = true" @blur="cell.focused = false"
+                    list="agent-list" placeholder="e.g. researcher, coder, seo_analyst"
+                    class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div class="w-36">
+                  <label class="block text-xs text-gray-500 mb-1">Model override</label>
+                  <input x-model="cell.model" @focus="cell.focused = true" @blur="cell.focused = false"
+                    placeholder="blank = default"
+                    class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Instructions (optional override)</label>
+                <textarea x-model="cell.content" rows="2" @focus="cell.focused = true" @blur="cell.focused = false"
+                  placeholder="Additional instructions for this agent step…"
+                  class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+              </div>
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="block text-xs text-gray-500 mb-1">Consumes (state keys)</label>
+                  <input x-model="cell.consumes" @focus="cell.focused = true" @blur="cell.focused = false"
+                    placeholder="request, prd, tickets"
+                    class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-indigo-500 font-mono" />
+                </div>
+                <div class="flex-1">
+                  <label class="block text-xs text-gray-500 mb-1">Produces (state keys)</label>
+                  <input x-model="cell.produces" @focus="cell.focused = true" @blur="cell.focused = false"
+                    placeholder="prd, tickets"
+                    class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-indigo-500 font-mono" />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Note cell -->
+          <template x-if="cell.type === 'note'">
+            <textarea x-model="cell.content" rows="2" @focus="cell.focused = true" @blur="cell.focused = false"
+              placeholder="Add a comment or annotation…"
+              class="w-full bg-transparent text-sm text-gray-400 italic focus:outline-none resize-none"></textarea>
+          </template>
+
+          <!-- Gate cell -->
+          <template x-if="cell.type === 'gate'">
+            <div class="space-y-2">
+              <div class="flex gap-2">
+                <div class="flex-1">
+                  <label class="block text-xs text-gray-500 mb-1">Gate type</label>
+                  <select x-model="cell.gateType" @focus="cell.focused = true" @blur="cell.focused = false"
+                    class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500">
+                    <option value="non_empty">NonEmpty — key must exist and be non-empty</option>
+                    <option value="json">JSON — value must be valid JSON</option>
+                    <option value="python_syntax">PythonSyntax — code must be valid Python</option>
+                    <option value="schema">Schema — validate against artifact schema</option>
+                    <option value="all">All — all sub-gates must pass</option>
+                    <option value="any">Any — at least one sub-gate passes</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Gate expression</label>
+                <input x-model="cell.content" @focus="cell.focused = true" @blur="cell.focused = false"
+                  placeholder="e.g. prd.summary or tickets[0].title"
+                  class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 font-mono" />
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Add cell buttons -->
+  <div class="flex items-center gap-2 flex-wrap">
+    <button @click="addCell('goal')"
+      class="text-xs px-3 py-1.5 rounded-lg border border-gray-700 hover:border-indigo-600 text-gray-400 hover:text-indigo-300 transition">
+      + Goal
+    </button>
+    <button @click="addCell('agent')"
+      class="text-xs px-3 py-1.5 rounded-lg border border-gray-700 hover:border-indigo-600 text-gray-400 hover:text-indigo-300 transition">
+      + Agent step
+    </button>
+    <button @click="addCell('note')"
+      class="text-xs px-3 py-1.5 rounded-lg border border-dashed border-gray-800 hover:border-gray-700 text-gray-600 hover:text-gray-400 transition">
+      + Note
+    </button>
+    <button @click="addCell('gate')"
+      class="text-xs px-3 py-1.5 rounded-lg border border-dashed border-gray-800 hover:border-gray-700 text-gray-600 hover:text-gray-400 transition">
+      + Gate
+    </button>
+  </div>
+
+  <!-- Pipeline summary -->
+  <template x-if="cells.filter(c => c.type === 'agent').length > 0">
+    <div class="mt-8 bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Workflow preview</h2>
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <template x-for="(cell, idx) in cells.filter(c => c.type !== 'note')" :key="idx">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-mono px-2 py-1 rounded"
+              :class="{
+                'bg-indigo-950 text-indigo-300 border border-indigo-800': cell.type === 'agent',
+                'bg-amber-950 text-amber-300 border border-amber-900': cell.type === 'gate',
+                'bg-gray-800 text-gray-300 border border-gray-700': cell.type === 'goal',
+              }"
+              x-text="cell.type === 'agent' ? (cell.agentName || '?') : (cell.type === 'gate' ? '⚡ gate' : '▸ goal')">
+            </span>
+            <template x-if="idx < cells.filter(c => c.type !== 'note').length - 1">
+              <span class="text-gray-700 text-xs">→</span>
+            </template>
+          </div>
+        </template>
+      </div>
+      <div class="mt-3 text-xs text-gray-600">
+        <span x-text="cells.filter(c => c.type === 'agent').length + ' agent step(s)'"></span>
+        <span x-show="cells.filter(c => c.type === 'gate').length > 0"
+              x-text="' · ' + cells.filter(c => c.type === 'gate').length + ' gate(s)'"></span>
+      </div>
+    </div>
+  </template>
+
+  <!-- Error -->
+  <div x-show="runError" x-cloak class="mt-4 text-xs text-red-400 bg-red-950 border border-red-900 rounded-lg px-3 py-2"
+       x-text="runError"></div>
+</div>
+
+<!-- Agent datalist -->
+<datalist id="agent-list">
+  <option value="researcher">
+  <option value="coder">
+  <option value="code_reviewer">
+  <option value="tester">
+  <option value="product_manager">
+  <option value="devops">
+  <option value="doc_writer">
+  <option value="sprint_planner">
+  <option value="seo_analyst">
+  <option value="social_media">
+  <option value="email_campaign">
+  <option value="data_analyst">
+  <option value="cloud_architect">
+  <option value="db_schema">
+  <option value="design_system">
+  <option value="security">
+  <option value="codebase_scanner">
+</datalist>
+
+<script>
+function notebook() {
+  return {
+    cells: [],
+    running: false,
+    runError: '',
+    runResult: null,
+    _nextId: 1,
+
+    async init() {
+      const saved = localStorage.getItem('antcrew_notebook');
+      if (saved) {
+        try { this.cells = JSON.parse(saved); } catch {}
+      }
+      this.$watch('cells', (v) => localStorage.setItem('antcrew_notebook', JSON.stringify(v)), { deep: true });
+    },
+
+    addCell(type) {
+      this.cells.push({
+        id: this._nextId++,
+        type,
+        content: '',
+        agentName: '',
+        model: '',
+        consumes: '',
+        produces: '',
+        gateType: 'non_empty',
+        focused: false,
+      });
+    },
+
+    removeCell(idx) {
+      this.cells.splice(idx, 1);
+    },
+
+    moveCell(idx, dir) {
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= this.cells.length) return;
+      const tmp = this.cells[idx];
+      this.cells.splice(idx, 1);
+      this.cells.splice(newIdx, 0, tmp);
+    },
+
+    clearAll() {
+      if (!confirm('Clear all cells?')) return;
+      this.cells = [];
+      this.runResult = null;
+      this.runError = '';
+      localStorage.removeItem('antcrew_notebook');
+    },
+
+    exportJson() {
+      const data = JSON.stringify(this._buildPayload(), null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'workflow.json'; a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    _buildPayload() {
+      const goalCell = this.cells.find(c => c.type === 'goal');
+      const agentCells = this.cells.filter(c => c.type === 'agent');
+      const payload = { request: goalCell?.content || '' };
+      if (agentCells.length > 0) {
+        payload.pipeline = agentCells.map(c => ({
+          name: c.agentName,
+          ...(c.model ? { model: c.model } : {}),
+          ...(c.consumes ? { consumes: c.consumes.split(',').map(s => s.trim()).filter(Boolean) } : {}),
+          ...(c.produces ? { produces: c.produces.split(',').map(s => s.trim()).filter(Boolean) } : {}),
+          ...(c.content ? { instructions: c.content } : {}),
+        }));
+      }
+      return payload;
+    },
+
+    async runWorkflow() {
+      const goalCell = this.cells.find(c => c.type === 'goal');
+      if (!goalCell?.content.trim()) {
+        this.runError = 'Add a Goal cell with a request first.';
+        return;
+      }
+      this.running = true;
+      this.runError = '';
+      this.runResult = null;
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        const k = localStorage.getItem('antcrew_api_key');
+        if (k) headers['X-API-Key'] = k;
+        const r = await fetch('/run', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(this._buildPayload()),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${r.status}`);
+        }
+        const data = await r.json();
+        this.runResult = { run_id: data.run_id, status: 'started' };
+      } catch (err) {
+        this.runError = err.message;
+      } finally {
+        this.running = false;
+      }
+    },
+  };
+}
+</script>
+</body>
+</html>
+

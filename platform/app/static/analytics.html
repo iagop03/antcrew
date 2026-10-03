@@ -1,0 +1,260 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analytics — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+<link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+<style>
+.bar-fill {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #0D9488, #2DD4BF);
+  transition: width 0.5s ease;
+  min-width: 2px;
+}
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { color: #c7d2fe; }
+.sort-indicator { opacity: 0.4; font-size: 0.65rem; margin-left: 2px; }
+.sort-indicator.active { opacity: 1; color: #2DD4BF; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="analytics()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<!-- Header -->
+<div class="px-6 py-5 flex items-center justify-between">
+  <div>
+    <h1 class="text-xl font-semibold">Agent Analytics</h1>
+    <p class="text-gray-400 text-sm mt-0.5">Cost, tokens and duration by agent across all runs</p>
+  </div>
+  <button @click="load()" :disabled="loading"
+    class="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 text-sm px-3 py-1.5 rounded-lg border border-gray-700 transition flex items-center gap-1.5">
+    <i class="ti ti-refresh" :class="loading ? 'animate-spin' : ''"></i>
+    Refresh
+  </button>
+</div>
+
+<!-- Summary cards -->
+<div class="px-6 grid grid-cols-4 gap-3 mb-6">
+  <div class="bg-gray-900 rounded-lg p-3 border border-gray-800">
+    <div class="text-xs text-gray-400 mb-1">Total agents</div>
+    <div class="text-2xl font-bold text-indigo-400">
+      <template x-if="loading"><span class="inline-block w-8 h-6 bg-gray-800 animate-pulse rounded"></span></template>
+      <template x-if="!loading"><span x-text="agents.length"></span></template>
+    </div>
+  </div>
+  <div class="bg-gray-900 rounded-lg p-3 border border-gray-800">
+    <div class="text-xs text-gray-400 mb-1">Total cost</div>
+    <div class="text-2xl font-bold text-green-400">
+      <template x-if="loading"><span class="inline-block w-16 h-6 bg-gray-800 animate-pulse rounded"></span></template>
+      <template x-if="!loading"><span x-text="'$' + totalCost.toFixed(4)"></span></template>
+    </div>
+  </div>
+  <div class="bg-gray-900 rounded-lg p-3 border border-gray-800">
+    <div class="text-xs text-gray-400 mb-1">Total calls</div>
+    <div class="text-2xl font-bold text-yellow-400">
+      <template x-if="loading"><span class="inline-block w-10 h-6 bg-gray-800 animate-pulse rounded"></span></template>
+      <template x-if="!loading"><span x-text="totalCalls.toLocaleString()"></span></template>
+    </div>
+  </div>
+  <div class="bg-gray-900 rounded-lg p-3 border border-gray-800">
+    <div class="text-xs text-gray-400 mb-1">Avg duration</div>
+    <div class="text-2xl font-bold text-blue-400">
+      <template x-if="loading"><span class="inline-block w-12 h-6 bg-gray-800 animate-pulse rounded"></span></template>
+      <template x-if="!loading"><span x-text="avgDuration + 's'"></span></template>
+    </div>
+  </div>
+</div>
+
+<!-- Error banner -->
+<div x-show="loadError" class="px-6 mb-4">
+  <div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 flex items-center gap-3">
+    <span>⚠</span>
+    <span x-text="loadError"></span>
+    <button @click="load()" class="ml-auto text-xs text-red-400 hover:text-red-200 underline">Retry</button>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="px-6">
+  <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="border-b border-gray-800">
+        <tr class="text-gray-400 text-xs uppercase tracking-wide">
+          <th class="px-4 py-3 text-left sortable" @click="sort('agent_name')">
+            Agent
+            <span class="sort-indicator" :class="sortKey === 'agent_name' ? 'active' : ''"
+              x-text="sortKey === 'agent_name' ? (sortAsc ? '▲' : '▼') : '⇅'"></span>
+          </th>
+          <th class="px-4 py-3 text-right sortable" @click="sort('total_cost_usd')">
+            Total Cost
+            <span class="sort-indicator" :class="sortKey === 'total_cost_usd' ? 'active' : ''"
+              x-text="sortKey === 'total_cost_usd' ? (sortAsc ? '▲' : '▼') : '⇅'"></span>
+          </th>
+          <th class="px-4 py-3 text-left" style="min-width:120px">Cost share</th>
+          <th class="px-4 py-3 text-right sortable" @click="sort('avg_cost_usd')">
+            Avg/call
+            <span class="sort-indicator" :class="sortKey === 'avg_cost_usd' ? 'active' : ''"
+              x-text="sortKey === 'avg_cost_usd' ? (sortAsc ? '▲' : '▼') : '⇅'"></span>
+          </th>
+          <th class="px-4 py-3 text-right sortable" @click="sort('call_count')">
+            Calls
+            <span class="sort-indicator" :class="sortKey === 'call_count' ? 'active' : ''"
+              x-text="sortKey === 'call_count' ? (sortAsc ? '▲' : '▼') : '⇅'"></span>
+          </th>
+          <th class="px-4 py-3 text-right sortable" @click="sort('avg_duration_s')">
+            Avg duration
+            <span class="sort-indicator" :class="sortKey === 'avg_duration_s' ? 'active' : ''"
+              x-text="sortKey === 'avg_duration_s' ? (sortAsc ? '▲' : '▼') : '⇅'"></span>
+          </th>
+          <th class="px-4 py-3 text-right">Avg tokens in</th>
+          <th class="px-4 py-3 text-right">Avg tokens out</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Loading skeleton -->
+        <template x-if="loading">
+          <template x-for="i in 5" :key="i">
+            <tr class="border-b border-gray-800">
+              <td class="px-4 py-3"><div class="h-4 bg-gray-800 rounded animate-pulse w-24"></div></td>
+              <td class="px-4 py-3 text-right"><div class="h-4 bg-gray-800 rounded animate-pulse w-16 ml-auto"></div></td>
+              <td class="px-4 py-3"><div class="h-2 bg-gray-800 rounded-full animate-pulse w-20"></div></td>
+              <td class="px-4 py-3 text-right"><div class="h-4 bg-gray-800 rounded animate-pulse w-14 ml-auto"></div></td>
+              <td class="px-4 py-3 text-right"><div class="h-4 bg-gray-800 rounded animate-pulse w-10 ml-auto"></div></td>
+              <td class="px-4 py-3 text-right"><div class="h-4 bg-gray-800 rounded animate-pulse w-12 ml-auto"></div></td>
+              <td class="px-4 py-3 text-right"><div class="h-4 bg-gray-800 rounded animate-pulse w-12 ml-auto"></div></td>
+              <td class="px-4 py-3 text-right"><div class="h-4 bg-gray-800 rounded animate-pulse w-12 ml-auto"></div></td>
+            </tr>
+          </template>
+        </template>
+
+        <!-- Data rows -->
+        <template x-if="!loading">
+          <template x-for="agent in sorted" :key="agent.agent_name">
+            <tr class="border-b border-gray-800 hover:bg-gray-800/40 transition">
+              <td class="px-4 py-3">
+                <span class="font-medium text-indigo-300" x-text="agent.agent_name"></span>
+              </td>
+              <td class="px-4 py-3 text-right font-mono text-sm text-green-400"
+                x-text="'$' + agent.total_cost_usd.toFixed(4)"></td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden" style="min-width:60px;max-width:100px">
+                    <div class="bar-fill" :style="'width:' + costPct(agent) + '%'"></div>
+                  </div>
+                  <span class="text-xs text-gray-500 font-mono w-10 text-right"
+                    x-text="costPct(agent).toFixed(1) + '%'"></span>
+                </div>
+              </td>
+              <td class="px-4 py-3 text-right font-mono text-xs text-gray-300"
+                x-text="'$' + agent.avg_cost_usd.toFixed(5)"></td>
+              <td class="px-4 py-3 text-right text-gray-300" x-text="agent.call_count.toLocaleString()"></td>
+              <td class="px-4 py-3 text-right text-gray-300"
+                x-text="agent.avg_duration_s.toFixed(1) + 's'"></td>
+              <td class="px-4 py-3 text-right font-mono text-xs text-gray-400"
+                x-text="agent.avg_tokens_in.toLocaleString()"></td>
+              <td class="px-4 py-3 text-right font-mono text-xs text-gray-400"
+                x-text="agent.avg_tokens_out.toLocaleString()"></td>
+            </tr>
+          </template>
+        </template>
+
+        <!-- Empty state -->
+        <template x-if="!loading && agents.length === 0 && !loadError">
+          <tr>
+            <td colspan="8" class="px-4 py-12 text-center text-gray-500">
+              <div class="text-2xl mb-2">📊</div>
+              <div class="text-sm">No agent data yet. Run a pipeline with agents to see cost analytics here.</div>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  <p class="text-xs text-gray-600 mt-2">Aggregated across all completed runs in this workspace. Sorted by total cost by default.</p>
+</div>
+
+<script>
+function analytics() {
+  return {
+    agents: [],
+    loading: true,
+    loadError: null,
+    sortKey: 'total_cost_usd',
+    sortAsc: false,
+
+    async init() {
+      await this.load();
+    },
+
+    async load() {
+      this.loading = true;
+      this.loadError = null;
+      try {
+        const res = await fetch('/runs/agent-stats', {
+          headers: { 'Accept': 'application/json' },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        this.agents = data.agents || [];
+      } catch (e) {
+        this.loadError = 'Failed to load agent stats: ' + e.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    sort(key) {
+      if (this.sortKey === key) {
+        this.sortAsc = !this.sortAsc;
+      } else {
+        this.sortKey = key;
+        this.sortAsc = key === 'agent_name';
+      }
+    },
+
+    get sorted() {
+      const dir = this.sortAsc ? 1 : -1;
+      return [...this.agents].sort((a, b) => {
+        const av = a[this.sortKey] ?? '';
+        const bv = b[this.sortKey] ?? '';
+        if (typeof av === 'number') return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    },
+
+    get totalCost() {
+      return this.agents.reduce((s, a) => s + (a.total_cost_usd || 0), 0);
+    },
+
+    get totalCalls() {
+      return this.agents.reduce((s, a) => s + (a.call_count || 0), 0);
+    },
+
+    get avgDuration() {
+      if (!this.agents.length) return '0.0';
+      const total = this.agents.reduce((s, a) => s + (a.avg_duration_s || 0), 0);
+      return (total / this.agents.length).toFixed(1);
+    },
+
+    costPct(agent) {
+      if (!this.totalCost) return 0;
+      return (agent.total_cost_usd / this.totalCost) * 100;
+    },
+  };
+}
+</script>
+</body>
+</html>
+

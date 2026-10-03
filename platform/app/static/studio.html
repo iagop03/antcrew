@@ -1,0 +1,703 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="theme-color" content="#1E4D6B">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AntCrew Studio</title>
+  <style>
+    :root {
+      --bg:     #09090F;
+      --s1:     #0E0E1A;
+      --s2:     #161624;
+      --s3:     #1C1C2E;
+      --bd:     #252538;
+      --bd2:    #2E2E48;
+      --ac:     #7B6CF2;
+      --ac-g:   rgba(123,108,242,.15);
+      --ac-d:   rgba(123,108,242,.07);
+      --tx:     #CDD2E8;
+      --mu:     #5C6285;
+      --dim:    #33364A;
+      --ok:     #34D399;
+      --ok-b:   rgba(52,211,153,.09);
+      --err:    #F87171;
+      --err-b:  rgba(248,113,113,.09);
+      --warn:   #FBBF24;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--tx);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Topbar ─────────────────────────────────── */
+    .topbar {
+      height: 48px; flex-shrink: 0;
+      background: var(--s1);
+      border-bottom: 1px solid var(--bd);
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 16px;
+    }
+    .brand {
+      font-size: 14px; font-weight: 700;
+      color: var(--ac); letter-spacing: -.01em;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .brand-sub {
+      font-size: 9px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--mu);
+    }
+    .sep { color: var(--dim); }
+    .runid { font-family: "Courier New", monospace; font-size: 11px; color: var(--mu); }
+
+    .pill {
+      font-size: 10px; font-weight: 700; letter-spacing: .06em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 20px;
+    }
+    .ok-pill  { background: var(--ok-b);  color: var(--ok);  border: 1px solid rgba(52,211,153,.22); }
+    .err-pill { background: var(--err-b); color: var(--err); border: 1px solid rgba(248,113,113,.22); }
+    .run-pill { background: var(--ac-d);  color: #2DD4BF;    border: 1px solid rgba(45,212,191,.25); }
+
+    .stat { font-size: 12px; color: var(--mu); }
+    .stat b { color: var(--tx); font-weight: 600; }
+    .spacer { flex: 1; }
+
+    .btn {
+      font-size: 12px; font-weight: 500; padding: 5px 12px;
+      border-radius: 6px; border: 1px solid var(--bd2);
+      background: var(--s2); color: var(--tx); cursor: pointer;
+      transition: background .12s;
+    }
+    .btn:hover { background: var(--s3); }
+    .btn-ac { border-color: rgba(123,108,242,.35); background: var(--ac-d); color: #a09af5; }
+    .btn-ac:hover { background: var(--ac-g); }
+
+    /* ── Workspace ──────────────────────────────── */
+    .workspace {
+      flex: 1; min-height: 0;
+      display: grid;
+      grid-template-columns: 218px 1fr 298px;
+    }
+
+    /* ── Sidebar ────────────────────────────────── */
+    .sidebar {
+      background: var(--s1);
+      border-right: 1px solid var(--bd);
+      display: flex; flex-direction: column;
+      overflow-y: auto;
+    }
+    .sb-sec { padding: 12px 14px; border-bottom: 1px solid var(--bd); }
+    .sb-lbl {
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--dim); margin-bottom: 8px;
+    }
+
+    .run-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 8px; border-radius: 6px; cursor: pointer;
+      transition: background .1s;
+    }
+    .run-item:hover { background: var(--s2); }
+    .run-item.active { background: var(--ac-d); }
+    .rdot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .rdot-ok  { background: var(--ok); }
+    .rdot-err { background: var(--err); }
+    .rdot-run { background: #2DD4BF; box-shadow: 0 0 6px #2DD4BF;
+                animation: blink 1.5s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .run-item-id { font-family: monospace; font-size: 11px; color: var(--mu); }
+    .run-item-team { font-size: 11px; color: var(--dim); }
+
+    .meta-row { display: flex; justify-content: space-between; padding: 3px 0; }
+    .mk { color: var(--mu); }
+    .mv { color: var(--tx); font-weight: 500; }
+    .req { font-size: 11px; color: var(--mu); line-height: 1.55; margin-top: 4px;
+           display: -webkit-box; -webkit-line-clamp: 5;
+           -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* ── DAG canvas ─────────────────────────────── */
+    .canvas {
+      position: relative;
+      overflow: auto;
+      background-color: var(--bg);
+      background-image: radial-gradient(circle, var(--dim) 1px, transparent 1px);
+      background-size: 26px 26px;
+    }
+    #dag { display: block; }
+
+    /* SVG element classes */
+    .edge {
+      fill: none;
+      stroke: var(--bd2);
+      stroke-width: 1.5;
+      stroke-dasharray: 7 5;
+      animation: dash .9s linear infinite;
+    }
+    @keyframes dash { to { stroke-dashoffset: -24; } }
+    .edge-lbl { font-size: 9px; fill: var(--mu); font-family: "Courier New", monospace; }
+    .nrect {
+      fill: var(--s2); stroke: var(--bd2); stroke-width: 1;
+      transition: fill .12s, stroke .12s;
+    }
+    .nrect.sel { stroke: var(--ac); stroke-width: 2; fill: var(--s3); }
+    .nrect:hover { fill: var(--s3); }
+    .nname { font-size: 12px; font-weight: 600; fill: var(--tx); }
+    .nstats { font-size: 10px; fill: var(--mu); font-family: "Courier New", monospace; }
+    .nring { fill: none; stroke-width: 2.5; }
+    .nring-ok  { stroke: var(--ok);  opacity: .7; }
+    .nring-err { stroke: var(--err); opacity: .8; }
+    .nring-run { stroke: #2DD4BF; opacity: .9; animation: blink 1.5s ease-in-out infinite; }
+
+    /* ── Detail panel ───────────────────────────── */
+    .detail {
+      background: var(--s1);
+      border-left: 1px solid var(--bd);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .d-empty {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; color: var(--dim);
+    }
+    .d-empty p { font-size: 12px; }
+    .d-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .d-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--bd); }
+    .d-name { font-size: 15px; font-weight: 700; margin-bottom: 7px; }
+    .d-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+    .chip {
+      font-size: 10px; padding: 2px 8px; border-radius: 4px;
+      border: 1px solid var(--bd2); color: var(--mu); background: var(--s2);
+    }
+    .chip-ac { border-color: rgba(123,108,242,.3); color: #a09af5; background: var(--ac-d); }
+    .chip-ok { border-color: rgba(52,211,153,.25); color: var(--ok); background: var(--ok-b); }
+
+    .tabs { display: flex; border-bottom: 1px solid var(--bd); }
+    .tab {
+      flex: 1; padding: 8px 0; text-align: center;
+      font-size: 12px; font-weight: 500; color: var(--mu); cursor: pointer;
+      border-bottom: 2px solid transparent; transition: color .12s, border-color .12s;
+    }
+    .tab:hover { color: var(--tx); }
+    .tab.on { color: var(--ac); border-bottom-color: var(--ac); }
+
+    .d-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+    .db-sec { margin-bottom: 18px; }
+    .db-lbl {
+      font-size: 10px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--dim); margin-bottom: 7px;
+    }
+    .ktag {
+      display: inline-block; font-family: monospace; font-size: 11px;
+      padding: 2px 8px; border-radius: 4px;
+      background: var(--s2); border: 1px solid var(--bd); color: var(--ac);
+      margin: 2px 3px 2px 0;
+    }
+
+    .pg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .pc {
+      background: var(--s2); border: 1px solid var(--bd);
+      border-radius: 8px; padding: 10px 12px;
+    }
+    .pc-lbl { font-size: 10px; color: var(--mu); margin-bottom: 4px; }
+    .pc-val { font-size: 20px; font-weight: 700; color: var(--tx); line-height: 1.1; }
+    .pc-u { font-size: 11px; color: var(--mu); margin-left: 2px; }
+
+    .bar-wrap { margin-top: 4px; }
+    .bar-row { font-size: 10px; color: var(--mu); display: flex; justify-content: space-between; margin-bottom: 5px; }
+    .bar { height: 4px; border-radius: 2px; background: var(--bd2); overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 2px; background: var(--ac); }
+
+    .ev-row {
+      display: flex; gap: 10px; padding: 7px 0;
+      border-bottom: 1px solid var(--bd);
+    }
+    .ev-t { font-family: monospace; font-size: 10px; color: var(--mu); white-space: nowrap; width: 56px; flex-shrink: 0; padding-top: 1px; }
+    .ev-kind { font-family: monospace; font-size: 11px; color: var(--ac); }
+    .ev-desc { font-size: 11px; color: var(--mu); margin-top: 2px; }
+
+    .demo-badge {
+      position: absolute; top: 10px; right: 10px; z-index: 5;
+      font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 4px;
+      color: var(--warn); background: rgba(251,191,36,.07);
+      border: 1px solid rgba(251,191,36,.2);
+    }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 2px; }
+  </style>
+<link rel="stylesheet" href="/static/design.css">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="brand">
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+      <ellipse cx="10" cy="10" rx="3" ry="4" fill="currentColor" opacity=".9"/>
+      <ellipse cx="10" cy="5"  rx="2" ry="2.5" fill="currentColor"/>
+      <line x1="10" y1="10" x2="4"  y2="7"  stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="10" y1="11" x2="3"  y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="10" y1="12" x2="4"  y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="10" y1="10" x2="16" y2="7"  stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="10" y1="11" x2="17" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="10" y1="12" x2="16" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    AntCrew <span class="brand-sub">Studio</span>
+  </span>
+  <span class="sep">/</span>
+  <span class="runid" id="t-runid">—</span>
+  <span class="pill" id="t-status">—</span>
+  <span class="stat" id="t-cost"></span>
+  <span class="stat" id="t-dur"></span>
+  <span class="spacer"></span>
+  <button class="btn btn-ac" onclick="exportNdjson()">↓ Export NDJSON</button>
+  <button class="btn" onclick="promptLoad()">Load Run…</button>
+</header>
+
+<main class="workspace">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sb-sec">
+      <div class="sb-lbl">Recent Runs</div>
+      <div id="run-list"></div>
+    </div>
+    <div class="sb-sec" id="sb-meta" style="display:none">
+      <div class="sb-lbl">Run</div>
+      <div id="sb-meta-body"></div>
+    </div>
+    <div class="sb-sec" id="sb-req" style="display:none">
+      <div class="sb-lbl">Request</div>
+      <div class="req" id="sb-req-text"></div>
+    </div>
+  </aside>
+
+  <!-- DAG canvas -->
+  <section class="canvas" id="canvas">
+    <span class="demo-badge" id="demo-badge" style="display:none">Demo</span>
+    <svg id="dag" xmlns="http://www.w3.org/2000/svg"></svg>
+  </section>
+
+  <!-- Detail panel -->
+  <aside class="detail">
+    <div class="d-empty" id="d-empty">
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.4">
+        <rect x="3" y="11" width="14" height="18" rx="3"/>
+        <rect x="23" y="11" width="14" height="18" rx="3"/>
+        <path d="M17 20h6" stroke-linecap="round"/>
+        <circle cx="20" cy="20" r="1.8" fill="currentColor" stroke="none"/>
+      </svg>
+      <p>Click an agent node</p>
+    </div>
+    <div class="d-main" id="d-main" style="display:none">
+      <div class="d-head">
+        <div class="d-name" id="d-name">—</div>
+        <div class="d-chips" id="d-chips"></div>
+      </div>
+      <div class="tabs">
+        <div class="tab on" id="tab-io"   onclick="switchTab('io')">I/O</div>
+        <div class="tab"    id="tab-perf" onclick="switchTab('perf')">Perf</div>
+        <div class="tab"    id="tab-evt"  onclick="switchTab('evt')">Events</div>
+      </div>
+      <div class="d-body" id="d-body"></div>
+    </div>
+  </aside>
+
+</main>
+
+<script>
+// ── Demo data ───────────────────────────────────────────────────────────────
+const DEMO_RUN = {
+  run_id: "d4f9a2c8ee3b4f12",
+  team: "DevTeam",
+  status: "success",
+  cost_usd: 0.0325,
+  duration_s: 14.2,
+  model: "claude-sonnet-4-5",
+  created_at: "2026-08-14T10:22:00Z",
+  request: "Build a JWT authentication module with login, registration, and password reset endpoints. Include input validation and proper error handling.",
+  agents: [
+    { name:"PMAgent",          layer:0, idx:0, dur:2.1, ti:412,  to:891,  cost:0.0041, ins:["request"],                         outs:["prd","tickets"],      status:"success" },
+    { name:"BackendDevAgent",  layer:1, idx:0, dur:4.8, ti:1823, to:2341, cost:0.0112, ins:["tickets","metadata"],               outs:["code_artifacts"],     status:"success" },
+    { name:"FrontendDevAgent", layer:1, idx:1, dur:3.9, ti:1456, to:1987, cost:0.0089, ins:["tickets","metadata"],               outs:["code_artifacts"],     status:"success" },
+    { name:"QAAgent",          layer:2, idx:0, dur:2.4, ti:932,  to:1123, cost:0.0052, ins:["code_artifacts","tickets"],         outs:["test_artifacts"],     status:"success" },
+    { name:"ReviewerAgent",    layer:3, idx:0, dur:1.8, ti:723,  to:456,  cost:0.0031, ins:["code_artifacts","test_artifacts"],  outs:["review"],             status:"success" },
+  ],
+  edges: [
+    { from:"PMAgent",         to:"BackendDevAgent",  lbl:"tickets" },
+    { from:"PMAgent",         to:"FrontendDevAgent", lbl:"tickets" },
+    { from:"BackendDevAgent", to:"QAAgent",          lbl:"code_artifacts" },
+    { from:"FrontendDevAgent",to:"QAAgent",          lbl:"code_artifacts" },
+    { from:"QAAgent",         to:"ReviewerAgent",    lbl:"test_artifacts" },
+    { from:"BackendDevAgent", to:"ReviewerAgent",    lbl:"code_artifacts" },
+  ],
+};
+
+const DEMO_LIST = [
+  { run_id:"d4f9a2c8ee3b4f12", team:"DevTeam",      status:"success" },
+  { run_id:"a1b2c3d4ef569871", team:"ResearchTeam",  status:"success" },
+  { run_id:"f8e7d6c5b432a109", team:"DevTeam",       status:"error"   },
+  { run_id:"9e8d7c6b5a43b210", team:"FullStackTeam", status:"success" },
+];
+
+// ── Layout ──────────────────────────────────────────────────────────────────
+const NW = 150, NH = 60;
+const LX = 230, RY = 110;
+const PX = 80,  PY = 40;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// ── State ───────────────────────────────────────────────────────────────────
+let RUN = null, SEL = null, TAB = "io";
+let POSITIONS = {};
+let MAX_COST = 0.0001;
+let DEMO = true;
+const APIKEY = () => localStorage.getItem("antcrew_api_key") || "";
+
+// ── Init ────────────────────────────────────────────────────────────────────
+(function init() {
+  const p = new URLSearchParams(location.search);
+  const id = p.get("run_id");
+  if (id) {
+    DEMO = false;
+    loadLive(id);
+  } else {
+    DEMO = true;
+    document.getElementById("demo-badge").style.display = "block";
+    apply(DEMO_RUN);
+  }
+  renderList(DEMO_LIST, 0);
+})();
+
+// ── Data loading ─────────────────────────────────────────────────────────────
+async function loadLive(runId) {
+  const h = { Authorization: `Bearer ${APIKEY()}` };
+  try {
+    const [rr, ar] = await Promise.all([
+      fetch(`/runs/${runId}`, { headers: h }),
+      fetch(`/runs/${runId}/agents`, { headers: h }),
+    ]);
+    if (!rr.ok) { fallbackDemo(); return; }
+    const run = await rr.json();
+    const ag  = ar.ok ? await ar.json() : { agents: [] };
+
+    // Build agents from AgentEvent rows (no edge data available — linear layout)
+    const agents = (ag.agents || []).map((a, i) => ({
+      name: a.agent_name,
+      layer: i, idx: 0,
+      dur:  parseFloat((a.duration_s  || 0).toFixed(2)),
+      ti:   a.tokens_in  || 0,
+      to:   a.tokens_out || 0,
+      cost: parseFloat((a.cost_usd   || 0).toFixed(5)),
+      ins:  [],
+      outs: (() => { try { return JSON.parse(a.produced_keys || "[]"); } catch { return []; } })(),
+      status: run.status === "error" ? "error" : "success",
+    }));
+
+    apply({
+      run_id:     run.run_id,
+      team:       run.team,
+      status:     run.status,
+      cost_usd:   run.cost_usd,
+      duration_s: run.duration_s,
+      model:      run.model,
+      created_at: run.created_at,
+      request:    run.request || (run.state && run.state.request) || "—",
+      agents,
+      edges: [],
+    });
+  } catch { fallbackDemo(); }
+}
+
+function fallbackDemo() {
+  DEMO = true;
+  document.getElementById("demo-badge").style.display = "block";
+  apply(DEMO_RUN);
+}
+
+function apply(run) {
+  RUN = run;
+  SEL = null;
+  MAX_COST = Math.max(...run.agents.map(a => a.cost), 0.0001);
+  topbar(run);
+  sidebar(run);
+  layout(run);
+  dag(run);
+  document.getElementById("d-empty").style.display = "flex";
+  document.getElementById("d-main").style.display  = "none";
+}
+
+// ── Topbar ───────────────────────────────────────────────────────────────────
+function topbar(r) {
+  document.getElementById("t-runid").textContent = r.run_id.slice(0, 12);
+  const s = document.getElementById("t-status");
+  s.textContent = r.status;
+  s.className = "pill " + (r.status === "success" ? "ok-pill" : r.status === "error" ? "err-pill" : "run-pill");
+  document.getElementById("t-cost").innerHTML = `cost <b>$${(r.cost_usd||0).toFixed(4)}</b>`;
+  document.getElementById("t-dur").innerHTML  = `<b>${(r.duration_s||0).toFixed(1)}s</b>`;
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function renderList(items, activeIdx) {
+  document.getElementById("run-list").innerHTML = items.map((r, i) => `
+    <div class="run-item${i === activeIdx ? " active" : ""}"
+         onclick="pickRun(this, '${r.run_id}', ${i === 0})">
+      <div class="rdot rdot-${r.status === "success" ? "ok" : r.status === "error" ? "err" : "run"}"></div>
+      <div>
+        <div class="run-item-id">${r.run_id.slice(0,12)}</div>
+        <div class="run-item-team">${r.team}</div>
+      </div>
+    </div>`).join("");
+}
+
+function pickRun(el, runId, isDemo) {
+  document.querySelectorAll(".run-item").forEach(x => x.classList.remove("active"));
+  el.classList.add("active");
+  if (isDemo) { DEMO = true; document.getElementById("demo-badge").style.display = "block"; apply(DEMO_RUN); }
+  else         { DEMO = false; document.getElementById("demo-badge").style.display = "none"; loadLive(runId); }
+}
+
+function sidebar(r) {
+  document.getElementById("sb-meta").style.display = "block";
+  document.getElementById("sb-req").style.display  = "block";
+  document.getElementById("sb-meta-body").innerHTML = [
+    ["Team",    r.team],
+    ["Model",   r.model || "—"],
+    ["Agents",  r.agents.length],
+    ["Started", r.created_at ? r.created_at.slice(0,16).replace("T"," ") : "—"],
+  ].map(([k,v]) => `<div class="meta-row"><span class="mk">${k}</span><span class="mv">${v}</span></div>`).join("");
+  document.getElementById("sb-req-text").textContent = r.request || "—";
+}
+
+// ── DAG layout ─────────────────────────────────────────────────────────────
+function layout(run) {
+  POSITIONS = {};
+  const layers = {};
+  for (const a of run.agents) (layers[a.layer] = layers[a.layer] || []).push(a);
+  const maxN = Math.max(...Object.values(layers).map(v => v.length));
+  const centerY = PY + NH/2 + ((maxN - 1) * RY) / 2;
+  for (const [li, agents] of Object.entries(layers)) {
+    const l = +li;
+    const cx = PX + NW/2 + l * LX;
+    const n  = agents.length;
+    const totalH = (n - 1) * RY;
+    agents.forEach((a, i) => {
+      POSITIONS[a.name] = { cx, cy: centerY - totalH/2 + i * RY };
+    });
+  }
+}
+
+function dagSize() {
+  const cvs = document.getElementById("canvas");
+  const xs  = Object.values(POSITIONS).map(p => p.cx + NW/2);
+  const ys  = Object.values(POSITIONS).map(p => p.cy + NH/2);
+  const w   = Math.max(Math.max(...xs) + PX, cvs.clientWidth  || 0);
+  const h   = Math.max(Math.max(...ys) + PY, cvs.clientHeight || 0);
+  return [w, h];
+}
+
+// ── DAG render ────────────────────────────────────────────────────────────────
+function el(tag, attrs, text) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k,v] of Object.entries(attrs||{})) e.setAttribute(k, v);
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function dag(run) {
+  const svg = document.getElementById("dag");
+  svg.innerHTML = "";
+  const [w, h] = dagSize();
+  svg.setAttribute("width",  w);
+  svg.setAttribute("height", h);
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+
+  // Defs: arrowhead
+  const defs = el("defs");
+  const mk = el("marker", { id:"arr", markerWidth:"7", markerHeight:"7", refX:"5", refY:"3", orient:"auto" });
+  mk.appendChild(el("path", { d:"M0,0 L0,6 L7,3 z", fill:"#2E2E48" }));
+  defs.appendChild(mk);
+  svg.appendChild(defs);
+
+  // Edges
+  const eg = el("g");
+  for (const e of run.edges) {
+    const f = POSITIONS[e.from], t = POSITIONS[e.to];
+    if (!f || !t) continue;
+    const x0=f.cx+NW/2, y0=f.cy, x1=t.cx-NW/2, y1=t.cy;
+    const dx = (x1-x0)*.45;
+    const path = el("path", {
+      d: `M${x0},${y0} C${x0+dx},${y0} ${x1-dx},${y1} ${x1},${y1}`,
+      class: "edge",
+      "marker-end": "url(#arr)",
+    });
+    eg.appendChild(path);
+    const mx=(x0+x1)/2, my=(y0+y1)/2-8;
+    eg.appendChild(el("text", { x:mx, y:my, class:"edge-lbl", "text-anchor":"middle" }, e.lbl));
+  }
+  svg.appendChild(eg);
+
+  // Nodes
+  const ng = el("g");
+  for (const a of run.agents) {
+    const p = POSITIONS[a.name];
+    if (!p) continue;
+    const lx = p.cx - NW/2, ty = p.cy - NH/2;
+    const g = el("g", { transform:`translate(${lx},${ty})`, cursor:"pointer" });
+    g.addEventListener("click", () => pick(a));
+
+    // Status ring
+    g.appendChild(el("rect", { x:-3,y:-3, width:NW+6,height:NH+6, rx:11,ry:11,
+      fill:"none", stroke:"none", class:`nring nring-${a.status}`,
+      id:`ring-${a.name}` }));
+
+    // Background
+    g.appendChild(el("rect", { x:0,y:0, width:NW,height:NH, rx:8,ry:8,
+      class:"nrect", id:`bg-${a.name}` }));
+
+    // Agent name (shortened)
+    g.appendChild(el("text", { x:NW/2,y:24, class:"nname","text-anchor":"middle" },
+      a.name.replace("Agent","").replace(/([a-z])([A-Z])/g,"$1 $2")));
+
+    // Stats line
+    g.appendChild(el("text", { x:NW/2,y:41, class:"nstats","text-anchor":"middle" },
+      `$${a.cost.toFixed(4)} · ${a.dur}s`));
+
+    ng.appendChild(g);
+  }
+  svg.appendChild(ng);
+}
+
+// ── Agent selection ───────────────────────────────────────────────────────────
+function pick(a) {
+  SEL = a.name;
+  document.querySelectorAll(".nrect").forEach(e => e.classList.remove("sel"));
+  const bg = document.getElementById(`bg-${a.name}`);
+  if (bg) bg.classList.add("sel");
+
+  document.getElementById("d-empty").style.display = "none";
+  document.getElementById("d-main").style.display  = "flex";
+  document.getElementById("d-name").textContent = a.name;
+
+  const chips = document.getElementById("d-chips");
+  const sc = a.status === "success" ? "chip-ok" : "chip";
+  chips.innerHTML =
+    `<span class="chip ${sc}">${a.status}</span>` +
+    `<span class="chip">${a.dur}s</span>` +
+    `<span class="chip">$${a.cost.toFixed(5)}</span>`;
+
+  renderTab(a, TAB);
+}
+
+function renderTab(a, tab) {
+  const body = document.getElementById("d-body");
+
+  if (tab === "io") {
+    const inHtml  = a.ins.length  ? a.ins.map(k  => `<span class="ktag">${k}</span>`).join("") : '<span style="color:var(--mu);font-size:11px">—</span>';
+    const outHtml = a.outs.length ? a.outs.map(k => `<span class="ktag">${k}</span>`).join("") : '<span style="color:var(--mu);font-size:11px">—</span>';
+    body.innerHTML = `
+      <div class="db-sec">
+        <div class="db-lbl">Consumes (inputs)</div>${inHtml}
+      </div>
+      <div class="db-sec">
+        <div class="db-lbl">Produces (outputs)</div>${outHtml}
+      </div>`;
+  }
+  else if (tab === "perf") {
+    const pct = Math.round((a.cost / MAX_COST) * 100);
+    body.innerHTML = `
+      <div class="pg">
+        <div class="pc"><div class="pc-lbl">Duration</div>
+          <div class="pc-val">${a.dur}<span class="pc-u">s</span></div></div>
+        <div class="pc"><div class="pc-lbl">Cost</div>
+          <div class="pc-val">$${a.cost.toFixed(4)}</div></div>
+        <div class="pc"><div class="pc-lbl">Tokens in</div>
+          <div class="pc-val">${a.ti.toLocaleString()}</div></div>
+        <div class="pc"><div class="pc-lbl">Tokens out</div>
+          <div class="pc-val">${a.to.toLocaleString()}</div></div>
+      </div>
+      <div class="bar-wrap">
+        <div class="bar-row"><span>Cost share</span><span>${pct}%</span></div>
+        <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  }
+  else {
+    const evts = [
+      { t:"+0.0s",                        k:"agent.start", d:`Received state; ${a.ins.length} input keys` },
+      { t:`+${(a.dur*.28).toFixed(1)}s`,  k:"llm.call",    d:`Dispatched ${a.ti.toLocaleString()} tokens` },
+      { t:`+${(a.dur*.89).toFixed(1)}s`,  k:"llm.result",  d:`Received ${a.to.toLocaleString()} output tokens` },
+      { t:`+${a.dur}s`,                   k:"agent.end",   d:`Produced: ${a.outs.join(", ") || "—"}` },
+    ];
+    body.innerHTML = evts.map(e => `
+      <div class="ev-row">
+        <span class="ev-t">${e.t}</span>
+        <div>
+          <div class="ev-kind">${e.k}</div>
+          <div class="ev-desc">${e.d}</div>
+        </div>
+      </div>`).join("");
+  }
+}
+
+function switchTab(tab) {
+  TAB = tab;
+  ["io","perf","evt"].forEach(t => {
+    document.getElementById(`tab-${t}`).className = "tab" + (t===tab ? " on" : "");
+  });
+  if (SEL) {
+    const a = RUN.agents.find(x => x.name === SEL);
+    if (a) renderTab(a, tab);
+  }
+}
+
+// ── Actions ─────────────────────────────────────────────────────────────────
+function exportNdjson() {
+  if (!DEMO && RUN) {
+    location.href = `/runs/${RUN.run_id}/trace.ndjson`;
+    return;
+  }
+  // Demo: build and download client-side
+  if (!RUN) return;
+  const lines = [
+    JSON.stringify({ record_type:"run_meta", run_id:RUN.run_id, team:RUN.team,
+                     status:RUN.status, cost_usd:RUN.cost_usd, duration_s:RUN.duration_s }),
+    ...RUN.agents.map(a => JSON.stringify({
+      record_type:"event", event_type:"agent.end", run_id:RUN.run_id,
+      agent_name:a.name, duration_s:a.dur, cost_usd:a.cost,
+      tokens_in:a.ti, tokens_out:a.to, produced_keys:JSON.stringify(a.outs),
+    })),
+  ].join("\n");
+  const blob = new Blob([lines], { type:"application/x-ndjson" });
+  const anchor = document.createElement("a");
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = `antcrew-trace-${RUN.run_id.slice(0,12)}.ndjson`;
+  anchor.click();
+}
+
+function promptLoad() {
+  const id = prompt("Run ID:");
+  if (!id) return;
+  const trimmed = id.trim();
+  history.pushState({}, "", `?run_id=${trimmed}`);
+  DEMO = false;
+  document.getElementById("demo-badge").style.display = "none";
+  loadLive(trimmed);
+}
+
+// ── Resize ───────────────────────────────────────────────────────────────────
+window.addEventListener("resize", () => { if (RUN) { layout(RUN); dag(RUN); } });
+</script>
+</body>
+</html>
+

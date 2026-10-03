@@ -1,0 +1,37 @@
+# AntCrew — monorepo dev compose
+# Starts the full platform (backend + SQLite). Hot reload enabled.
+#
+# Usage:
+#   docker compose up              — full stack
+#   docker compose up platform     — platform only
+#
+# For production overrides:
+#   docker compose -f docker-compose.yml -f platform/docker-compose.prod.yml up
+
+services:
+  platform:
+    build:
+      context: ./platform
+      args:
+        APP_ENV: dev
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./platform/.env
+    environment:
+      APP_ENV: dev
+      HOST: 127.0.0.1
+      DATABASE_URL: sqlite+aiosqlite:////data/platform.db
+      LOG_FORMAT: text
+      LOG_LEVEL: DEBUG
+    volumes:
+      - platform_data:/data
+      - ./platform:/app
+    command: >
+      uvicorn app.main:app
+      --host 127.0.0.1
+      --port 8000
+      --reload
+
+volumes:
+  platform_data:

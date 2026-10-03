@@ -1,0 +1,71 @@
+name: E2E Tests (Playwright + MailHog)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mailhog:
+        image: mailhog/mailhog
+        ports:
+          - 1025:1025
+          - 8025:8025
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install app dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install E2E dependencies
+        run: |
+          pip install -r tests/e2e/requirements-e2e.txt
+          playwright install chromium --with-deps
+
+      - name: Start app server
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          # Wait until the server is ready
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && break || sleep 1
+          done
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./e2e_test.db
+          SECRET_KEY: e2e-secret-key-for-ci-only
+          SMTP_HOST: localhost
+          SMTP_PORT: "1025"
+          SMTP_TLS: "none"
+          SMTP_FROM: noreply@antcrew.test
+          ANTCREW_SANDBOX: none
+
+      - name: Run E2E tests
+        run: >
+          pytest tests/e2e/
+          -v
+          --tb=short
+          --browser chromium
+          --headed=false
+          --base-url http://localhost:8000
+          -x
+        env:
+          BASE_URL: http://localhost:8000
+          MAILHOG_API: http://localhost:8025/api/v2
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

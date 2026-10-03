@@ -1,0 +1,538 @@
+name: Deploy
+
+on:
+  # main  → INT (automatic)
+  # release → PROD (automatic, requires PR approval + environment gate)
+  push:
+    branches: [main, release]
+
+  # Manual: INT or UAT on demand (prod is promoted via release branch, not here)
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [int, uat]
+      uat_hours:
+        description: UAT auto-shutdown after N hours (UAT only)
+        required: false
+        default: '1'
+        type: choice
+        options: ['1', '2', '4', '8']
+
+jobs:
+  # ── Step 1: run tests before any deploy ────────────────────────────────────
+  # Skipped for manual UAT deploys — INT already ran the full suite on the same commit.
+  test:
+    name: Test (Python 3.11)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      github.event.inputs.environment != 'uat'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: antcrew_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+      - name: Run tests
+        env:
+          TEST_DB_URL: postgresql+asyncpg://postgres:postgres@localhost/antcrew_ci
+          LOG_FORMAT: text
+          ANTCREW_SANDBOX: none
+        run: pytest -v --tb=short
+
+  # ── Step 2: build and push image to GHCR ───────────────────────────────────
+  build:
+    name: Build image (${{ (github.event_name == 'push' && 'int') || github.event.inputs.environment }})
+    needs: test
+    if: |
+      always() &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      env_name: ${{ steps.resolve-env.outputs.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target environment
+        id: resolve-env
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ "${{ github.ref }}" = "refs/heads/release" ]; then
+              echo "name=prod" >> "$GITHUB_OUTPUT"
+            else
+              echo "name=int" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "name=${{ github.event.inputs.environment }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=${{ steps.resolve-env.outputs.name }}-,format=short
+            type=raw,value=${{ steps.resolve-env.outputs.name }}-latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            APP_ENV=${{ steps.resolve-env.outputs.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Step 3: gate — verify UAT passed before allowing prod ──────────────────
+  # Queries the GitHub Deployments API for the 'uat' environment.
+  # GitHub Actions automatically records a deployment + status for each job
+  # that uses `environment:`, so this reflects real deploy outcomes.
+  gate-prod:
+    name: Gate — verify UAT deployed successfully
+    needs: build
+    if: needs.build.outputs.env_name == 'prod'
+    runs-on: ubuntu-latest
+    permissions:
+      deployments: read
+    steps:
+      - name: Check latest UAT deployment is successful
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEPLOYMENT_ID=$(gh api \
+            "repos/${{ github.repository }}/deployments?environment=uat&per_page=1" \
+            --jq '.[0].id')
+
+          if [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" = "null" ]; then
+            echo "::error::No UAT deployment found. Deploy to UAT first before promoting to prod."
+            exit 1
+          fi
+
+          STATUS=$(gh api \
+            "repos/${{ github.repository }}/deployments/$DEPLOYMENT_ID/statuses?per_page=1" \
+            --jq '.[0].state')
+
+          echo "Latest UAT deployment ID: $DEPLOYMENT_ID, status: $STATUS"
+
+          if [ "$STATUS" != "success" ]; then
+            echo "::error::Latest UAT deployment is not successful (status: $STATUS). Promote UAT first."
+            exit 1
+          fi
+
+          echo "UAT gate passed — latest UAT deployment is successful."
+
+  # ── Step 4: deploy ──────────────────────────────────────────────────────────
+  # UAT  → Hetzner ephemeral server (cx22, auto-shuts down after 60 min)
+  # INT  → Fly.io (auto-deploy on every push to main)
+  # PROD → Fly.io (requires gate-prod + manual approval in the prod environment)
+  deploy:
+    name: Deploy to ${{ needs.build.outputs.env_name }}
+    needs: [build, gate-prod]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.gate-prod.result == 'success' || needs.gate-prod.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: ${{ needs.build.outputs.env_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── UAT: Hetzner ephemeral ────────────────────────────────────────────────
+
+      - name: Install hcloud CLI
+        if: needs.build.outputs.env_name == 'uat'
+        run: |
+          curl -fsSL https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz \
+            | tar xzf - hcloud
+          sudo mv hcloud /usr/local/bin/hcloud
+
+      - name: Set up SSH key
+        if: needs.build.outputs.env_name == 'uat'
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_uat
+          chmod 600 ~/.ssh/hetzner_uat
+          printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n' >> ~/.ssh/config
+
+      - name: Rotate UAT server
+        if: needs.build.outputs.env_name == 'uat'
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          # Delete existing server if present so each deploy starts clean
+          if hcloud server describe antcrew-uat &>/dev/null; then
+            echo "Deleting existing antcrew-uat server…"
+            hcloud server delete antcrew-uat
+          fi
+
+          # Find snapshot by label (set once during initial Hetzner setup)
+          SNAPSHOT_ID=$(hcloud image list --type snapshot --output json \
+            | jq -r '.[] | select(.labels.name == "antcrew-uat-base") | .id' \
+            | head -1)
+
+          if [ -z "$SNAPSHOT_ID" ] || [ "$SNAPSHOT_ID" = "null" ]; then
+            echo "::error::No snapshot labeled name=antcrew-uat-base found."
+            echo "::error::Create a base Ubuntu+Docker server, then:"
+            echo "::error::  hcloud server create-image --type snapshot --label name=antcrew-uat-base <server>"
+            exit 1
+          fi
+
+          echo "Creating server from snapshot $SNAPSHOT_ID…"
+          hcloud server create \
+            --name antcrew-uat \
+            --type cx23 \
+            --image "$SNAPSHOT_ID" \
+            --location nbg1 \
+            --ssh-key github-actions-uat
+
+          # Wait until Hetzner assigns the IP (usually immediate, but can lag a few seconds)
+          for i in $(seq 1 12); do
+            SERVER_JSON=$(hcloud server describe antcrew-uat -o json)
+            UAT_IP=$(echo "$SERVER_JSON" | jq -r '.public_net.ipv4.ip // empty')
+            [ -n "$UAT_IP" ] && break
+            sleep 5
+          done
+          [ -z "$UAT_IP" ] && { echo "::error::Server has no IP after 60 s"; exit 1; }
+          UAT_SERVER_ID=$(echo "$SERVER_JSON" | jq -r '.id')
+          echo "UAT_IP=$UAT_IP" >> "$GITHUB_ENV"
+          echo "UAT_SERVER_ID=$UAT_SERVER_ID" >> "$GITHUB_ENV"
+          echo "Server ready: $UAT_IP (id=$UAT_SERVER_ID)"
+
+      - name: Update platform-uat.antcrew.org DNS
+        if: needs.build.outputs.env_name == 'uat'
+        env:
+          CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+        run: |
+          ZONE=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_TOKEN" \
+            "https://api.cloudflare.com/client/v4/zones?name=antcrew.org" \
+            | jq -r '.result[0].id')
+          RECORD_ID=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_TOKEN" \
+            "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records?type=A&name=platform-uat.antcrew.org" \
+            | jq -r '.result[0].id // empty')
+          BODY="{\"type\":\"A\",\"name\":\"platform-uat\",\"content\":\"$UAT_IP\",\"ttl\":1,\"proxied\":true}"
+          if [ -n "$RECORD_ID" ]; then
+            curl -sf -X PUT -H "Authorization: Bearer $CLOUDFLARE_TOKEN" -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records/$RECORD_ID" -d "$BODY"
+          else
+            curl -sf -X POST -H "Authorization: Bearer $CLOUDFLARE_TOKEN" -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records" -d "$BODY"
+          fi
+          # Cloudflare SSL must be Flexible so the proxy can reach the HTTP-only origin
+          curl -sf -X PATCH -H "Authorization: Bearer $CLOUDFLARE_TOKEN" -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/zones/$ZONE/settings/ssl" \
+            -d '{"value":"flexible"}' | jq -r '.result.value'
+          echo "DNS updated: platform-uat.antcrew.org → $UAT_IP (proxied, SSL=flexible)"
+
+      - name: Wait for SSH
+        if: needs.build.outputs.env_name == 'uat'
+        run: |
+          echo "Waiting for SSH on $UAT_IP…"
+          for i in $(seq 1 24); do
+            if ssh -i ~/.ssh/hetzner_uat -o ConnectTimeout=5 root@"$UAT_IP" true 2>/dev/null; then
+              echo "SSH ready (attempt $i)."
+              break
+            fi
+            [ "$i" -eq 24 ] && { echo "::error::SSH timeout after 120 s"; exit 1; }
+            sleep 5
+          done
+
+      - name: Deploy application to UAT
+        if: needs.build.outputs.env_name == 'uat'
+        env:
+          UAT_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          UAT_SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          UAT_PLATFORM_API_KEY: ${{ secrets.PLATFORM_API_KEY }}
+          UAT_SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          UAT_SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          UAT_SMTP_USER: ${{ secrets.SMTP_USER }}
+          UAT_SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          UAT_SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          # GitHub App — note: secrets can't start with GITHUB_ in Actions, so we use GH_ prefix
+          UAT_GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          UAT_GH_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          UAT_GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+          UAT_DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+          PLATFORM_IMAGE: ghcr.io/${{ github.repository }}:uat-latest
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+        run: |
+          # Write .env.uat locally (runner expands secrets), then SCP it
+          # PEM keys contain real newlines; collapse them to literal \n so Docker
+          # Compose env-file parser sees a single-line value. _private_key() in
+          # github_tokens.py already reverses this with replace("\\n", "\n").
+          UAT_GH_PRIVATE_KEY_ESCAPED=$(printf '%s' "$UAT_GH_PRIVATE_KEY" | tr '\n' '@' | sed 's/@/\\n/g')
+          cat > /tmp/env.uat <<EOF
+          DATABASE_URL=${UAT_DATABASE_URL}
+          SECRET_KEY=${UAT_SECRET_KEY}
+          PLATFORM_API_KEY=${UAT_PLATFORM_API_KEY}
+          SMTP_HOST=${UAT_SMTP_HOST}
+          SMTP_PORT=${UAT_SMTP_PORT}
+          SMTP_USER=${UAT_SMTP_USER}
+          SMTP_PASSWORD=${UAT_SMTP_PASSWORD}
+          SMTP_FROM=${UAT_SMTP_FROM}
+          GITHUB_APP_ID=${UAT_GH_APP_ID}
+          GITHUB_PRIVATE_KEY=${UAT_GH_PRIVATE_KEY_ESCAPED}
+          GITHUB_WEBHOOK_SECRET=${UAT_GH_WEBHOOK_SECRET}
+          DEEPSEEK_API_KEY=${UAT_DEEPSEEK_API_KEY}
+          EOF
+          ssh -i ~/.ssh/hetzner_uat root@"$UAT_IP" "mkdir -p /opt/antcrew"
+          scp -i ~/.ssh/hetzner_uat /tmp/env.uat root@"$UAT_IP":/opt/antcrew/.env.uat
+          rm -f /tmp/env.uat
+
+          # Copy compose file (standalone, no base file needed)
+          scp -i ~/.ssh/hetzner_uat docker-compose.uat.yml root@"$UAT_IP":/opt/antcrew/
+
+          # Store Hetzner token so the server can delete itself when done
+          printf '%s' "$HCLOUD_TOKEN" | ssh -i ~/.ssh/hetzner_uat root@"$UAT_IP" \
+            'cat > /opt/antcrew/.hcloud_token && chmod 600 /opt/antcrew/.hcloud_token'
+
+          SHUTDOWN_SECS=$(( ${{ github.event.inputs.uat_hours || '1' }} * 3600 ))
+          ssh -i ~/.ssh/hetzner_uat root@"$UAT_IP" bash <<REMOTE
+          set -euo pipefail
+          cd /opt/antcrew
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+          export PLATFORM_IMAGE="$PLATFORM_IMAGE"
+          echo "PLATFORM_IMAGE=$PLATFORM_IMAGE" > /opt/antcrew/.platform-image-env
+          docker compose -f docker-compose.uat.yml pull platform
+          docker compose -f docker-compose.uat.yml run --rm --no-deps platform alembic upgrade head
+          docker compose -f docker-compose.uat.yml up -d --remove-orphans
+
+          # Kill any previous self-delete timer
+          [ -f /opt/antcrew/cleanup.pid ] && kill \$(cat /opt/antcrew/cleanup.pid) 2>/dev/null || true
+
+          # Schedule self-deletion via Hetzner API so billing stops immediately.
+          # Server ID is passed from the runner (which has hcloud+jq) so the
+          # cleanup script needs no extra tools on the server itself.
+          # Redirect to /dev/null so SSH file descriptors are not inherited.
+          (sleep $SHUTDOWN_SECS
+           curl -sf -X DELETE \
+             -H "Authorization: Bearer \$(cat /opt/antcrew/.hcloud_token)" \
+             "https://api.hetzner.cloud/v1/servers/$UAT_SERVER_ID" \
+             && echo "Server $UAT_SERVER_ID deleted." \
+             || echo "DELETE failed — check token or server state."
+          ) </dev/null >/var/log/uat-cleanup.log 2>&1 &
+          echo \$! > /opt/antcrew/cleanup.pid
+          disown
+
+          echo "Deploy complete. Server self-deletes in $(( SHUTDOWN_SECS / 60 )) minutes."
+          REMOTE
+
+          SHUTDOWN_MINS=$(( ${{ github.event.inputs.uat_hours || '1' }} * 60 ))
+          echo "UAT live at http://$UAT_IP:8000 (auto-deletes in $SHUTDOWN_MINS min)"
+
+      # ── INT: Fly.io ──────────────────────────────────────────────────────────
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: needs.build.outputs.env_name == 'int'
+
+      - name: Push secrets to Fly.io (INT)
+        if: needs.build.outputs.env_name == 'int'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          S_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          S_SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          S_PLATFORM_API_KEY: ${{ secrets.PLATFORM_API_KEY }}
+          S_SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          S_SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          S_SMTP_USER: ${{ secrets.SMTP_USER }}
+          S_SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          S_SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          # GH_ prefix because GitHub reserves GITHUB_* for its own vars
+          S_GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          S_GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          S_GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+          S_DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          flyctl secrets set \
+            DATABASE_URL="$S_DATABASE_URL" \
+            SECRET_KEY="$S_SECRET_KEY" \
+            PLATFORM_API_KEY="$S_PLATFORM_API_KEY" \
+            SMTP_HOST="$S_SMTP_HOST" \
+            SMTP_PORT="$S_SMTP_PORT" \
+            SMTP_USER="$S_SMTP_USER" \
+            SMTP_PASSWORD="$S_SMTP_PASSWORD" \
+            SMTP_FROM="$S_SMTP_FROM" \
+            GITHUB_APP_ID="$S_GH_APP_ID" \
+            GITHUB_PRIVATE_KEY="$S_GH_APP_PRIVATE_KEY" \
+            GITHUB_WEBHOOK_SECRET="$S_GH_WEBHOOK_SECRET" \
+            DEEPSEEK_API_KEY="$S_DEEPSEEK_API_KEY" \
+            --app antcrew-int --stage
+
+      - name: Deploy to Fly.io (INT)
+        if: needs.build.outputs.env_name == 'int'
+        run: flyctl deploy --remote-only --config fly.int.toml
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Run database migrations (INT)
+        if: needs.build.outputs.env_name == 'int'
+        env:
+          # Run alembic on the CI runner (not inside Fly) — Fly SSH console
+          # lacks DNS resolution for external hosts (Neon) due to Firecracker
+          # network constraints, but the CI runner resolves fine.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          pip install --quiet psycopg2-binary ".[billing]"
+          # Strip newlines that can appear when a secret is pasted multi-line.
+          export DATABASE_URL=$(echo "$DATABASE_URL" | tr -d '\n\r')
+          alembic upgrade head
+
+      # ── PROD: Hetzner permanent server ───────────────────────────────────────
+
+      - name: Set up SSH key (PROD)
+        if: needs.build.outputs.env_name == 'prod'
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_prod
+          chmod 600 ~/.ssh/hetzner_prod
+          printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n' >> ~/.ssh/config
+
+      - name: Deploy application to PROD
+        if: needs.build.outputs.env_name == 'prod'
+        env:
+          PROD_IP: ${{ secrets.PROD_SERVER_IP }}
+          P_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          P_SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          P_PLATFORM_API_KEY: ${{ secrets.PLATFORM_API_KEY }}
+          P_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          P_BYOK_ENCRYPTION_KEY: ${{ secrets.BYOK_ENCRYPTION_KEY }}
+          P_BASE_URL: ${{ secrets.BASE_URL }}
+          P_PLATFORM_BASE_URL: ${{ secrets.PLATFORM_BASE_URL }}
+          P_PLATFORM_ADMIN_TOKEN: ${{ secrets.PLATFORM_ADMIN_TOKEN }}
+          P_SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          P_SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          P_SMTP_USER: ${{ secrets.SMTP_USER }}
+          P_SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          P_SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          # GH_ prefix because GitHub reserves GITHUB_* for its own vars
+          P_GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          P_GH_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          P_GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+          P_DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          P_ARTIFACT_STORAGE_URL: ${{ secrets.ARTIFACT_STORAGE_URL }}
+          P_AWS_ACCESS_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          P_AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          P_AWS_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+          P_ANTCREW_ENCRYPTION_KEY: ${{ secrets.ANTCREW_ENCRYPTION_KEY }}
+          P_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          P_REDIS_URL: ${{ secrets.REDIS_URL }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_ACTOR: ${{ github.actor }}
+          PLATFORM_IMAGE: ghcr.io/${{ github.repository }}:prod-latest
+        run: |
+          # Write .env.prod locally (runner expands secrets), then SCP it
+          cat > /tmp/env.prod <<EOF
+          DATABASE_URL=${P_DATABASE_URL}
+          SECRET_KEY=${P_SECRET_KEY}
+          PLATFORM_API_KEY=${P_PLATFORM_API_KEY}
+          ANTHROPIC_API_KEY=${P_ANTHROPIC_API_KEY}
+          BYOK_ENCRYPTION_KEY=${P_BYOK_ENCRYPTION_KEY}
+          BASE_URL=${P_BASE_URL}
+          PLATFORM_BASE_URL=${P_PLATFORM_BASE_URL}
+          PLATFORM_ADMIN_TOKEN=${P_PLATFORM_ADMIN_TOKEN}
+          SMTP_HOST=${P_SMTP_HOST}
+          SMTP_PORT=${P_SMTP_PORT}
+          SMTP_USER=${P_SMTP_USER}
+          SMTP_PASSWORD=${P_SMTP_PASSWORD}
+          SMTP_FROM=${P_SMTP_FROM}
+          GITHUB_APP_ID=${P_GH_APP_ID}
+          GITHUB_PRIVATE_KEY=${P_GH_PRIVATE_KEY}
+          GITHUB_WEBHOOK_SECRET=${P_GH_WEBHOOK_SECRET}
+          DEEPSEEK_API_KEY=${P_DEEPSEEK_API_KEY}
+          ARTIFACT_STORAGE_URL=${P_ARTIFACT_STORAGE_URL}
+          AWS_ACCESS_KEY_ID=${P_AWS_ACCESS_KEY_ID}
+          AWS_SECRET_ACCESS_KEY=${P_AWS_SECRET_ACCESS_KEY}
+          AWS_ENDPOINT_URL=${P_AWS_ENDPOINT_URL}
+          ANTCREW_ENCRYPTION_KEY=${P_ANTCREW_ENCRYPTION_KEY}
+          SENTRY_DSN=${P_SENTRY_DSN}
+          REDIS_URL=${P_REDIS_URL}
+          EOF
+          ssh -i ~/.ssh/hetzner_prod root@"$PROD_IP" "mkdir -p /opt/antcrew"
+          scp -i ~/.ssh/hetzner_prod /tmp/env.prod root@"$PROD_IP":/opt/antcrew/.env.prod
+          rm -f /tmp/env.prod
+
+          # Copy compose file (standalone, no base file needed)
+          scp -i ~/.ssh/hetzner_prod docker-compose.prod.yml root@"$PROD_IP":/opt/antcrew/
+
+          ssh -i ~/.ssh/hetzner_prod root@"$PROD_IP" bash <<REMOTE
+          set -euo pipefail
+          cd /opt/antcrew
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
+
+          # Save the currently running image tag before pulling the new one.
+          # This is the rollback target if the new deploy fails the health check.
+          PREV_IMAGE=\$(docker inspect antcrew-platform-1 --format='{{.Config.Image}}' 2>/dev/null \
+                        || docker inspect antcrew_platform_1 --format='{{.Config.Image}}' 2>/dev/null \
+                        || echo "")
+
+          export PLATFORM_IMAGE="$PLATFORM_IMAGE"
+          docker compose -f docker-compose.prod.yml pull platform
+          docker compose -f docker-compose.prod.yml run --rm --no-deps platform alembic upgrade head
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+          # Health check with rollback — 5 attempts × 10 s = 50 s window.
+          HEALTHY=0
+          for i in 1 2 3 4 5; do
+            sleep 10
+            if curl -sf http://localhost:80/health > /dev/null 2>&1; then
+              echo "Health check passed (attempt \$i)."
+              HEALTHY=1
+              break
+            fi
+            echo "Health check \$i/5 failed…"
+          done
+
+          if [ "\$HEALTHY" -eq 0 ]; then
+            echo "::error::Deploy failed health checks."
+            if [ -n "\$PREV_IMAGE" ]; then
+              echo "Rolling back to \$PREV_IMAGE…"
+              export PLATFORM_IMAGE="\$PREV_IMAGE"
+              docker compose -f docker-compose.prod.yml up -d --no-deps platform
+              echo "Rollback complete."
+            else
+              echo "No previous image found — manual intervention required."
+            fi
+            exit 1
+          fi
+
+          echo "Deploy complete."
+          REMOTE
+
+          echo "PROD live at https://antcrew.org"

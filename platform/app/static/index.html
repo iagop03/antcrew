@@ -1,0 +1,791 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+<style>[x-cloak]{display:none}</style>
+    <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+  </head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="dashFeed()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<!-- Header -->
+<div class="px-6 py-5 flex items-start justify-between">
+  <div>
+    <div class="flex items-center gap-2 mb-0.5">
+      <h1 class="text-xl font-semibold">Dashboard</h1>
+      <span x-show="workspace" class="text-gray-500 text-sm">/</span>
+      <span x-show="workspace" class="text-gray-400 text-sm font-mono" x-text="workspace?.name"></span>
+    </div>
+    <p class="text-gray-500 text-xs">Actividad en tiempo real</p>
+  </div>
+  <div class="flex items-center gap-3">
+    <!-- Workspace quick-link -->
+    <a href="/settings?tab=workspaces"
+      class="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-300 px-2.5 py-1.5 rounded-lg hover:bg-gray-900/60 transition-colors">
+      <i class="ti ti-building text-xs"></i>
+      <span x-text="workspace ? workspace.name : 'Workspaces'"></span>
+      <i class="ti ti-chevron-right text-xs opacity-40"></i>
+    </a>
+    <!-- Budget pill -->
+    <template x-if="budget && budget.budget_usd != null">
+      <div class="flex items-center gap-2 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg text-xs">
+        <span class="w-1.5 h-1.5 rounded-full"
+          :class="budget.exhausted ? 'bg-red-500' : budget.remaining_usd / budget.budget_usd < 0.15 ? 'bg-yellow-500' : 'bg-green-500'"></span>
+        <span class="font-mono"
+          :class="budget.exhausted ? 'text-red-400' : 'text-gray-400'"
+          x-text="'€' + budget.total_spend_usd.toFixed(2) + ' / €' + budget.budget_usd.toFixed(2) + ' este mes'"></span>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- Stat cards -->
+<div class="px-6 grid grid-cols-4 gap-3 mb-6">
+  <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+      <i class="ti ti-player-play text-blue-400"></i> Runs activos
+    </p>
+    <p class="text-2xl font-semibold font-mono text-blue-400" x-text="stats.running ?? 0"></p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+      <i class="ti ti-eye text-amber-400"></i> Pend. revisión
+    </p>
+    <p class="text-2xl font-semibold font-mono" :class="pendingCount > 0 ? 'text-amber-400' : 'text-gray-300'" x-text="pendingCount"></p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+      <i class="ti ti-check text-green-400"></i> Completados hoy
+    </p>
+    <p class="text-2xl font-semibold font-mono text-green-400" x-text="runsToday"></p>
+  </div>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+      <i class="ti ti-currency-dollar text-purple-400"></i> Gasto total
+    </p>
+    <p class="text-2xl font-semibold font-mono text-purple-400"
+      x-text="budget ? '€' + budget.total_spend_usd.toFixed(2) : (stats.total_cost != null ? '€' + Number(stats.total_cost).toFixed(2) : '—')"></p>
+  </div>
+</div>
+
+<!-- Quick-start banner (only shown when no runs yet) -->
+<template x-if="stats.total === 0 && !loading">
+  <div class="px-6 mb-6">
+    <div class="bg-indigo-950/40 border border-indigo-800/50 rounded-xl p-5 flex items-start gap-4">
+      <span class="text-3xl shrink-0">⚡</span>
+      <div class="flex-1">
+        <h3 class="text-sm font-semibold text-indigo-200 mb-1">Tu primer run en segundos</h3>
+        <p class="text-xs text-gray-400 leading-relaxed mb-3">
+          Prueba <strong class="text-white">Quick Run</strong> — define agentes en una línea, sin clases ni configuración. Rival directo de <code class="bg-gray-800 px-1 rounded">Agent(role=..., goal=...)</code> de CrewAI.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <a href="/runs?quick=1"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition">
+            ⚡ Quick Run
+          </a>
+          <a href="/runs"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium transition">
+            Ver todos los runs
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- Analytics section -->
+<div class="px-6 mb-6">
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-800 flex items-center justify-between">
+      <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Analytics · últimos 30 días</span>
+      <button @click="toggleAnalytics()"
+        class="text-xs text-gray-500 hover:text-white transition flex items-center gap-1">
+        <i class="ti ti-chart-line text-xs"></i>
+        <span x-text="analyticsOpen ? 'Ocultar' : 'Ver'"></span>
+      </button>
+    </div>
+    <div x-show="analyticsOpen" x-cloak>
+      <template x-if="analyticsLoading">
+        <div class="flex items-center justify-center h-32 text-gray-600 text-xs">Cargando…</div>
+      </template>
+      <template x-if="!analyticsLoading && wsAnalytics">
+        <div class="p-4 space-y-5">
+          <!-- Run trend chart -->
+          <div>
+            <p class="text-xs text-gray-500 mb-2">Runs por día — total vs éxito</p>
+            <div class="relative h-36">
+              <canvas id="dash-chart-runs"></canvas>
+            </div>
+          </div>
+          <!-- Tickets by status -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <p class="text-xs text-gray-500 mb-2">Tickets por estado</p>
+              <div class="relative h-36">
+                <canvas id="dash-chart-tickets"></canvas>
+              </div>
+            </div>
+            <div class="flex flex-col justify-center gap-3">
+              <template x-for="[status, cnt] in Object.entries(wsAnalytics.tickets_by_status || {})" :key="status">
+                <div class="flex items-center gap-3">
+                  <span class="text-xs w-20 text-gray-400" x-text="status"></span>
+                  <div class="flex-1 bg-gray-800 rounded-full h-1.5">
+                    <div class="h-1.5 rounded-full"
+                      :class="{
+                        'bg-amber-400': status === 'open',
+                        'bg-indigo-400': status === 'in_progress',
+                        'bg-emerald-400': status === 'done',
+                        'bg-red-400': status === 'blocked',
+                      }"
+                      :style="'width:' + _ticketPct(status) + '%'"></div>
+                  </div>
+                  <span class="text-xs font-mono text-gray-500 w-6 text-right" x-text="cnt"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- By team -->
+          <template x-if="(wsAnalytics.by_team || []).length > 0">
+            <div>
+              <p class="text-xs text-gray-500 mb-2">Equipos — gasto · runs · tickets (30 días)</p>
+              <div class="space-y-2">
+                <template x-for="t in wsAnalytics.by_team" :key="t.team">
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-xs text-gray-300 font-medium" x-text="t.team"></span>
+                      <span class="text-xs text-gray-500 font-mono"
+                        x-text="'$' + t.cost_usd.toFixed(4) + ' · ' + t.runs + 'r · ' + t.tickets + 't'"></span>
+                    </div>
+                    <div class="h-1 rounded-full bg-gray-800">
+                      <div class="h-1 rounded-full bg-indigo-500/70"
+                        :style="'width:' + Math.round(t.cost_usd / Math.max(...(wsAnalytics.by_team || []).map(x=>x.cost_usd||0.001)) * 100) + '%'"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- By model (only shown when data exists) -->
+          <template x-if="(wsAnalytics.by_model || []).length > 0">
+            <div>
+              <p class="text-xs text-gray-500 mb-2">Modelos LLM — gasto (30 días)</p>
+              <div class="space-y-2">
+                <template x-for="m in wsAnalytics.by_model" :key="m.model">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-mono text-gray-300" x-text="m.model"></span>
+                    <span class="text-xs font-mono text-indigo-300" x-text="'$' + m.cost_usd.toFixed(4)"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- Agent performance metrics (all-time) -->
+          <template x-if="(agentStats || []).length > 0">
+            <div>
+              <p class="text-xs text-gray-500 mb-2">Agentes — llamadas · tiempo medio · coste medio</p>
+              <div class="space-y-1.5">
+                <template x-for="a in agentStats" :key="a.agent_name">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono text-gray-300 w-36 truncate" x-text="a.agent_name"></span>
+                    <div class="flex-1 bg-gray-800 rounded-full h-1">
+                      <div class="h-1 rounded-full bg-violet-500/60"
+                        :style="'width:' + _agentCostPct(a) + '%'"></div>
+                    </div>
+                    <span class="text-xs font-mono text-gray-500 w-14 text-right"
+                      x-text="a.call_count + 'x'"></span>
+                    <span class="text-xs font-mono text-gray-500 w-12 text-right"
+                      x-text="a.avg_duration_s + 's'"></span>
+                    <span class="text-xs font-mono text-violet-300 w-16 text-right"
+                      x-text="'$' + a.avg_cost_usd.toFixed(5)"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<!-- Eval health sparkline -->
+<div class="px-6 mb-6" x-data="evalHealth()" x-init="load()">
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-800 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Eval health · últimos 90 días</span>
+        <template x-if="summary">
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+            :class="summary.trend === 'improving' ? 'bg-emerald-900/60 text-emerald-400' :
+                    summary.trend === 'declining' ? 'bg-red-900/60 text-red-400' :
+                    'bg-gray-800 text-gray-400'"
+            x-text="summary.trend === 'improving' ? '↑ Mejorando' :
+                    summary.trend === 'declining' ? '↓ Bajando' : '— Estable'">
+          </span>
+        </template>
+      </div>
+      <template x-if="summary">
+        <div class="flex items-center gap-4 text-xs text-gray-500">
+          <span>Score medio: <span class="text-gray-300 font-mono" x-text="summary.avg_score != null ? (summary.avg_score * 100).toFixed(1) + '%' : '—'"></span></span>
+          <span>Pass rate: <span class="text-gray-300 font-mono" x-text="summary.pass_rate != null ? (summary.pass_rate * 100).toFixed(1) + '%' : '—'"></span></span>
+          <span><span class="font-mono text-gray-300" x-text="summary.total"></span> evals</span>
+        </div>
+      </template>
+    </div>
+    <div class="p-4">
+      <template x-if="loading">
+        <div class="flex items-center justify-center h-20 text-gray-600 text-xs">Cargando…</div>
+      </template>
+      <template x-if="!loading && data.length === 0">
+        <div class="flex items-center justify-center h-20 text-gray-600 text-xs">
+          Sin evals todavía — usa <code class="bg-gray-800 px-1 rounded mx-1">POST /evals/</code> para lanzar el primero
+        </div>
+      </template>
+      <template x-if="!loading && data.length > 0">
+        <div>
+          <div class="relative h-24">
+            <canvas id="dash-eval-sparkline"></canvas>
+          </div>
+          <!-- Last 5 evals -->
+          <div class="mt-3 space-y-1">
+            <template x-for="d in data.slice(-5).reverse()" :key="d.eval_id">
+              <div class="flex items-center gap-3 text-xs">
+                <span class="w-2 h-2 rounded-full flex-shrink-0"
+                  :class="d.passed ? 'bg-emerald-500' : d.passed === false ? 'bg-red-500' : 'bg-gray-600'">
+                </span>
+                <span class="font-mono text-gray-400 w-24 flex-shrink-0" x-text="d.date"></span>
+                <span class="text-gray-300 truncate flex-1" x-text="d.name || d.team"></span>
+                <span class="font-mono text-gray-300 w-12 text-right"
+                  x-text="d.overall_score != null ? (d.overall_score * 100).toFixed(0) + '%' : '—'">
+                </span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+<!-- Activity feed -->
+<div class="px-6 mb-8">
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-800 flex items-center justify-between">
+      <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Actividad reciente</span>
+      <button @click="loadFeed()" class="text-xs text-gray-500 hover:text-white transition flex items-center gap-1" data-i18n="common.refresh">
+        <i class="ti ti-refresh text-xs"></i> Refresh
+      </button>
+    </div>
+
+    <!-- Loading skeleton -->
+    <template x-if="loading">
+      <div class="divide-y divide-gray-800/50">
+        <template x-for="i in [1,2,3,4,5]" :key="i">
+          <div class="flex items-center gap-3 px-4 py-3">
+            <div class="w-7 h-7 rounded-full bg-gray-800 animate-pulse flex-shrink-0"></div>
+            <div class="flex-1 space-y-1.5">
+              <div class="h-3 bg-gray-800 animate-pulse rounded w-2/3"></div>
+              <div class="h-2.5 bg-gray-800 animate-pulse rounded w-1/3"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <!-- Empty state -->
+    <template x-if="!loading && feed.length === 0">
+      <div class="px-6 py-14 text-center">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-950/60 border border-indigo-800/40 mb-5">
+          <i class="ti ti-player-play text-2xl text-indigo-400"></i>
+        </div>
+        <h3 class="text-sm font-semibold text-gray-200 mb-1">Sin actividad todavía</h3>
+        <p class="text-xs text-gray-500 mb-5 max-w-xs mx-auto leading-relaxed">Lanza tu primer run desde la CLI o configura un pipeline para ver la actividad aquí en tiempo real.</p>
+        <div class="flex items-center justify-center gap-3">
+          <a href="/pipelines"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition">
+            <i class="ti ti-sitemap text-xs"></i>
+            Ver pipelines
+          </a>
+          <a href="/settings?tab=llm"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 transition">
+            <i class="ti ti-settings text-xs"></i>
+            Configurar LLM
+          </a>
+        </div>
+        <p class="text-xs text-gray-700 mt-5 font-mono">antcrew run --team mi_equipo --request "Tu tarea"</p>
+      </div>
+    </template>
+
+    <!-- Feed items -->
+    <div x-show="!loading && feed.length > 0" class="divide-y divide-gray-800/50">
+      <template x-for="item in feed" :key="item.id">
+        <div class="flex items-center gap-3 px-4 py-3 hover:bg-gray-800/40 transition cursor-pointer"
+          @click="navigate(item)">
+          <!-- Icon -->
+          <div class="w-7 h-7 rounded-full bg-gray-800/80 flex items-center justify-center flex-shrink-0">
+            <i :class="item.icon" class="text-sm"></i>
+          </div>
+          <!-- Content -->
+          <div class="flex-1 min-w-0">
+            <p class="text-sm text-gray-200 truncate" x-text="item.title"></p>
+            <p class="text-xs text-gray-500 mt-0.5" x-text="item.subtitle"></p>
+          </div>
+          <!-- Badge -->
+          <span x-show="item.badge"
+            class="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
+            :class="item.badgeClass"
+            x-text="item.badge"></span>
+          <!-- Arrow -->
+          <i class="ti ti-chevron-right text-gray-700 text-xs flex-shrink-0"></i>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>
+
+
+<script>
+function dashFeed() {
+  return {
+    workspace: null,
+    budget: null,
+    stats: {},
+    pendingCount: 0,
+    runsToday: 0,
+    feed: [],
+    loading: true,
+    wsConnected: false,
+    _wsBackoff: 1000,
+    ws: null,
+
+    // MFA modal
+    showMfaModal: false,
+    mfaSetup: null,
+    mfaCode: '',
+    mfaLoading: false,
+    mfaMsg: '',
+    mfaError: false,
+    apiHeaders(extra = {}) {
+      const k = localStorage.getItem('antcrew_api_key');
+      const h = { 'Content-Type': 'application/json', ...extra };
+      if (k) h['X-Api-Key'] = k;
+      return h;
+    },
+
+    async init() {
+      // Auth guard: session-cookie users must be authenticated; API-key users pass through
+      const apiKey = localStorage.getItem('antcrew_api_key');
+      if (!apiKey) {
+        try {
+          const r = await fetch('/auth/me', { credentials: 'same-origin' });
+          if (!r.ok) { window.location.replace('/'); return; }
+          const me = await r.json();
+          if (!me.workspace_id) { window.location.replace('/onboard'); return; }
+          if (!me.email_verified) { window.location.replace('/login'); return; }
+          // Show MFA setup modal for users who haven't enabled it yet
+          if (!me.mfa_enabled) {
+            const skip = localStorage.getItem('mfa_skip_until');
+            if (!skip || Date.now() > parseInt(skip, 10)) this.showMfaModal = true;
+          }
+        } catch { window.location.replace('/'); return; }
+      }
+      await Promise.all([this.loadWorkspace(), this.loadStats(), this.loadFeed()]);
+      this.connectWs();
+    },
+
+    async loadWorkspace() {
+      try {
+        const r = await fetch('/workspaces/', { headers: this.apiHeaders() });
+        if (!r.ok) return;
+        const ws = await r.json();
+        if (ws.length) {
+          this.workspace = ws[0];
+          const br = await fetch(`/workspaces/${ws[0].id}/spend`, { headers: this.apiHeaders() });
+          if (br.ok) this.budget = await br.json();
+        }
+      } catch {}
+    },
+
+    async loadStats() {
+      try {
+        const r = await fetch('/runs/stats', { headers: this.apiHeaders() });
+        if (r.ok) this.stats = await r.json();
+      } catch {}
+    },
+
+    async loadFeed() {
+      this.loading = true;
+      try {
+        const [runsR, reviewsR] = await Promise.all([
+          fetch('/runs/?limit=30', { headers: this.apiHeaders() }),
+          fetch('/reviews/?status=pending&limit=20', { headers: this.apiHeaders() }),
+        ]);
+        const items = [];
+        if (runsR.ok) {
+          const runs = await runsR.json();
+          const today = new Date().toDateString();
+          this.runsToday = runs.filter(r => r.status !== 'running' && new Date(r.created_at).toDateString() === today).length;
+          runs.forEach(run => {
+            const isRunning = run.status === 'running';
+            const isSuccess = run.status === 'success';
+            const isError = run.status === 'error';
+            items.push({
+              id: 'run-' + run.run_id,
+              type: 'run',
+              icon: isRunning ? 'ti ti-loader-2 text-blue-400 animate-spin'
+                : isSuccess ? 'ti ti-circle-check text-green-400'
+                : isError ? 'ti ti-circle-x text-red-400'
+                : 'ti ti-minus text-gray-500',
+              title: (run.request || run.team || '').slice(0, 72),
+              subtitle: `${run.team} · ${run.cost_usd ? '€' + run.cost_usd.toFixed(3) : '—'} · ${this.timeAgo(run.created_at)}`,
+              badge: run.status,
+              badgeClass: isRunning ? 'bg-blue-900/50 text-blue-300'
+                : isSuccess ? 'bg-green-900/50 text-green-300'
+                : isError ? 'bg-red-900/50 text-red-300'
+                : 'bg-gray-800 text-gray-400',
+              ts: new Date(run.created_at),
+              href: '/run/' + run.run_id,
+            });
+          });
+        }
+        if (reviewsR.ok) {
+          const reviews = await reviewsR.json();
+          this.pendingCount = reviews.length;
+          reviews.forEach(rev => {
+            items.push({
+              id: 'rev-' + rev.review_id,
+              type: 'review',
+              icon: 'ti ti-eye text-amber-400',
+              title: `Revisión pendiente — ${rev.agent_name || 'agent'}`,
+              subtitle: `Run ${(rev.run_id || '').slice(0, 8)} · ${this.timeAgo(rev.created_at)}`,
+              badge: 'espera revisión',
+              badgeClass: 'bg-amber-900/50 text-amber-300',
+              ts: new Date(rev.created_at),
+              href: '/reviews',
+            });
+          });
+        }
+        items.sort((a, b) => b.ts - a.ts);
+        this.feed = items;
+      } catch {}
+      this.loading = false;
+    },
+
+    navigate(item) { if (item.href) window.location.href = item.href; },
+
+    connectWs() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const k = localStorage.getItem('antcrew_api_key') || '';
+      this.ws = new WebSocket(`${proto}://${location.host}/ws/events`);
+      this.ws.onopen = () => {
+        this.wsConnected = true; this._wsBackoff = 1000;
+        if (k) this.ws.send(JSON.stringify({ auth: k }));
+      };
+      this.ws.onmessage = (e) => {
+        const ev = JSON.parse(e.data);
+        if (ev.type === 'ping') return;
+        if (['pipeline.start', 'pipeline.end', 'hitl.review_required'].includes(ev.type)) {
+          setTimeout(() => { this.loadFeed(); this.loadStats(); }, 400);
+        }
+      };
+      this.ws.onclose = () => {
+        this.wsConnected = false;
+        setTimeout(() => this.connectWs(), this._wsBackoff);
+        this._wsBackoff = Math.min(this._wsBackoff * 2, 30000);
+      };
+    },
+
+    timeAgo(iso) {
+      if (!iso) return '—';
+      const diff = (Date.now() - new Date(iso)) / 1000;
+      if (diff < 60) return `${Math.floor(diff)}s ago`;
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return `${Math.floor(diff / 86400)}d ago`;
+    },
+
+    // ── Analytics ──────────────────────────────────────────────────────
+    analyticsOpen: false,
+    analyticsLoading: false,
+    wsAnalytics: null,
+    agentStats: [],
+    _analyticsLoaded: false,
+
+    async toggleAnalytics() {
+      this.analyticsOpen = !this.analyticsOpen;
+      if (this.analyticsOpen && !this._analyticsLoaded) {
+        await this.loadAnalytics();
+      }
+    },
+
+    async loadAnalytics() {
+      if (!this.workspace) return;
+      this.analyticsLoading = true;
+      try {
+        const [wsR, agR] = await Promise.all([
+          fetch(`/workspaces/${this.workspace.id}/analytics`, { headers: this.apiHeaders() }),
+          fetch('/runs/agent-stats', { headers: this.apiHeaders() }),
+        ]);
+        if (wsR.ok) {
+          this.wsAnalytics = await wsR.json();
+          this.$nextTick(() => this._drawDashCharts());
+        }
+        if (agR.ok) {
+          const d = await agR.json();
+          this.agentStats = (d.agents || []).slice(0, 12);
+        }
+        this._analyticsLoaded = true;
+      } catch {} finally { this.analyticsLoading = false; }
+    },
+
+    _ticketPct(status) {
+      if (!this.wsAnalytics) return 0;
+      const ts = this.wsAnalytics.tickets_by_status || {};
+      const total = Object.values(ts).reduce((a, b) => a + b, 0);
+      return total ? Math.round((ts[status] || 0) / total * 100) : 0;
+    },
+
+    _agentCostPct(agent) {
+      if (!this.agentStats.length) return 0;
+      const max = Math.max(...this.agentStats.map(a => a.total_cost_usd || 0.000001));
+      return Math.round((agent.total_cost_usd || 0) / max * 100);
+    },
+
+    _drawDashCharts() {
+      const data = this.wsAnalytics;
+      if (!data) return;
+
+      // Runs by day
+      const runsCtx = document.getElementById('dash-chart-runs');
+      if (runsCtx) {
+        if (runsCtx._chart) runsCtx._chart.destroy();
+        runsCtx._chart = new Chart(runsCtx, {
+          type: 'line',
+          data: {
+            labels: data.runs_by_day.map(d => d.date),
+            datasets: [
+              { label: 'Total', data: data.runs_by_day.map(d => d.count), borderColor: '#0D9488', backgroundColor: '#0D948820', fill: true, tension: 0.3, pointRadius: 2 },
+              { label: 'Éxito', data: data.runs_by_day.map(d => d.success), borderColor: '#10b981', backgroundColor: 'transparent', tension: 0.3, pointRadius: 2 },
+            ],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: true, labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 10, padding: 8 } } },
+            scales: {
+              x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#6b7280', font: { size: 9 }, maxTicksLimit: 7 } },
+              y: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#6b7280', font: { size: 10 } }, beginAtZero: true },
+            },
+          },
+        });
+      }
+
+      // Tickets doughnut
+      const tickCtx = document.getElementById('dash-chart-tickets');
+      if (tickCtx) {
+        if (tickCtx._chart) tickCtx._chart.destroy();
+        const ts = data.tickets_by_status || {};
+        const labels = Object.keys(ts);
+        const vals = Object.values(ts);
+        const colors = { open: '#f59e0b', in_progress: '#0D9488', done: '#10b981', blocked: '#ef4444' };
+        tickCtx._chart = new Chart(tickCtx, {
+          type: 'doughnut',
+          data: { labels, datasets: [{ data: vals, backgroundColor: labels.map(l => colors[l] || '#6b7280'), borderWidth: 0, hoverOffset: 4 }] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: true, position: 'bottom', labels: { color: '#9ca3af', font: { size: 9 }, padding: 8, boxWidth: 8 } } },
+          },
+        });
+      }
+    },
+
+    /* ── MFA modal ── */
+    getCsrfToken() {
+      return document.cookie.split(';').map(c => c.trim())
+        .find(c => c.startsWith('csrf_token='))?.split('=')[1] || '';
+    },
+
+    async openMfaSetup() {
+      this.mfaMsg = ''; this.mfaError = false; this.mfaSetup = null; this.mfaCode = '';
+      try {
+        const r = await fetch('/auth/mfa/setup', { credentials: 'same-origin' });
+        if (!r.ok) { const e = await r.json(); this.mfaMsg = e.detail || 'Error'; this.mfaError = true; return; }
+        this.mfaSetup = await r.json();
+      } catch(e) { this.mfaMsg = e.message; this.mfaError = true; }
+    },
+
+    async enableMfa() {
+      if (!this.mfaSetup) return;
+      this.mfaMsg = ''; this.mfaError = false; this.mfaLoading = true;
+      try {
+        const r = await fetch('/auth/mfa/enable', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.getCsrfToken() },
+          body: JSON.stringify({ secret: this.mfaSetup.secret, code: this.mfaCode }),
+        });
+        if (!r.ok) { const e = await r.json(); this.mfaMsg = e.detail || 'Código incorrecto'; this.mfaError = true; }
+        else { this.showMfaModal = false; }
+      } catch(e) { this.mfaMsg = e.message; this.mfaError = true; }
+      this.mfaLoading = false;
+    },
+
+    skipMfa() {
+      localStorage.setItem('mfa_skip_until', Date.now() + 7 * 24 * 60 * 60 * 1000);
+      this.showMfaModal = false;
+    },
+  };
+}
+
+function evalHealth() {
+  return {
+    data: [],
+    summary: null,
+    loading: true,
+    _chart: null,
+    async load() {
+      try {
+        const r = await fetch('/evals/trends?days=90&limit=200');
+        if (!r.ok) return;
+        const json = await r.json();
+        this.data = json.data || [];
+        this.summary = json.summary || null;
+        this.$nextTick(() => this._drawChart());
+      } catch(e) { } finally { this.loading = false; }
+    },
+    _drawChart() {
+      const ctx = document.getElementById('dash-eval-sparkline');
+      if (!ctx || !this.data.length) return;
+      if (this._chart) this._chart.destroy();
+      const scored = this.data.filter(d => d.overall_score != null);
+      const labels = scored.map(d => d.date);
+      const scores = scored.map(d => Math.round(d.overall_score * 100));
+      this._chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: scores,
+            borderColor: '#2DD4BF',
+            backgroundColor: 'rgba(45,212,191,0.08)',
+            borderWidth: 1.5,
+            pointRadius: scored.length > 30 ? 0 : 3,
+            pointBackgroundColor: scored.map(d =>
+              d.passed === true ? '#34d399' : d.passed === false ? '#f87171' : '#2DD4BF'
+            ),
+            pointRadius: scored.length > 30 ? 0 : 4,
+            tension: 0.3,
+            fill: true,
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          plugins: { legend: { display: false }, tooltip: {
+            callbacks: { label: ctx => ctx.parsed.y + '% — ' + (scored[ctx.dataIndex]?.name || '') }
+          }},
+          scales: {
+            x: { display: false },
+            y: {
+              min: 0, max: 100,
+              ticks: { color: '#6b7280', font: { size: 10 }, callback: v => v + '%' },
+              grid: { color: 'rgba(255,255,255,0.04)' },
+            }
+          }
+        }
+      });
+    }
+  };
+}
+</script>
+
+<!-- MFA setup modal -->
+<template x-if="showMfaModal">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,.7);backdrop-filter:blur(4px)">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+
+      <!-- Header -->
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <h2 class="text-base font-semibold">Protege tu cuenta</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Activa la autenticación de dos factores (TOTP)</p>
+        </div>
+        <button @click="skipMfa()" class="text-gray-600 hover:text-gray-400 transition ml-3 shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Step 1: CTA -->
+      <template x-if="!mfaSetup">
+        <div>
+          <p class="text-sm text-gray-400 mb-5">Añade una capa extra de seguridad. Necesitarás una app de autenticación (Google Authenticator, Authy, 1Password…).</p>
+          <div class="flex gap-2">
+            <button @click="openMfaSetup()"
+              class="flex-1 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition">
+              Configurar 2FA
+            </button>
+            <button @click="skipMfa()"
+              class="flex-1 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 transition">
+              Ahora no
+            </button>
+          </div>
+          <p class="text-xs text-gray-600 text-center mt-2">Se recordará en 7 días</p>
+        </div>
+      </template>
+
+      <!-- Step 2: scan + verify -->
+      <template x-if="mfaSetup">
+        <div>
+          <p class="text-xs text-gray-500 mb-3">Escanea el código QR con tu app de autenticación, o copia el código manualmente.</p>
+          <!-- QR code -->
+          <template x-if="mfaSetup.qr_svg_b64">
+            <div class="flex justify-center mb-3">
+              <img :src="'data:image/svg+xml;base64,' + mfaSetup.qr_svg_b64"
+                class="w-40 h-40 bg-white rounded-xl p-1.5" alt="QR código MFA">
+            </div>
+          </template>
+          <a :href="mfaSetup.provisioning_uri"
+            class="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 mb-3 transition">
+            <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
+            Abrir en app de autenticación
+          </a>
+          <code class="block bg-gray-950 border border-gray-800 rounded px-3 py-2 text-xs font-mono text-gray-300 tracking-widest select-all mb-4 break-all" x-text="mfaSetup.secret"></code>
+          <label class="block text-xs text-gray-400 mb-1.5">Código de verificación (6 dígitos)</label>
+          <input x-model="mfaCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+            @keydown.enter="enableMfa()"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-xl text-center font-mono tracking-[0.4em] focus:outline-none focus:border-indigo-500 mb-3 placeholder-gray-700">
+          <p x-show="mfaMsg" class="text-xs mb-3" :class="mfaError ? 'text-red-400' : 'text-teal-400'" x-text="mfaMsg"></p>
+          <div class="flex gap-2">
+            <button @click="enableMfa()" :disabled="mfaCode.length !== 6 || mfaLoading"
+              class="flex-1 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition">
+              <span x-show="!mfaLoading">Activar 2FA</span>
+              <span x-show="mfaLoading">Activando…</span>
+            </button>
+            <button @click="skipMfa()"
+              class="px-4 py-2 rounded-lg text-sm text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 transition">
+              Saltar
+            </button>
+          </div>
+        </div>
+      </template>
+
+    </div>
+  </div>
+</template>
+
+</body>
+</html>
+

@@ -1,0 +1,1121 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="theme-color" content="#1E4D6B">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>[x-cloak]{display:none}</style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="adminApp()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<!-- ── Loading ──────────────────────────────────────────────────────── -->
+<div x-show="loading" x-cloak class="flex items-center justify-center h-64 text-gray-500 text-sm">
+  Loading…
+</div>
+
+<!-- ── Error (not admin) ─────────────────────────────────────────────── -->
+<div x-show="accessDenied" x-cloak class="flex items-center justify-center h-64">
+  <div class="text-center">
+    <p class="text-red-400 font-medium">Access denied</p>
+    <p class="text-gray-500 text-sm mt-1">You don't have admin access to this page.</p>
+    <a href="/dashboard" class="text-indigo-400 text-sm mt-4 inline-block hover:text-indigo-300">Go to dashboard →</a>
+  </div>
+</div>
+
+<!-- ── Main content ─────────────────────────────────────────────────── -->
+<div x-show="!loading && !accessDenied" x-cloak class="max-w-7xl mx-auto px-6 py-8 mt-4">
+
+  <!-- Stat cards (always visible) -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Workspaces</p>
+      <p class="text-2xl font-mono font-semibold" x-text="stats.workspaces?.total ?? '—'"></p>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Trial</p>
+      <p class="text-2xl font-mono font-semibold text-amber-400" x-text="stats.workspaces?.trial ?? '—'"></p>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Paid</p>
+      <p class="text-2xl font-mono font-semibold text-emerald-400" x-text="stats.workspaces?.paid ?? '—'"></p>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Total cost</p>
+      <p class="text-2xl font-mono font-semibold text-indigo-400"
+         x-text="stats.revenue ? '$' + stats.revenue.total_cost_usd.toFixed(2) : '—'"></p>
+    </div>
+  </div>
+
+
+  <!-- ── TAB: Analytics ────────────────────────────────────────────── -->
+  <div x-show="activeTab === 'analytics'" x-cloak>
+
+    <template x-if="analyticsLoading">
+      <div class="flex items-center justify-center h-40 text-gray-500 text-sm">Loading analytics…</div>
+    </template>
+
+    <template x-if="!analyticsLoading && analytics">
+      <div class="space-y-8">
+
+        <!-- Row 1: Workspaces + Users trend -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Nuevos workspaces / mes</p>
+            <div class="relative h-48">
+              <canvas id="chart-workspaces"></canvas>
+            </div>
+          </div>
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Nuevos usuarios / mes</p>
+            <div class="relative h-48">
+              <canvas id="chart-users"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: Runs trend + success rate -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Runs / mes — total vs éxito</p>
+          <div class="relative h-48">
+            <canvas id="chart-runs"></canvas>
+          </div>
+        </div>
+
+        <!-- Row 3: Tickets + Segmentation -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- Tickets by status -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Tickets por estado</p>
+            <div class="relative h-48">
+              <canvas id="chart-tickets"></canvas>
+            </div>
+          </div>
+
+          <!-- Use case distribution -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-3">Caso de uso</p>
+            <div class="space-y-2">
+              <template x-for="uc in analytics.use_cases" :key="uc.use_case">
+                <div class="flex items-center gap-3">
+                  <span class="text-xs text-gray-400 w-36 shrink-0 truncate" x-text="uc.use_case"></span>
+                  <div class="flex-1 bg-gray-800 rounded-full h-2">
+                    <div class="bg-indigo-500 h-2 rounded-full transition-all"
+                      :style="'width:' + Math.round(uc.count / Math.max(...analytics.use_cases.map(x=>x.count)) * 100) + '%'">
+                    </div>
+                  </div>
+                  <span class="text-xs font-mono text-gray-400 w-6 text-right" x-text="uc.count"></span>
+                </div>
+              </template>
+              <p x-show="analytics.use_cases.length === 0" class="text-xs text-gray-600">Sin datos</p>
+            </div>
+          </div>
+
+          <!-- Team size distribution -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-3">Tamaño de equipo</p>
+            <div class="space-y-2">
+              <template x-for="ts in analytics.team_sizes" :key="ts.team_size">
+                <div class="flex items-center gap-3">
+                  <span class="text-xs text-gray-400 w-16 shrink-0" x-text="ts.team_size"></span>
+                  <div class="flex-1 bg-gray-800 rounded-full h-2">
+                    <div class="bg-violet-500 h-2 rounded-full transition-all"
+                      :style="'width:' + Math.round(ts.count / Math.max(...analytics.team_sizes.map(x=>x.count)) * 100) + '%'">
+                    </div>
+                  </div>
+                  <span class="text-xs font-mono text-gray-400 w-6 text-right" x-text="ts.count"></span>
+                </div>
+              </template>
+              <p x-show="analytics.team_sizes.length === 0" class="text-xs text-gray-600">Sin datos</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feedback summary -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Feedback de usuarios</p>
+          <div class="flex items-center gap-10">
+            <div>
+              <p class="text-3xl font-mono font-semibold" x-text="analytics.feedback.total"></p>
+              <p class="text-xs text-gray-500 mt-1">Total eventos</p>
+            </div>
+            <div>
+              <p class="text-3xl font-mono font-semibold text-emerald-400" x-text="analytics.feedback.positive"></p>
+              <p class="text-xs text-gray-500 mt-1">👍 Positivo</p>
+            </div>
+            <div>
+              <p class="text-3xl font-mono font-semibold text-red-400" x-text="analytics.feedback.negative"></p>
+              <p class="text-xs text-gray-500 mt-1">👎 Negativo</p>
+            </div>
+            <div x-show="analytics.feedback.total > 0">
+              <p class="text-3xl font-mono font-semibold text-indigo-400"
+                x-text="Math.round(analytics.feedback.positive / analytics.feedback.total * 100) + '%'"></p>
+              <p class="text-xs text-gray-500 mt-1">Satisfacción</p>
+            </div>
+          </div>
+          <div x-show="feedback.length > 0" class="mt-5 overflow-x-auto">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="text-left text-gray-500 border-b border-gray-800">
+                  <th class="pb-2 pr-4">Contexto</th>
+                  <th class="pb-2 pr-4">Rating</th>
+                  <th class="pb-2 pr-4">Mensaje</th>
+                  <th class="pb-2">Fecha</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="fb in feedback" :key="fb.id">
+                  <tr class="border-b border-gray-800/50">
+                    <td class="py-2 pr-4">
+                      <span class="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded text-xs" x-text="fb.context"></span>
+                    </td>
+                    <td class="py-2 pr-4">
+                      <span x-show="fb.helpful === true" class="text-emerald-400">👍</span>
+                      <span x-show="fb.helpful === false" class="text-red-400">👎</span>
+                      <span x-show="fb.helpful === null" class="text-gray-600">—</span>
+                    </td>
+                    <td class="py-2 pr-4 text-gray-400 max-w-xs truncate" x-text="fb.message || '—'"></td>
+                    <td class="py-2 text-gray-500" x-text="fmtDate(fb.created_at)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Usage breakdown ── -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          <!-- By team -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Equipos — runs · tickets · gasto</p>
+            <div x-show="(analytics.by_team || []).length === 0" class="text-xs text-gray-600">Sin datos</div>
+            <div class="space-y-2.5" x-show="(analytics.by_team || []).length > 0">
+              <template x-for="t in analytics.by_team" :key="t.team">
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-medium text-gray-300" x-text="t.team"></span>
+                    <span class="text-xs text-gray-500 font-mono"
+                      x-text="'$' + t.cost_usd.toFixed(4) + ' · ' + t.runs + ' runs · ' + t.tickets + ' tickets'"></span>
+                  </div>
+                  <div class="flex h-1.5 rounded-full overflow-hidden bg-gray-800">
+                    <div class="h-full bg-indigo-500/70 rounded-full"
+                      :style="'width:' + Math.round(t.cost_usd / Math.max(...(analytics.by_team || []).map(x=>x.cost_usd||0.001)) * 100) + '%'"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- By LLM mode -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Modo LLM — runs · gasto</p>
+            <div x-show="(analytics.by_llm_mode || []).length === 0" class="text-xs text-gray-600">Sin datos</div>
+            <div class="space-y-2.5" x-show="(analytics.by_llm_mode || []).length > 0">
+              <template x-for="m in analytics.by_llm_mode" :key="m.mode">
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-medium px-2 py-0.5 rounded font-mono"
+                      :class="m.mode === 'byok' ? 'bg-emerald-900/50 text-emerald-300' : m.mode === 'proxy' ? 'bg-violet-900/50 text-violet-300' : 'bg-gray-800 text-gray-300'"
+                      x-text="m.mode"></span>
+                    <span class="text-xs text-gray-500 font-mono"
+                      x-text="'$' + m.cost_usd.toFixed(4) + ' · ' + m.runs + ' runs'"></span>
+                  </div>
+                  <div class="flex h-1.5 rounded-full overflow-hidden bg-gray-800">
+                    <div class="h-full rounded-full"
+                      :class="m.mode === 'byok' ? 'bg-emerald-500/70' : m.mode === 'proxy' ? 'bg-violet-500/70' : 'bg-indigo-500/70'"
+                      :style="'width:' + Math.round(m.cost_usd / Math.max(...(analytics.by_llm_mode || []).map(x=>x.cost_usd||0.001)) * 100) + '%'"></div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- By model -->
+          <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 lg:col-span-2">
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-4">Modelos LLM — runs · gasto</p>
+            <div x-show="(analytics.by_model || []).length === 0" class="text-xs text-gray-600">Sin datos de modelo disponibles aún — se poblarán automáticamente a medida que el motor envíe información de modelo en los eventos de run.</div>
+            <div class="overflow-x-auto" x-show="(analytics.by_model || []).length > 0">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="text-left text-gray-500 border-b border-gray-800">
+                    <th class="pb-2 pr-6">Modelo</th>
+                    <th class="pb-2 pr-6">Runs</th>
+                    <th class="pb-2 pr-6">Gasto (USD)</th>
+                    <th class="pb-2">Distribución</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="m in analytics.by_model" :key="m.model">
+                    <tr class="border-b border-gray-800/50">
+                      <td class="py-2 pr-6 font-mono text-gray-200" x-text="m.model"></td>
+                      <td class="py-2 pr-6 font-mono text-gray-400" x-text="m.runs"></td>
+                      <td class="py-2 pr-6 font-mono text-indigo-300" x-text="'$' + m.cost_usd.toFixed(4)"></td>
+                      <td class="py-2 w-32">
+                        <div class="h-1.5 rounded-full bg-gray-800">
+                          <div class="h-1.5 rounded-full bg-indigo-500/70"
+                            :style="'width:' + Math.round(m.cost_usd / Math.max(...(analytics.by_model || []).map(x=>x.cost_usd||0.001)) * 100) + '%'"></div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </template>
+  </div>
+
+  <!-- ── TAB: Campaigns ────────────────────────────────────────────── -->
+  <div x-show="activeTab === 'campaigns'" x-cloak class="space-y-6">
+
+    <!-- Billing base rates -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Billing base rates</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Default cost multipliers for new workspaces. Existing workspaces keep their rate at sign-up time.</p>
+        </div>
+        <button x-show="!editingRates" @click="editRates = {...billingRates}; editingRates = true"
+          class="text-xs text-indigo-400 hover:text-indigo-300 transition">Edit</button>
+        <div x-show="editingRates" class="flex gap-3">
+          <button @click="saveRates()"
+            class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg transition">Save</button>
+          <button @click="cancelRates()"
+            class="text-xs text-gray-400 hover:text-gray-200 transition">Cancel</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <!-- Managed -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs text-gray-500">Managed</p>
+            <button @click="toggleMode('managed')" title="Enable / disable Managed mode"
+              class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
+              :class="billingRates.managed_enabled ? 'bg-indigo-600' : 'bg-gray-700'">
+              <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform"
+                :class="billingRates.managed_enabled ? 'translate-x-5' : 'translate-x-0.5'"></span>
+            </button>
+          </div>
+          <div x-show="!editingRates" class="font-mono text-sm"
+            :class="billingRates.managed_enabled ? 'text-indigo-300' : 'text-gray-600'"
+            x-text="'×' + (billingRates.managed_cost_multiplier ?? 3.0).toFixed(2)"></div>
+          <input x-show="editingRates" x-model.number="editRates.managed_cost_multiplier" type="number" step="0.05" min="0.05"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500">
+        </div>
+        <!-- BYOK -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs text-gray-500">BYOK</p>
+            <button @click="toggleMode('byok')" title="Enable / disable BYOK mode"
+              class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
+              :class="billingRates.byok_enabled ? 'bg-emerald-600' : 'bg-gray-700'">
+              <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform"
+                :class="billingRates.byok_enabled ? 'translate-x-5' : 'translate-x-0.5'"></span>
+            </button>
+          </div>
+          <div x-show="!editingRates" class="font-mono text-sm"
+            :class="billingRates.byok_enabled ? 'text-emerald-400' : 'text-gray-600'"
+            x-text="'×' + (billingRates.byok_service_multiplier ?? 0.4).toFixed(2)"></div>
+          <input x-show="editingRates" x-model.number="editRates.byok_service_multiplier" type="number" step="0.05" min="0.05"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500">
+        </div>
+        <!-- Proxy -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs text-gray-500">Proxy</p>
+            <button @click="toggleMode('proxy')" title="Enable / disable Proxy mode"
+              class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
+              :class="billingRates.proxy_enabled ? 'bg-violet-600' : 'bg-gray-700'">
+              <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform"
+                :class="billingRates.proxy_enabled ? 'translate-x-5' : 'translate-x-0.5'"></span>
+            </button>
+          </div>
+          <div x-show="!editingRates" class="font-mono text-sm"
+            :class="billingRates.proxy_enabled ? 'text-violet-400' : 'text-gray-600'"
+            x-text="'×' + (billingRates.proxy_service_multiplier ?? 0.7).toFixed(2)"></div>
+          <input x-show="editingRates" x-model.number="editRates.proxy_service_multiplier" type="number" step="0.05" min="0.05"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500">
+        </div>
+      </div>
+      <p x-show="ratesError" x-cloak class="text-red-400 text-xs mt-3" x-text="ratesError"></p>
+    </div>
+
+    <!-- Cost routing tier models -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Modelos de tier para cost routing</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Modelo asignado a cada tier cuando la política de routing es <em>economy</em> o <em>auto</em>.</p>
+        </div>
+        <button x-show="!editingTierModels" @click="editTierModels = {tier_cheap_model: billingRates.tier_cheap_model, tier_standard_model: billingRates.tier_standard_model, tier_premium_model: billingRates.tier_premium_model}; editingTierModels = true"
+          class="text-xs text-indigo-400 hover:text-indigo-300 transition">Editar</button>
+        <div x-show="editingTierModels" class="flex gap-2">
+          <button @click="saveTierModels()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg transition">Guardar</button>
+          <button @click="editingTierModels = false" class="text-xs text-gray-500 hover:text-white transition">Cancelar</button>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <div class="flex items-center gap-3">
+          <span class="w-20 text-xs text-emerald-400 font-mono shrink-0">cheap</span>
+          <span x-show="!editingTierModels" class="text-sm font-mono text-gray-300" x-text="billingRates.tier_cheap_model || 'groq:llama-3.3-70b-versatile'"></span>
+          <input x-show="editingTierModels" x-model="editTierModels.tier_cheap_model" type="text" placeholder="groq:llama-3.3-70b-versatile"
+            class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-emerald-500">
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="w-20 text-xs text-indigo-400 font-mono shrink-0">standard</span>
+          <span x-show="!editingTierModels" class="text-sm font-mono text-gray-300" x-text="billingRates.tier_standard_model || 'claude:claude-sonnet-5'"></span>
+          <input x-show="editingTierModels" x-model="editTierModels.tier_standard_model" type="text" placeholder="claude:claude-sonnet-5"
+            class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500">
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="w-20 text-xs text-violet-400 font-mono shrink-0">premium</span>
+          <span x-show="!editingTierModels" class="text-sm font-mono text-gray-300" x-text="billingRates.tier_premium_model || 'claude:claude-opus-5'"></span>
+          <input x-show="editingTierModels" x-model="editTierModels.tier_premium_model" type="text" placeholder="claude:claude-opus-5"
+            class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-violet-500">
+        </div>
+      </div>
+      <p x-show="tierModelsError" x-cloak class="text-red-400 text-xs mt-3" x-text="tierModelsError"></p>
+    </div>
+
+    <!-- Bulk-apply rates to existing workspaces -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-semibold">Apply rates to existing workspaces</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Propagate the current base rates to workspaces created before the last change.</p>
+        </div>
+        <button @click="showBulkApply = !showBulkApply; bulkApplyResult = null; bulkApplyError = ''"
+          class="text-xs text-indigo-400 hover:text-indigo-300 transition" x-text="showBulkApply ? 'Close' : 'Configure'">
+        </button>
+      </div>
+
+      <div x-show="showBulkApply" x-cloak class="mt-4 space-y-4">
+        <!-- Mode picker -->
+        <div class="space-y-2">
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="radio" x-model="bulkApplyMode" value="downward_only"
+              class="mt-0.5 accent-indigo-500 shrink-0">
+            <div>
+              <span class="text-sm text-gray-200">Downward only</span>
+              <p class="text-xs text-gray-500 mt-0.5">Only update workspaces whose current rate is <em>higher</em> than the new platform rate. Workspaces already on a better deal are untouched.</p>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer group">
+            <input type="radio" x-model="bulkApplyMode" value="all"
+              class="mt-0.5 accent-indigo-500 shrink-0">
+            <div>
+              <span class="text-sm text-gray-200">All non-locked</span>
+              <p class="text-xs text-gray-500 mt-0.5">Overwrite every workspace (except locked and manually overridden ones) with the current platform rate, up or down.</p>
+            </div>
+          </label>
+        </div>
+
+        <p class="text-xs text-gray-600">Locked workspaces and those with a manual override are always skipped.</p>
+
+        <div class="flex items-center gap-3">
+          <button @click="applyRatesToExisting()"
+            :disabled="bulkApplyLoading"
+            class="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg transition">
+            <span x-show="!bulkApplyLoading">Apply</span>
+            <span x-show="bulkApplyLoading" x-cloak>Applying…</span>
+          </button>
+          <p x-show="bulkApplyError" x-cloak class="text-red-400 text-xs" x-text="bulkApplyError"></p>
+        </div>
+
+        <!-- Result -->
+        <div x-show="bulkApplyResult" x-cloak
+          class="bg-gray-950 border border-gray-700 rounded-lg p-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <div>
+            <p class="text-xl font-mono font-semibold text-emerald-400" x-text="bulkApplyResult?.updated ?? 0"></p>
+            <p class="text-xs text-gray-500 mt-0.5">Updated</p>
+          </div>
+          <div>
+            <p class="text-xl font-mono font-semibold text-gray-400" x-text="bulkApplyResult?.skipped_no_change ?? 0"></p>
+            <p class="text-xs text-gray-500 mt-0.5">No change needed</p>
+          </div>
+          <div>
+            <p class="text-xl font-mono font-semibold text-amber-400" x-text="bulkApplyResult?.skipped_locked ?? 0"></p>
+            <p class="text-xs text-gray-500 mt-0.5">Skipped (locked)</p>
+          </div>
+          <div>
+            <p class="text-xl font-mono font-semibold text-gray-500" x-text="bulkApplyResult?.skipped_override ?? 0"></p>
+            <p class="text-xs text-gray-500 mt-0.5">Skipped (override)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Platform default agent models -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Platform default model</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Fallback model used when a workspace has no agent_models configured. Workspaces can override per-agent.</p>
+        </div>
+        <div class="flex gap-2">
+          <button x-show="!editingPlatformDefaults" @click="editPlatformDefaults = {...platformDefaults}; editingPlatformDefaults = true"
+            class="text-xs text-indigo-400 hover:text-indigo-300 transition">Edit</button>
+          <button x-show="editingPlatformDefaults" @click="savePlatformDefaults()"
+            class="text-xs text-emerald-400 hover:text-emerald-300 transition">Save</button>
+          <button x-show="editingPlatformDefaults" @click="editingPlatformDefaults = false; platformDefaultsError = ''"
+            class="text-xs text-gray-500 hover:text-gray-300 transition">Cancel</button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="font-mono text-xs text-gray-500 w-24 shrink-0">default</span>
+        <span x-show="!editingPlatformDefaults" class="font-mono text-sm text-indigo-300"
+          x-text="platformDefaults.default || 'claude (no override)'"></span>
+        <input x-show="editingPlatformDefaults" x-model="editPlatformDefaults.default"
+          placeholder="claude:claude-sonnet-5"
+          class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500">
+      </div>
+      <p x-show="platformDefaultsError" class="text-red-400 text-xs mt-3" x-text="platformDefaultsError"></p>
+    </div>
+
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold">Campaigns</h2>
+      <button @click="showCampaignForm = !showCampaignForm"
+        class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition">
+        + New campaign
+      </button>
+    </div>
+
+    <!-- Create form -->
+    <div x-show="showCampaignForm" x-cloak
+      class="bg-gray-900 border border-indigo-800/50 rounded-xl p-5 mb-4 space-y-4">
+      <h3 class="text-sm font-medium text-indigo-300">New campaign</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Name</label>
+          <input x-model="newCampaign.name" type="text" placeholder="Summer promo"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Multiplier</label>
+          <input x-model.number="newCampaign.multiplier" type="number" step="0.05" min="0.05" placeholder="0.5"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Starts at (UTC)</label>
+          <input x-model="newCampaign.starts_at" type="datetime-local"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Ends at (UTC)</label>
+          <input x-model="newCampaign.ends_at" type="datetime-local"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Target</label>
+          <select x-model="newCampaign.target"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+            <option value="all">All workspaces (non-locked)</option>
+            <option value="new">New workspaces only</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Discount days <span class="text-gray-600">(optional)</span></label>
+          <input x-model.number="newCampaign.discount_days" type="number" min="1" placeholder="e.g. 30"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+          <p class="text-xs text-gray-600 mt-1">Each workspace gets this many days from their first run. Leave blank for full campaign window.</p>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Max participants <span class="text-gray-600">(optional)</span></label>
+          <input x-model.number="newCampaign.max_participants" type="number" min="1" placeholder="e.g. 100"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+          <p class="text-xs text-gray-600 mt-1">Cap enrollment count. Only applies when Discount days is set.</p>
+        </div>
+      </div>
+      <p x-show="campaignError" x-cloak class="text-red-400 text-xs" x-text="campaignError"></p>
+      <div class="flex gap-3">
+        <button @click="createCampaign()"
+          class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition">
+          Create
+        </button>
+        <button @click="showCampaignForm = false; campaignError = ''"
+          class="text-xs text-gray-400 hover:text-gray-200 transition">
+          Cancel
+        </button>
+      </div>
+    </div>
+
+    <!-- Campaign list -->
+    <div x-show="campaigns.length === 0" x-cloak class="text-gray-500 text-sm py-4">
+      No campaigns yet.
+    </div>
+    <div class="overflow-x-auto">
+      <table x-show="campaigns.length > 0" x-cloak class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-gray-500 border-b border-gray-800">
+            <th class="pb-2 pr-4">Name</th>
+            <th class="pb-2 pr-4">Multiplier</th>
+            <th class="pb-2 pr-4">Target</th>
+            <th class="pb-2 pr-4">Starts</th>
+            <th class="pb-2 pr-4">Ends</th>
+            <th class="pb-2 pr-4">Discount days</th>
+            <th class="pb-2 pr-4">Max enrolled</th>
+            <th class="pb-2 pr-4">Status</th>
+            <th class="pb-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="c in campaigns" :key="c.id">
+            <tr class="border-b border-gray-800/50 hover:bg-gray-900/40 transition">
+              <td class="py-2.5 pr-4 font-medium" x-text="c.name"></td>
+              <td class="py-2.5 pr-4 font-mono text-indigo-300" x-text="'×' + c.multiplier"></td>
+              <td class="py-2.5 pr-4">
+                <span :class="c.target === 'new' ? 'bg-amber-900/40 text-amber-300' : 'bg-gray-800 text-gray-300'"
+                  class="text-xs px-2 py-0.5 rounded-full" x-text="c.target"></span>
+              </td>
+              <td class="py-2.5 pr-4 text-gray-400 text-xs" x-text="fmtDate(c.starts_at)"></td>
+              <td class="py-2.5 pr-4 text-gray-400 text-xs" x-text="fmtDate(c.ends_at)"></td>
+              <td class="py-2.5 pr-4 text-gray-400 text-xs" x-text="c.discount_days ? c.discount_days + 'd' : '—'"></td>
+              <td class="py-2.5 pr-4 text-gray-400 text-xs" x-text="c.max_participants ?? '—'"></td>
+              <td class="py-2.5 pr-4">
+                <span :class="c.active ? 'bg-emerald-900/40 text-emerald-400' : 'bg-gray-800 text-gray-500'"
+                  class="text-xs px-2 py-0.5 rounded-full" x-text="c.active ? 'active' : 'inactive'"></span>
+              </td>
+              <td class="py-2.5">
+                <button @click="toggleCampaign(c)"
+                  :class="c.active ? 'text-amber-400 hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'"
+                  class="text-xs transition mr-3"
+                  x-text="c.active ? 'Deactivate' : 'Activate'">
+                </button>
+                <button @click="deleteCampaign(c)"
+                  class="text-xs text-red-500 hover:text-red-400 transition">Delete</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── TAB: Workspaces ───────────────────────────────────────────── -->
+  <div x-show="activeTab === 'workspaces'" x-cloak>
+    <h2 class="text-lg font-semibold mb-4">Workspaces</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-gray-500 border-b border-gray-800">
+            <th class="pb-2 pr-4">Workspace</th>
+            <th class="pb-2 pr-4">Mode</th>
+            <th class="pb-2 pr-4">Status</th>
+            <th class="pb-2 pr-4">Override ×</th>
+            <th class="pb-2 pr-4">Locked</th>
+            <th class="pb-2 pr-4">1h spend</th>
+            <th class="pb-2 pr-4">Total cost</th>
+            <th class="pb-2 pr-4">Created</th>
+            <th class="pb-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="ws in workspaces" :key="ws.id">
+            <tr class="border-b border-gray-800/50 hover:bg-gray-900/40 transition group">
+              <td class="py-2.5 pr-4">
+                <p class="font-medium" x-text="ws.name"></p>
+                <p class="text-xs text-gray-500" x-text="ws.slug"></p>
+              </td>
+              <td class="py-2.5 pr-4">
+                <span :class="{
+                  'bg-indigo-900/40 text-indigo-300': ws.llm_key_mode === 'managed',
+                  'bg-blue-900/40 text-blue-300': ws.llm_key_mode === 'byok',
+                  'bg-purple-900/40 text-purple-300': ws.llm_key_mode === 'proxy',
+                }" class="text-xs px-2 py-0.5 rounded-full" x-text="ws.llm_key_mode"></span>
+              </td>
+              <td class="py-2.5 pr-4">
+                <span :class="ws.is_trial ? 'bg-amber-900/40 text-amber-300' : 'bg-emerald-900/40 text-emerald-400'"
+                  class="text-xs px-2 py-0.5 rounded-full" x-text="ws.is_trial ? 'trial' : 'paid'"></span>
+              </td>
+              <td class="py-2.5 pr-4">
+                <div x-show="editingWs !== ws.id" class="flex items-center gap-2">
+                  <span class="font-mono text-xs"
+                    :class="ws.cost_multiplier_override !== null ? 'text-indigo-300' : 'text-gray-600'"
+                    x-text="ws.cost_multiplier_override !== null ? '×' + ws.cost_multiplier_override : '—'">
+                  </span>
+                  <button @click="startEdit(ws)"
+                    class="text-xs text-gray-500 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition">
+                    Edit
+                  </button>
+                </div>
+                <div x-show="editingWs === ws.id" x-cloak class="flex items-center gap-2">
+                  <input x-model.number="editOverride" type="number" step="0.1" min="0" placeholder="null"
+                    class="w-20 bg-gray-950 border border-indigo-700 rounded px-2 py-1 text-xs font-mono focus:outline-none">
+                  <button @click="saveOverride(ws)" class="text-xs text-indigo-400 hover:text-indigo-300">Save</button>
+                  <button @click="editingWs = null" class="text-xs text-gray-500 hover:text-gray-300">×</button>
+                </div>
+              </td>
+              <td class="py-2.5 pr-4">
+                <button @click="toggleLock(ws)"
+                  :class="ws.multiplier_locked ? 'text-amber-400 hover:text-amber-300' : 'text-gray-600 hover:text-gray-400'"
+                  class="text-xs transition"
+                  x-text="ws.multiplier_locked ? '🔒 locked' : 'unlock'">
+                </button>
+              </td>
+              <td class="py-2.5 pr-4 font-mono text-xs tabular-nums"
+                :class="{
+                  'text-red-400':    velocity[ws.id] && velocity[ws.id].velocity_usd >= 5,
+                  'text-yellow-400': velocity[ws.id] && velocity[ws.id].velocity_usd >= 1 && velocity[ws.id].velocity_usd < 5,
+                  'text-gray-500':   !velocity[ws.id] || velocity[ws.id].velocity_usd < 1
+                }"
+                x-text="velocity[ws.id] ? '$' + velocity[ws.id].velocity_usd.toFixed(3) : '—'"></td>
+              <td class="py-2.5 pr-4 font-mono text-xs text-gray-400"
+                x-text="'$' + (ws.total_cost_usd ?? 0).toFixed(4)"></td>
+              <td class="py-2.5 pr-4 text-xs text-gray-500" x-text="fmtDate(ws.created_at)"></td>
+              <td class="py-2.5 flex items-center gap-3">
+                <button x-show="ws.is_trial" @click="markPaid(ws)"
+                  class="text-xs text-emerald-500 hover:text-emerald-400 transition">Mark paid</button>
+                <button @click="blockWorkspace(ws)"
+                  class="text-xs transition"
+                  :class="ws.is_blocked ? 'text-green-500 hover:text-green-400' : 'text-red-500 hover:text-red-400'"
+                  x-text="ws.is_blocked ? 'Unblock' : 'Block'"></button>
+                <button @click="toggleCompliancePack(ws)"
+                  class="text-xs transition"
+                  :class="ws.compliance_pack_enabled ? 'text-violet-400 hover:text-violet-300' : 'text-gray-600 hover:text-gray-400'"
+                  x-text="ws.compliance_pack_enabled ? '🔒 pack on' : 'pack off'"></button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <p x-show="workspaces.length === 0" x-cloak class="text-gray-500 text-sm py-4">No workspaces found.</p>
+  </div>
+
+  <!-- ── TAB: Users ────────────────────────────────────────────────── -->
+  <div x-show="activeTab === 'users'" x-cloak>
+    <h2 class="text-lg font-semibold mb-4">Users</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-gray-500 border-b border-gray-800">
+            <th class="pb-2 pr-4">Email</th>
+            <th class="pb-2 pr-4">Name</th>
+            <th class="pb-2 pr-4">Caso de uso</th>
+            <th class="pb-2 pr-4">Equipo</th>
+            <th class="pb-2 pr-4">Admin</th>
+            <th class="pb-2 pr-4">Accounting</th>
+            <th class="pb-2 pr-4">Joined</th>
+            <th class="pb-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="u in users" :key="u.id">
+            <tr class="border-b border-gray-800/50 hover:bg-gray-900/40 transition">
+              <td class="py-2.5 pr-4 font-mono text-xs" x-text="u.email"></td>
+              <td class="py-2.5 pr-4 text-gray-300 text-xs" x-text="u.display_name || '—'"></td>
+              <td class="py-2.5 pr-4 text-xs text-gray-500" x-text="u.use_case || '—'"></td>
+              <td class="py-2.5 pr-4 text-xs text-gray-500" x-text="u.team_size || '—'"></td>
+              <td class="py-2.5 pr-4">
+                <span x-show="u.is_platform_admin" x-cloak
+                  class="text-xs bg-indigo-900/40 text-indigo-300 px-2 py-0.5 rounded-full">admin</span>
+              </td>
+              <td class="py-2.5 pr-4">
+                <span :class="u.accounting_access ? 'text-emerald-400' : 'text-gray-700'"
+                  class="text-xs" x-text="u.accounting_access ? '✓' : '—'"></span>
+              </td>
+              <td class="py-2.5 pr-4 text-xs text-gray-500" x-text="fmtDate(u.created_at)"></td>
+              <td class="py-2.5">
+                <button @click="toggleUserAdmin(u)"
+                  :class="u.is_platform_admin ? 'text-red-500 hover:text-red-400' : 'text-indigo-400 hover:text-indigo-300'"
+                  class="text-xs transition"
+                  x-text="u.is_platform_admin ? 'Revoke admin' : 'Make admin'">
+                </button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+    <p x-show="users.length === 0" x-cloak class="text-gray-500 text-sm py-4">No users found.</p>
+  </div>
+
+
+</div><!-- /main -->
+
+<script>
+// ── Chart helpers ──────────────────────────────────────────────────────────
+const _chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#6b7280', font: { size: 11 } } },
+    y: { grid: { color: 'rgba(255,255,255,.04)' }, ticks: { color: '#6b7280', font: { size: 11 } }, beginAtZero: true },
+  },
+};
+
+function _barChart(id, labels, data, color = '#0D9488') {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (ctx._chart) ctx._chart.destroy();
+  ctx._chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: color + '99', borderColor: color, borderWidth: 1.5, borderRadius: 3 }],
+    },
+    options: { ..._chartDefaults },
+  });
+}
+
+function _lineChart(id, labels, datasets) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (ctx._chart) ctx._chart.destroy();
+  ctx._chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      ..._chartDefaults,
+      plugins: { legend: { display: true, labels: { color: '#9ca3af', font: { size: 11 } } } },
+    },
+  });
+}
+
+function _doughnutChart(id, labels, data, colors) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (ctx._chart) ctx._chart.destroy();
+  ctx._chart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 4 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { color: '#9ca3af', font: { size: 10 }, padding: 10, boxWidth: 10 },
+        },
+      },
+    },
+  });
+}
+
+function _drawCharts(analytics) {
+  const periods = analytics.workspaces_by_month.map(d => d.period);
+  const wsCounts = analytics.workspaces_by_month.map(d => d.count);
+  _barChart('chart-workspaces', periods, wsCounts, '#0D9488');
+
+  const uPeriods = analytics.users_by_month.map(d => d.period);
+  const uCounts = analytics.users_by_month.map(d => d.count);
+  _barChart('chart-users', uPeriods, uCounts, '#8b5cf6');
+
+  const rPeriods = analytics.runs_by_month.map(d => d.period);
+  _lineChart('chart-runs', rPeriods, [
+    { label: 'Total', data: analytics.runs_by_month.map(d => d.count), borderColor: '#0D9488', backgroundColor: '#0D948820', fill: true, tension: 0.3 },
+    { label: 'Éxito', data: analytics.runs_by_month.map(d => d.success), borderColor: '#10b981', backgroundColor: 'transparent', tension: 0.3 },
+  ]);
+
+  const ts = analytics.tickets_by_status;
+  const tLabels = Object.keys(ts);
+  const tData = Object.values(ts);
+  const tColors = { open: '#f59e0b', in_progress: '#0D9488', done: '#10b981', blocked: '#ef4444' };
+  _doughnutChart('chart-tickets', tLabels, tData, tLabels.map(l => tColors[l] || '#6b7280'));
+}
+
+// ── Alpine app ─────────────────────────────────────────────────────────────
+function adminApp() {
+  return {
+    loading: true,
+    accessDenied: false,
+    activeTab: ({ analytics: 'analytics', campaigns: 'campaigns', users: 'users', workspaces_admin: 'workspaces' })[location.pathname.split('/')[1]] || 'analytics',
+    stats: {},
+    workspaces: [],
+    campaigns: [],
+    users: [],
+    analytics: null,
+    analyticsLoading: false,
+    feedback: [],
+    showCampaignForm: false,
+    campaignError: '',
+    newCampaign: { name: '', multiplier: 0.5, starts_at: '', ends_at: '', target: 'all', discount_days: null, max_participants: null },
+    editingWs: null,
+    editOverride: null,
+    velocity: {},  // { workspace_id: { velocity_usd, run_count } }
+    billingRates: { managed_cost_multiplier: 3.0, byok_service_multiplier: 0.4, proxy_service_multiplier: 0.7, managed_enabled: true, byok_enabled: true, proxy_enabled: true },
+    editRates: {},
+    editingRates: false,
+    editTierModels: {}, editingTierModels: false, tierModelsError: '',
+    ratesError: '',
+    platformDefaults: {}, editPlatformDefaults: {}, editingPlatformDefaults: false, platformDefaultsError: '',
+    showBulkApply: false,
+    bulkApplyMode: 'downward_only',
+    bulkApplyResult: null,
+    bulkApplyError: '',
+    bulkApplyLoading: false,
+
+    async init() {
+      try {
+        const [s, w, c, u, br, vel, pd, me] = await Promise.all([
+          this.get('/admin/stats'),
+          this.get('/admin/workspaces?limit=200'),
+          this.get('/admin/campaigns'),
+          this.get('/admin/users?limit=200'),
+          this.get('/admin/billing-rates'),
+          this.get('/admin/analytics/velocity?window_minutes=60'),
+          this.get('/admin/agent-models/defaults'),
+          this.get('/auth/me').catch(() => null),
+        ]);
+        this.stats = s;
+        this.workspaces = w;
+        this.campaigns = c;
+        this.users = u;
+        this.billingRates = br;
+        this.velocity = Object.fromEntries((vel || []).map(v => [v.workspace_id, v]));
+        this.platformDefaults = pd?.default_agent_models || {};
+        // Load analytics for the default tab
+        await this.loadAnalytics();
+      } catch (e) {
+        if (e.status === 403 || e.status === 401) {
+          this.accessDenied = true;
+        }
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async switchTab(id) {
+      this.activeTab = id;
+      if (id === 'analytics' && !this.analytics) {
+        await this.loadAnalytics();
+      }
+    },
+
+    async loadAnalytics() {
+      if (this.analyticsLoading) return;
+      this.analyticsLoading = true;
+      try {
+        const [a, fb] = await Promise.all([
+          this.get('/admin/analytics'),
+          this.get('/admin/feedback?limit=20'),
+        ]);
+        this.analytics = a;
+        this.feedback = fb;
+        // Charts render after DOM update
+        this.$nextTick(() => _drawCharts(a));
+      } catch (_) {}
+      finally { this.analyticsLoading = false; }
+    },
+
+    async get(url) {
+      const r = await fetch(url, { credentials: 'same-origin' });
+      if (!r.ok) { const err = new Error(r.statusText); err.status = r.status; throw err; }
+      return r.json();
+    },
+
+    async post(url, body) {
+      const r = await fetch(url, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrfToken() },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || r.statusText); }
+      return r.json();
+    },
+
+    async patch(url, body) {
+      const r = await fetch(url, {
+        method: 'PATCH', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.csrfToken() },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || r.statusText); }
+      return r.json();
+    },
+
+    async del(url) {
+      const r = await fetch(url, {
+        method: 'DELETE', credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': this.csrfToken() },
+      });
+      if (!r.ok && r.status !== 204) { throw new Error(r.statusText); }
+    },
+
+    csrfToken() {
+      return document.cookie.split('; ')
+        .find(c => c.startsWith('csrf_token='))
+        ?.split('=')[1] ?? '';
+    },
+
+    fmtDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    },
+
+    // ── Campaigns ──
+
+    async createCampaign() {
+      this.campaignError = '';
+      try {
+        const body = {
+          ...this.newCampaign,
+          starts_at: this.newCampaign.starts_at ? new Date(this.newCampaign.starts_at).toISOString() : null,
+          ends_at: this.newCampaign.ends_at ? new Date(this.newCampaign.ends_at).toISOString() : null,
+        };
+        const c = await this.post('/admin/campaigns', body);
+        this.campaigns.unshift(c);
+        this.showCampaignForm = false;
+        this.newCampaign = { name: '', multiplier: 0, starts_at: '', ends_at: '', target: 'all', discount_days: null, max_participants: null };
+      } catch (e) {
+        this.campaignError = e.message;
+      }
+    },
+
+    // ── Billing rates ──
+
+    cancelRates() {
+      this.editingRates = false;
+      this.ratesError = '';
+    },
+
+    async savePlatformDefaults() {
+      this.platformDefaultsError = '';
+      try {
+        const payload = { default_agent_models: Object.keys(this.editPlatformDefaults).length ? this.editPlatformDefaults : null };
+        const updated = await this.patch('/admin/agent-models/defaults', payload);
+        this.platformDefaults = updated.default_agent_models || {};
+        this.editingPlatformDefaults = false;
+      } catch (e) {
+        this.platformDefaultsError = e.message;
+      }
+    },
+
+    async saveRates() {
+      this.ratesError = '';
+      try {
+        const updated = await this.patch('/admin/billing-rates', this.editRates);
+        this.billingRates = updated;
+        this.editingRates = false;
+      } catch (e) {
+        this.ratesError = e.message;
+      }
+    },
+
+    async saveTierModels() {
+      this.tierModelsError = '';
+      try {
+        const updated = await this.patch('/admin/billing-rates', this.editTierModels);
+        this.billingRates = { ...this.billingRates, ...updated };
+        this.editingTierModels = false;
+      } catch (e) {
+        this.tierModelsError = e.message;
+      }
+    },
+
+    async applyRatesToExisting() {
+      this.bulkApplyError = '';
+      this.bulkApplyResult = null;
+      this.bulkApplyLoading = true;
+      try {
+        this.bulkApplyResult = await this.post('/admin/billing-rates/apply-to-existing', { mode: this.bulkApplyMode });
+      } catch (e) {
+        this.bulkApplyError = e.message;
+      } finally {
+        this.bulkApplyLoading = false;
+      }
+    },
+
+    async toggleMode(mode) {
+      const key = `${mode}_enabled`;
+      const newVal = !this.billingRates[key];
+      this.ratesError = '';
+      try {
+        const updated = await this.patch('/admin/billing-rates', { [key]: newVal });
+        this.billingRates = updated;
+      } catch (e) {
+        this.ratesError = e.message;
+      }
+    },
+
+    async toggleCampaign(c) {
+      const updated = await this.patch(`/admin/campaigns/${c.id}`, { active: !c.active });
+      Object.assign(c, updated);
+    },
+
+    async deleteCampaign(c) {
+      if (!confirm(`Delete campaign "${c.name}"?`)) return;
+      await this.del(`/admin/campaigns/${c.id}`);
+      this.campaigns = this.campaigns.filter(x => x.id !== c.id);
+    },
+
+    // ── Workspaces ──
+
+    async blockWorkspace(ws) {
+      const nowBlocking = !ws.is_blocked;
+      const label = nowBlocking ? 'block' : 'unblock';
+      if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} workspace "${ws.name}"?\n\n` +
+        (nowBlocking
+          ? 'All new runs will be rejected immediately.'
+          : 'The workspace will be able to run again.'))) return;
+      const updated = await this.patch(`/admin/workspaces/${ws.id}`, { is_blocked: nowBlocking });
+      Object.assign(ws, updated);
+    },
+
+    startEdit(ws) {
+      this.editingWs = ws.id;
+      this.editOverride = ws.cost_multiplier_override;
+    },
+
+    async saveOverride(ws) {
+      const val = this.editOverride === '' || this.editOverride === null ? null : parseFloat(this.editOverride);
+      const updated = await this.patch(`/admin/workspaces/${ws.id}`, { cost_multiplier_override: val });
+      Object.assign(ws, updated);
+      this.editingWs = null;
+    },
+
+    async toggleLock(ws) {
+      const updated = await this.patch(`/admin/workspaces/${ws.id}`, { multiplier_locked: !ws.multiplier_locked });
+      Object.assign(ws, updated);
+    },
+
+    async markPaid(ws) {
+      if (!confirm(`Mark workspace "${ws.name}" as paid? This removes trial status.`)) return;
+      const updated = await this.patch(`/admin/workspaces/${ws.id}`, { is_trial: false });
+      Object.assign(ws, updated);
+    },
+
+    async toggleCompliancePack(ws) {
+      const enabling = !ws.compliance_pack_enabled;
+      if (!confirm(`${enabling ? 'Enable' : 'Disable'} Compliance Pack for "${ws.name}"?`)) return;
+      const updated = await this.patch(`/admin/workspaces/${ws.id}`, { compliance_pack_enabled: enabling });
+      Object.assign(ws, updated);
+    },
+
+    // ── Users ──
+
+    async toggleUserAdmin(u) {
+      const action = u.is_platform_admin ? 'Revoke admin from' : 'Grant admin to';
+      if (!confirm(`${action} ${u.email}?`)) return;
+      const r = await fetch(`/admin/users/${u.id}/admin?is_admin=${!u.is_platform_admin}`, {
+        method: 'PATCH', credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': this.csrfToken() },
+      });
+      if (!r.ok) { alert('Failed'); return; }
+      const updated = await r.json();
+      Object.assign(u, updated);
+    },
+
+  };
+}
+</script>
+</body>
+</html>
+

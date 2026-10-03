@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backlog — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+<link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+</head>
+<style>
+[x-cloak]{display:none}
+.sprint-card { transition: border-color .15s }
+.ticket-row { transition: background .12s }
+.ticket-row:hover { background: rgb(31 41 55 / .7) }
+</style>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="backlog()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<div class="px-6 py-5 max-w-5xl mx-auto">
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-semibold">Backlog</h1>
+      <p class="text-gray-400 text-sm mt-0.5">Sprints · tickets · dependencies</p>
+    </div>
+    <button @click="showNewSprint = true"
+      class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+      <i class="ti ti-plus text-base"></i> New sprint
+    </button>
+  </div>
+
+  <!-- Error banner -->
+  <div x-show="loadError" x-cloak class="mb-4 bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 flex items-center gap-3">
+    <span>⚠</span><span x-text="loadError"></span>
+    <button @click="load()" class="ml-auto text-xs underline">Retry</button>
+  </div>
+
+  <!-- New sprint modal -->
+  <div x-show="showNewSprint" x-cloak class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm shadow-xl"
+         @click.outside="showNewSprint = false">
+      <h2 class="text-base font-semibold mb-4">Create sprint</h2>
+      <label class="block text-sm text-gray-400 mb-1">Name</label>
+      <input x-model="newSprintName" @keydown.enter="createSprint()"
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-indigo-500"
+        placeholder="Sprint 1 — auth module">
+      <label class="block text-sm text-gray-400 mb-1">Default team <span class="text-gray-600 text-xs">(optional)</span></label>
+      <select x-model="newSprintTeam"
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none focus:border-indigo-500">
+        <option value="">— inherit workspace default —</option>
+        <template x-for="t in availableTeams" :key="t">
+          <option :value="t" x-text="t"></option>
+        </template>
+      </select>
+      <div class="flex gap-3 justify-end">
+        <button @click="showNewSprint = false"
+          class="px-4 py-2 text-sm text-gray-400 hover:text-gray-200">Cancel</button>
+        <button @click="createSprint()" :disabled="!newSprintName.trim()"
+          class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg">
+          Create
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading skeleton -->
+  <template x-if="loading">
+    <div class="space-y-4">
+      <template x-for="i in [1,2,3]">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2">
+          <div class="h-5 w-32 bg-gray-800 rounded animate-pulse"></div>
+          <div class="h-10 bg-gray-800 rounded animate-pulse mt-3"></div>
+          <div class="h-10 bg-gray-800 rounded animate-pulse"></div>
+        </div>
+      </template>
+    </div>
+  </template>
+
+  <!-- Sprint groups -->
+  <div x-show="!loading" class="space-y-4">
+
+    <template x-for="(sprint, si) in sprints" :key="sprint.sprint_id">
+      <div class="sprint-card bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <!-- Sprint header -->
+        <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-800 cursor-pointer"
+             @click="sprint._open = !sprint._open">
+          <button class="text-gray-500 text-sm w-4">
+            <i :class="sprint._open ? 'ti ti-chevron-down' : 'ti ti-chevron-right'"></i>
+          </button>
+          <span class="font-medium text-sm" x-text="sprint.name"></span>
+          <span class="text-xs px-2 py-0.5 rounded font-medium"
+            :class="{
+              'bg-yellow-950 text-yellow-400': sprint.status === 'planning',
+              'bg-indigo-950 text-indigo-400': sprint.status === 'active',
+              'bg-green-950 text-green-400': sprint.status === 'done'
+            }"
+            x-text="sprint.status"></span>
+          <span class="text-xs text-gray-600 ml-1" x-text="`${ticketsFor(sprint.sprint_id).length} tickets`"></span>
+          <span x-show="sprint.default_team" class="text-xs font-mono text-gray-600 ml-2 bg-gray-800 px-1.5 py-0.5 rounded"
+            x-text="sprint.default_team"></span>
+
+          <!-- sprint reorder + run -->
+          <div class="ml-auto flex gap-1" @click.stop>
+            <button @click="moveSprint(si, -1)" :disabled="si === 0"
+              class="text-gray-600 hover:text-gray-300 disabled:opacity-20 p-1 text-xs">↑</button>
+            <button @click="moveSprint(si, 1)" :disabled="si === sprints.length - 1"
+              class="text-gray-600 hover:text-gray-300 disabled:opacity-20 p-1 text-xs">↓</button>
+            <!-- status cycle -->
+            <button @click="cycleSprint(sprint)"
+              class="text-gray-600 hover:text-gray-300 p-1 text-xs ml-2 border border-gray-700 rounded">
+              <i class="ti ti-refresh"></i>
+            </button>
+            <!-- run sprint -->
+            <button @click="runSprint(sprint)" :disabled="sprint._running"
+              class="text-xs px-2 py-1 ml-1 bg-indigo-700 hover:bg-indigo-600 disabled:opacity-40 text-white rounded flex items-center gap-1">
+              <i class="ti ti-player-play text-sm"></i>
+              <span x-text="sprint._running ? 'Running…' : 'Run'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tickets -->
+        <div x-show="sprint._open" x-cloak>
+          <template x-if="ticketsFor(sprint.sprint_id).length === 0">
+            <p class="text-gray-700 text-xs text-center py-5">No tickets in this sprint yet.</p>
+          </template>
+
+          <template x-for="(t, ti) in ticketsFor(sprint.sprint_id)" :key="t.ticket_id">
+            <div class="ticket-row flex items-center gap-3 px-4 py-2.5 border-b border-gray-800/60 last:border-0">
+              <!-- reorder -->
+              <div class="flex flex-col gap-0.5 shrink-0">
+                <button @click="moveTicket(sprint.sprint_id, ti, -1)" :disabled="ti === 0"
+                  class="text-gray-700 hover:text-gray-400 disabled:opacity-20 text-xs leading-none">▲</button>
+                <button @click="moveTicket(sprint.sprint_id, ti, 1)"
+                  :disabled="ti === ticketsFor(sprint.sprint_id).length - 1"
+                  class="text-gray-700 hover:text-gray-400 disabled:opacity-20 text-xs leading-none">▼</button>
+              </div>
+
+              <!-- display id -->
+              <span class="font-mono text-xs text-gray-500 shrink-0 w-24" x-text="t.display_id || t.ticket_id.slice(0,8)+'…'"></span>
+
+              <!-- title -->
+              <span class="text-sm flex-1 truncate" x-text="t.title"></span>
+
+              <!-- depends_on badges -->
+              <template x-if="t.depends_on && t.depends_on.length">
+                <div class="flex gap-1 shrink-0">
+                  <template x-for="dep in t.depends_on">
+                    <span class="text-xs font-mono bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded"
+                      :title="'Depends on ' + dep"
+                      x-text="shortId(dep)"></span>
+                  </template>
+                </div>
+              </template>
+
+              <!-- status -->
+              <span class="text-xs px-2 py-0.5 rounded font-medium shrink-0"
+                :class="{
+                  'bg-gray-800 text-gray-400': t.status === 'open',
+                  'bg-indigo-950 text-indigo-400': t.status === 'in_progress',
+                  'bg-green-950 text-green-400': t.status === 'done',
+                  'bg-red-950 text-red-400': t.status === 'blocked'
+                }"
+                x-text="t.status.replace('_',' ')"></span>
+
+              <!-- move to backlog -->
+              <button @click="moveToBacklog(t)"
+                class="text-gray-700 hover:text-red-400 text-xs shrink-0 ml-1" title="Move to backlog">
+                <i class="ti ti-arrows-move"></i>
+              </button>
+            </div>
+          </template>
+
+          <!-- Drop zone: show backlog tickets to add -->
+          <div class="px-4 py-2 border-t border-gray-800/40">
+            <button @click="sprint._addOpen = !sprint._addOpen"
+              class="text-xs text-indigo-500 hover:text-indigo-300 flex items-center gap-1">
+              <i class="ti ti-plus text-sm"></i>
+              <span x-text="sprint._addOpen ? 'Cancel' : 'Add from backlog'"></span>
+            </button>
+            <div x-show="sprint._addOpen" x-cloak class="mt-2 space-y-1 max-h-40 overflow-y-auto pr-1">
+              <template x-if="backlogTickets().length === 0">
+                <p class="text-xs text-gray-600">Backlog is empty.</p>
+              </template>
+              <template x-for="bt in backlogTickets()" :key="bt.ticket_id">
+                <div class="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-800 px-2 py-1.5 rounded"
+                     @click="addToSprint(bt, sprint.sprint_id); sprint._addOpen = false">
+                  <span class="font-mono text-gray-500 w-20 truncate" x-text="bt.display_id || bt.ticket_id.slice(0,8)"></span>
+                  <span class="truncate" x-text="bt.title"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Backlog (unassigned) -->
+    <div class="sprint-card bg-gray-900 border border-dashed border-gray-700 rounded-xl overflow-hidden">
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-800 cursor-pointer"
+           @click="backlogOpen = !backlogOpen">
+        <button class="text-gray-500 text-sm w-4">
+          <i :class="backlogOpen ? 'ti ti-chevron-down' : 'ti ti-chevron-right'"></i>
+        </button>
+        <span class="font-medium text-sm text-gray-400">Backlog</span>
+        <span class="text-xs text-gray-600" x-text="`${backlogTickets().length} unassigned`"></span>
+      </div>
+      <div x-show="backlogOpen" x-cloak>
+        <template x-if="backlogTickets().length === 0">
+          <p class="text-gray-700 text-xs text-center py-5">All tickets are in a sprint.</p>
+        </template>
+        <template x-for="(t, ti) in backlogTickets()" :key="t.ticket_id">
+          <div class="ticket-row flex items-center gap-3 px-4 py-2.5 border-b border-gray-800/60 last:border-0">
+            <span class="font-mono text-xs text-gray-500 shrink-0 w-24" x-text="t.display_id || t.ticket_id.slice(0,8)+'…'"></span>
+            <span class="text-sm flex-1 truncate" x-text="t.title"></span>
+            <span class="text-xs px-2 py-0.5 rounded font-medium shrink-0"
+              :class="{
+                'bg-gray-800 text-gray-400': t.status === 'open',
+                'bg-indigo-950 text-indigo-400': t.status === 'in_progress',
+                'bg-green-950 text-green-400': t.status === 'done',
+                'bg-red-950 text-red-400': t.status === 'blocked'
+              }"
+              x-text="t.status.replace('_',' ')"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <template x-if="sprints.length === 0 && !loading">
+      <div class="text-center py-16 text-gray-600">
+        <i class="ti ti-stack-2 text-4xl mb-3 block"></i>
+        <p class="text-sm">No sprints yet — create your first sprint above.</p>
+        <p class="text-xs mt-1 text-gray-700">Each run generates tickets you can organise into sprints.</p>
+      </div>
+    </template>
+  </div>
+</div>
+
+<script>
+function backlog() {
+  return {
+    sprints: [],
+    tickets: [],
+    loading: true,
+    loadError: null,
+    showNewSprint: false,
+    newSprintName: '',
+    newSprintTeam: '',
+    availableTeams: [],
+    backlogOpen: true,
+
+    async init() {
+      await Promise.all([this.load(), this.loadTeams()]);
+    },
+
+    async loadTeams() {
+      try {
+        const r = await fetch('/run/teams', { headers: this.apiHeaders() });
+        if (r.ok) {
+          const d = await r.json();
+          this.availableTeams = (d.teams || []).filter(t => t !== 'engine' && t !== 'custom');
+        }
+      } catch {}
+    },
+
+    apiHeaders() {
+      const k = localStorage.getItem('antcrew_api_key');
+      const h = { 'Content-Type': 'application/json' };
+      if (k) h['X-Api-Key'] = k;
+      return h;
+    },
+
+    async load() {
+      this.loading = true;
+      this.loadError = null;
+      try {
+        const [sp, tk] = await Promise.all([
+          fetch('/sprints/?limit=200', { headers: this.apiHeaders() }).then(r => r.json()),
+          fetch('/tickets/?limit=500', { headers: this.apiHeaders() }).then(r => r.json()),
+        ]);
+        if (!Array.isArray(sp) || !Array.isArray(tk)) throw new Error('Unexpected response');
+        this.sprints = sp.map(s => ({ ...s, _open: true, _addOpen: false, _running: false }));
+        this.tickets = tk;
+      } catch (e) {
+        this.loadError = e.message || 'Failed to load';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    ticketsFor(sprintId) {
+      return this.tickets
+        .filter(t => t.sprint_id === sprintId)
+        .sort((a, b) => a.backlog_order - b.backlog_order);
+    },
+
+    backlogTickets() {
+      return this.tickets.filter(t => !t.sprint_id);
+    },
+
+    shortId(ticketId) {
+      // look up display_id first
+      const t = this.tickets.find(t => t.ticket_id === ticketId);
+      return t?.display_id || ticketId.slice(0, 8);
+    },
+
+    async createSprint() {
+      const name = this.newSprintName.trim();
+      if (!name) return;
+      const body = { name };
+      if (this.newSprintTeam) body.default_team = this.newSprintTeam;
+      const r = await fetch('/sprints/', {
+        method: 'POST',
+        headers: this.apiHeaders(),
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { alert('Failed to create sprint'); return; }
+      const sprint = await r.json();
+      this.sprints.push({ ...sprint, _open: true, _addOpen: false, _running: false });
+      this.newSprintName = '';
+      this.newSprintTeam = '';
+      this.showNewSprint = false;
+    },
+
+    async runSprint(sprint) {
+      if (sprint._running) return;
+      sprint._running = true;
+      try {
+        const r = await fetch(`/sprints/${sprint.sprint_id}/run`, {
+          method: 'POST',
+          headers: this.apiHeaders(),
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          alert(`Run failed: ${e.detail || r.status}`);
+          return;
+        }
+        const result = await r.json();
+        const dispatched = result.dispatched?.length || 0;
+        const waiting = result.waiting?.length || 0;
+        const done = result.already_done?.length || 0;
+        const msg = dispatched
+          ? `Dispatched ${dispatched} ticket(s) using team "${result.team}".${waiting ? ` ${waiting} waiting for dependencies.` : ''}`
+          : waiting
+          ? `No ready tickets — ${waiting} waiting for dependencies, ${done} done.`
+          : `All ${done} tickets already done.`;
+        alert(msg);
+        if (dispatched > 0) await this.load();
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        sprint._running = false;
+      }
+    },
+
+    async moveSprint(idx, dir) {
+      const other = idx + dir;
+      if (other < 0 || other >= this.sprints.length) return;
+      // swap locally
+      [this.sprints[idx], this.sprints[other]] = [this.sprints[other], this.sprints[idx]];
+      // persist order
+      await Promise.all(this.sprints.map((s, i) =>
+        fetch(`/sprints/${s.sprint_id}`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ backlog_order: i }),
+        })
+      ));
+    },
+
+    async cycleSprint(sprint) {
+      const cycle = { planning: 'active', active: 'done', done: 'planning' };
+      const next = cycle[sprint.status] || 'planning';
+      const r = await fetch(`/sprints/${sprint.sprint_id}`, {
+        method: 'PATCH',
+        headers: this.apiHeaders(),
+        body: JSON.stringify({ status: next }),
+      });
+      if (r.ok) sprint.status = next;
+    },
+
+    async moveTicket(sprintId, idx, dir) {
+      const group = this.ticketsFor(sprintId);
+      const other = idx + dir;
+      if (other < 0 || other >= group.length) return;
+      const a = group[idx], b = group[other];
+      const oldA = a.backlog_order, oldB = b.backlog_order;
+      a.backlog_order = oldB;
+      b.backlog_order = oldA;
+      if (oldA === oldB) { a.backlog_order = oldB + (dir > 0 ? 1 : -1); }
+      await Promise.all([
+        fetch(`/tickets/${a.ticket_id}/sprint`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ sprint_id: sprintId, backlog_order: a.backlog_order }),
+        }),
+        fetch(`/tickets/${b.ticket_id}/sprint`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ sprint_id: sprintId, backlog_order: b.backlog_order }),
+        }),
+      ]);
+    },
+
+    async moveToBacklog(ticket) {
+      const r = await fetch(`/tickets/${ticket.ticket_id}/sprint`, {
+        method: 'PATCH',
+        headers: this.apiHeaders(),
+        body: JSON.stringify({ sprint_id: null }),
+      });
+      if (r.ok) ticket.sprint_id = null;
+    },
+
+    async addToSprint(ticket, sprintId) {
+      const r = await fetch(`/tickets/${ticket.ticket_id}/sprint`, {
+        method: 'PATCH',
+        headers: this.apiHeaders(),
+        body: JSON.stringify({ sprint_id: sprintId }),
+      });
+      if (r.ok) ticket.sprint_id = sprintId;
+    },
+  };
+}
+</script>
+</body>
+</html>

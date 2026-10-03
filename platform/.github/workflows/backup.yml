@@ -1,0 +1,115 @@
+name: Database Backup
+
+# Daily pg_dump of the Neon database, compressed and uploaded to Backblaze B2.
+# Retains the last 30 backups (older files are deleted from B2 after 30 days via
+# a lifecycle rule — configure in the B2 bucket settings).
+#
+# Required GitHub secrets:
+#   DATABASE_URL        — Neon PostgreSQL connection string
+#   B2_KEY_ID           — Backblaze B2 application key ID
+#   B2_APPLICATION_KEY  — Backblaze B2 application key
+#   B2_ENDPOINT_URL     — e.g. https://s3.us-east-005.backblazeb2.com
+#   B2_BACKUP_BUCKET    — bucket name for backups (separate from artifact bucket)
+
+on:
+  schedule:
+    # 02:00 UTC daily
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: pg_dump → B2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check required secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+          B2_BACKUP_BUCKET: ${{ secrets.B2_BACKUP_BUCKET }}
+        run: |
+          MISSING=""
+          [ -z "$DATABASE_URL" ]    && MISSING="$MISSING DATABASE_URL"
+          [ -z "$B2_KEY_ID" ]       && MISSING="$MISSING B2_KEY_ID"
+          [ -z "$B2_ENDPOINT_URL" ] && MISSING="$MISSING B2_ENDPOINT_URL"
+          [ -z "$B2_BACKUP_BUCKET" ] && MISSING="$MISSING B2_BACKUP_BUCKET"
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Backup skipped — secrets not configured yet:$MISSING"
+            echo "SKIP_BACKUP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install PostgreSQL client
+        if: env.SKIP_BACKUP != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-client
+
+      - name: Install boto3
+        if: env.SKIP_BACKUP != 'true'
+        run: pip install --quiet boto3
+
+      - name: Dump database
+        if: env.SKIP_BACKUP != 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d_%H%M%S")
+          FILENAME="antcrew_prod_${TIMESTAMP}.sql.gz"
+          echo "FILENAME=${FILENAME}" >> $GITHUB_ENV
+          # Strip sslmode/channel_binding params that confuse pg_dump
+          CLEAN_URL=$(echo "$DATABASE_URL" | sed 's/?.*$//')
+          pg_dump "$CLEAN_URL" | gzip > "/tmp/${FILENAME}"
+          SIZE=$(du -sh "/tmp/${FILENAME}" | cut -f1)
+          echo "Backup: ${FILENAME} (${SIZE})"
+
+      - name: Upload to Backblaze B2
+        if: env.SKIP_BACKUP != 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+          B2_BACKUP_BUCKET: ${{ secrets.B2_BACKUP_BUCKET }}
+        run: |
+          python - <<'EOF'
+          import os, boto3, botocore.config
+
+          bucket  = os.environ["B2_BACKUP_BUCKET"]
+          fname   = os.environ["FILENAME"]
+          endpoint = os.environ["AWS_ENDPOINT_URL"]
+
+          s3 = boto3.client(
+              "s3",
+              endpoint_url=endpoint,
+              config=botocore.config.Config(s3={"addressing_style": "path"}),
+          )
+          key = f"backups/{fname}"
+          s3.upload_file(f"/tmp/{fname}", bucket, key)
+          print(f"Uploaded s3://{bucket}/{key}")
+          EOF
+
+      - name: Verify upload
+        if: env.SKIP_BACKUP != 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.B2_ENDPOINT_URL }}
+          B2_BACKUP_BUCKET: ${{ secrets.B2_BACKUP_BUCKET }}
+        run: |
+          python - <<'EOF'
+          import os, boto3, botocore.config
+
+          bucket   = os.environ["B2_BACKUP_BUCKET"]
+          fname    = os.environ["FILENAME"]
+          endpoint = os.environ["AWS_ENDPOINT_URL"]
+
+          s3 = boto3.client(
+              "s3",
+              endpoint_url=endpoint,
+              config=botocore.config.Config(s3={"addressing_style": "path"}),
+          )
+          obj = s3.head_object(Bucket=bucket, Key=f"backups/{fname}")
+          size_mb = obj["ContentLength"] / 1024 / 1024
+          print(f"Verified: backups/{fname} ({size_mb:.2f} MB)")
+          EOF

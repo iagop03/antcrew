@@ -1,0 +1,338 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Templates — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+<link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="templateBrowser()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<div class="px-6 py-5">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-semibold text-white">Templates</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Pre-built agent workflows — click to launch</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <input x-model="search" type="text" placeholder="Search templates…"
+        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-indigo-500 w-56" />
+    </div>
+  </div>
+
+  <!-- Category filters -->
+  <div class="flex items-center gap-2 mb-5 flex-wrap">
+    <button @click="activeCategory = null"
+      class="px-3 py-1 rounded-full text-xs font-medium transition"
+      :class="activeCategory === null ? 'bg-indigo-700 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'">
+      All
+    </button>
+    <template x-for="cat in categories" :key="cat">
+      <button @click="activeCategory = cat"
+        class="px-3 py-1 rounded-full text-xs font-medium transition"
+        :class="activeCategory === cat ? 'bg-indigo-700 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'"
+        x-text="cat">
+      </button>
+    </template>
+  </div>
+
+  <!-- Template grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <template x-for="tpl in filteredTemplates" :key="tpl.id">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden hover:border-gray-700 transition group">
+        <!-- Card header -->
+        <div class="px-4 pt-4 pb-3">
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <div class="text-2xl" x-text="tpl.icon"></div>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
+              :class="{
+                'bg-indigo-900/60 text-indigo-300': tpl.category === 'Engineering',
+                'bg-purple-900/60 text-purple-300': tpl.category === 'Content',
+                'bg-amber-900/60 text-amber-300': tpl.category === 'Marketing',
+                'bg-teal-900/60 text-teal-300': tpl.category === 'Research',
+                'bg-rose-900/60 text-rose-300': tpl.category === 'Design',
+                'bg-blue-900/60 text-blue-300': tpl.category === 'Data',
+              }"
+              x-text="tpl.category">
+            </span>
+          </div>
+          <h3 class="text-sm font-semibold text-white mb-1" x-text="tpl.name"></h3>
+          <p class="text-xs text-gray-400 leading-relaxed" x-text="tpl.description"></p>
+        </div>
+
+        <!-- Agents list -->
+        <div class="px-4 pb-3">
+          <div class="flex flex-wrap gap-1">
+            <template x-for="agent in tpl.agents" :key="agent">
+              <span class="font-mono text-xs px-1.5 py-0.5 bg-gray-800 text-gray-400 rounded"
+                    x-text="agent"></span>
+            </template>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-4 pb-4 flex items-center justify-between">
+          <span class="text-xs text-gray-600" x-text="tpl.agents.length + ' agent' + (tpl.agents.length !== 1 ? 's' : '')"></span>
+          <button @click="launchTemplate(tpl)"
+            :disabled="launching === tpl.id"
+            class="text-xs font-medium px-3 py-1.5 rounded-lg transition
+                   bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50">
+            <span x-show="launching !== tpl.id">Launch →</span>
+            <span x-show="launching === tpl.id" x-cloak>Starting…</span>
+          </button>
+        </div>
+      </div>
+    </template>
+    <template x-if="filteredTemplates.length === 0">
+      <div class="col-span-full text-center py-16 text-gray-600 text-sm">
+        No templates match your search.
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- Launch modal -->
+<template x-if="showModal">
+  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" @click.self="showModal = false">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-lg shadow-2xl p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <span class="text-2xl" x-text="selectedTpl && selectedTpl.icon"></span>
+        <h2 class="text-base font-semibold text-white" x-text="selectedTpl && selectedTpl.name"></h2>
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs text-gray-500 mb-1.5">Goal / request</label>
+        <textarea x-model="customRequest" rows="3"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 resize-none"
+          :placeholder="selectedTpl && selectedTpl.placeholder"></textarea>
+      </div>
+      <div class="mb-5">
+        <label class="block text-xs text-gray-500 mb-1.5">Model (optional)</label>
+        <input x-model="customModel" type="text" placeholder="e.g. claude or gpt-4o (blank = default)"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500" />
+      </div>
+      <div x-show="launchError" x-cloak class="mb-3 text-xs text-red-400" x-text="launchError"></div>
+      <template x-if="launchedRunId">
+        <div class="mb-3 text-xs text-emerald-400">
+          Run started →
+          <a :href="'/run/' + launchedRunId" class="underline font-mono" x-text="launchedRunId.slice(0, 16) + '…'"></a>
+        </div>
+      </template>
+      <div class="flex items-center justify-end gap-3">
+        <button @click="showModal = false" class="text-sm text-gray-500 hover:text-gray-300 transition">Cancel</button>
+        <button @click="confirmLaunch()"
+          :disabled="launching"
+          class="bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+          <span x-show="!launching">Launch</span>
+          <span x-show="launching" x-cloak>Launching…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+const TEMPLATES = [
+  {
+    id: 'product-prd',
+    name: 'Product PRD + Tickets',
+    icon: '📋',
+    category: 'Engineering',
+    description: 'Discovery → PRD → sprint tickets. Ideal for kicking off a new feature.',
+    agents: ['discovery', 'product_manager', 'sprint_planner'],
+    team: 'full_stack',
+    placeholder: 'Build a user authentication system with OAuth and 2FA',
+  },
+  {
+    id: 'dev-team',
+    name: 'Dev Team — Code + Tests',
+    icon: '⚙️',
+    category: 'Engineering',
+    description: 'Code generation, code review, and automated test suite for a given spec.',
+    agents: ['coder', 'code_reviewer', 'tester'],
+    team: 'dev',
+    placeholder: 'Implement a REST API for managing blog posts with CRUD operations',
+  },
+  {
+    id: 'cloud-arch',
+    name: 'Cloud Architecture',
+    icon: '☁️',
+    category: 'Engineering',
+    description: 'Design a cloud infrastructure spec with service selection, cost estimates, and security notes.',
+    agents: ['cloud_architect'],
+    team: 'custom',
+    placeholder: 'Design a scalable, cost-effective AWS architecture for a SaaS startup with 10k users',
+  },
+  {
+    id: 'db-schema',
+    name: 'Database Schema Designer',
+    icon: '🗄️',
+    category: 'Engineering',
+    description: 'Generate a complete relational schema with tables, columns, indexes, and relationships.',
+    agents: ['db_schema'],
+    team: 'custom',
+    placeholder: 'Design a PostgreSQL schema for an e-commerce platform with users, products, orders',
+  },
+  {
+    id: 'seo-content',
+    name: 'SEO Content Pipeline',
+    icon: '🔍',
+    category: 'Content',
+    description: 'Research → content writing → SEO analysis → social media posts in one flow.',
+    agents: ['researcher', 'content_writer', 'seo_analyst', 'social_media'],
+    team: 'content',
+    placeholder: 'Write an SEO-optimized guide about TypeScript best practices for 2025',
+  },
+  {
+    id: 'email-campaign',
+    name: 'Email Campaign',
+    icon: '📧',
+    category: 'Marketing',
+    description: 'Design a complete email campaign with subject, preview, body, and CTA.',
+    agents: ['email_campaign'],
+    team: 'custom',
+    placeholder: 'Launch email for our new AI feature — targeting power users, emphasizing time savings',
+  },
+  {
+    id: 'social-media',
+    name: 'Social Media Pack',
+    icon: '📱',
+    category: 'Marketing',
+    description: 'Adapt any content or topic for Twitter, LinkedIn, and Instagram with hashtags.',
+    agents: ['social_media'],
+    team: 'custom',
+    placeholder: 'Promote our open-source multi-agent framework antcrew to developers',
+  },
+  {
+    id: 'market-research',
+    name: 'Market Research',
+    icon: '🔬',
+    category: 'Research',
+    description: 'Deep research with structured findings, citations, and executive summary.',
+    agents: ['researcher'],
+    team: 'research',
+    placeholder: 'Analyze the competitive landscape for AI agent orchestration frameworks in 2025',
+  },
+  {
+    id: 'data-analysis',
+    name: 'Data Analysis Report',
+    icon: '📊',
+    category: 'Data',
+    description: 'Analyze a dataset description and produce insights, metrics, and recommendations.',
+    agents: ['data_analyst'],
+    team: 'custom',
+    placeholder: 'Analyze our Q3 user retention data: 65% 7-day retention, 40% 30-day, churn mostly in onboarding',
+  },
+  {
+    id: 'design-system',
+    name: 'Design System',
+    icon: '🎨',
+    category: 'Design',
+    description: 'Generate a design system with components, tokens, principles, and usage guidelines.',
+    agents: ['design_system'],
+    team: 'custom',
+    placeholder: 'Create a design system for a B2B SaaS dashboard — dark mode first, minimal, accessible',
+  },
+  {
+    id: 'security-audit',
+    name: 'Security Audit',
+    icon: '🔒',
+    category: 'Engineering',
+    description: 'Static analysis of code or architecture for vulnerabilities and security gaps.',
+    agents: ['security'],
+    team: 'custom',
+    placeholder: 'Audit our FastAPI auth middleware for OWASP top 10 vulnerabilities',
+  },
+  {
+    id: 'full-stack',
+    name: 'Full-Stack Feature',
+    icon: '🚀',
+    category: 'Engineering',
+    description: 'End-to-end: PRD → DB schema → API code → tests → DevOps config.',
+    agents: ['product_manager', 'db_schema', 'coder', 'tester', 'devops'],
+    team: 'full_stack',
+    placeholder: 'Add a real-time notifications system to our web app using WebSockets',
+  },
+];
+
+function templateBrowser() {
+  return {
+    templates: TEMPLATES,
+    categories: [...new Set(TEMPLATES.map(t => t.category))].sort(),
+    activeCategory: null,
+    search: '',
+    selectedTpl: null,
+    showModal: false,
+    customRequest: '',
+    customModel: '',
+    launching: null,
+    launchError: '',
+    launchedRunId: null,
+
+    async init() {},
+
+    get filteredTemplates() {
+      return this.templates.filter(t => {
+        if (this.activeCategory && t.category !== this.activeCategory) return false;
+        if (this.search) {
+          const q = this.search.toLowerCase();
+          return t.name.toLowerCase().includes(q) ||
+                 t.description.toLowerCase().includes(q) ||
+                 t.agents.some(a => a.includes(q));
+        }
+        return true;
+      });
+    },
+
+    launchTemplate(tpl) {
+      this.selectedTpl = tpl;
+      this.customRequest = '';
+      this.customModel = '';
+      this.launchError = '';
+      this.launchedRunId = null;
+      this.showModal = true;
+    },
+
+    async confirmLaunch() {
+      if (!this.customRequest.trim()) {
+        this.launchError = 'Please describe your goal.';
+        return;
+      }
+      this.launching = this.selectedTpl.id;
+      this.launchError = '';
+      try {
+        const body = { request: this.customRequest.trim() };
+        if (this.customModel.trim()) body.model = this.customModel.trim();
+        const headers = { 'Content-Type': 'application/json' };
+        const k = localStorage.getItem('antcrew_api_key');
+        if (k) headers['X-API-Key'] = k;
+
+        const r = await fetch(`/run`, { method: 'POST', headers, body: JSON.stringify(body) });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${r.status}`);
+        }
+        const data = await r.json();
+        this.launchedRunId = data.run_id;
+      } catch (err) {
+        this.launchError = err.message;
+      } finally {
+        this.launching = null;
+      }
+    },
+  };
+}
+</script>
+</body>
+</html>
+

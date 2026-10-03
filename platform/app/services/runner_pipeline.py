@@ -1,0 +1,646 @@
+"""Visual pipeline and custom pipeline dispatch.
+
+Handles dispatch_pipeline() (drag-and-drop visual builder), dispatch_custom()
+(TemplateAgent step list), and dispatch_quick() (inline string specs).
+Imports from runner_core for shared executor and DB helpers.
+"""
+from __future__ import annotations
+
+import asyncio
+import functools
+import logging
+from typing import Optional
+
+from antcrew import bus
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.channel import PlatformChannel
+from app.core.database import engine
+from app.services.runner_base import (
+    _check_workspace_budget,
+    _get_budget_lock,
+    _mark_workspace_budget_status,
+)
+from app.services.runner_core import (
+    _DISPATCH_TIMEOUT,
+    _executor,
+    _get_workspace_semaphore,
+    _set_run_attribution,
+    _store_result,
+)
+
+log = logging.getLogger(__name__)
+
+
+def _validate_custom_dag(steps: list[dict]) -> None:
+    """Validate that each step's input_key is available at that point in the pipeline.
+
+    Available keys start with {"request"} and grow as each step's output_key is
+    produced. Raises ValueError on the first missing key so errors surface early,
+    before any LLM call is made.
+    """
+    available: set[str] = {"request"}
+    for i, step in enumerate(steps):
+        name = step.get("name") or f"step[{i}]"
+        input_key = step.get("input_key") or "request"
+        output_key = step.get("output_key") or ""
+        if input_key not in available:
+            raise ValueError(
+                f"Step {i} ({name!r}): input_key {input_key!r} is not available at this point. "
+                f"Available keys: {sorted(available)}. "
+                "Check that a prior step produces this key via its output_key."
+            )
+        if output_key:
+            available.add(output_key)
+
+
+def _run_quick_sync(
+    specs: list[str],
+    request: str,
+    thread_id: str,
+    max_cost_usd: Optional[float],
+    model: str = "claude",
+    byok_api_key: Optional[str] = None,
+    byok_base_url: Optional[str] = None,
+):
+    """Build a QuickTeam from string specs and run it."""
+    from antcrew import build_llm
+    from antcrew.agents.quick_agent import QuickTeam
+
+    _llm_kw: dict = {}
+    if byok_api_key is not None:
+        _llm_kw["api_key"] = byok_api_key
+    if byok_base_url is not None:
+        _llm_kw["base_url"] = byok_base_url
+    llm = build_llm(model or "claude", **_llm_kw)
+    if max_cost_usd is not None:
+        llm.max_cost_usd = max_cost_usd
+
+    team = QuickTeam(specs=specs, llm=llm)
+    return team.run(request, thread_id=thread_id)
+
+
+async def dispatch_quick(
+    specs: list[str],
+    request: str,
+    thread_id: str = "default",
+    *,
+    model: str = "claude",
+    max_cost_usd: Optional[float] = None,
+    created_by: Optional[str] = None,
+    workspace_id: Optional[int] = None,
+    client_label: Optional[str] = None,
+) -> Optional[str]:
+    """Dispatch a QuickTeam run (zero-config inline agents from string specs)."""
+    if workspace_id is not None:
+        async with _get_budget_lock(workspace_id):
+            await _check_workspace_budget(workspace_id)
+
+    _byok_api_key: Optional[str] = None
+    _byok_base_url: Optional[str] = None
+    if workspace_id is not None:
+        from sqlmodel import select as _sel
+
+        from app.models.run import Workspace as _WS
+        async with AsyncSession(engine, expire_on_commit=False) as _sess:
+            _ws = (await _sess.exec(_sel(_WS).where(_WS.id == workspace_id))).first()
+            if _ws:
+                if not model:
+                    _ws_models = getattr(_ws, "agent_models", None) or {}
+                    model = _ws_models.get("default", "") or "claude"
+                from app.services.runner_base import resolve_workspace_llm_config
+                _byok_api_key, _byok_base_url = await resolve_workspace_llm_config(_sess, _ws, model or "claude")
+
+    loop = asyncio.get_running_loop()
+    run_id_future: asyncio.Future[str] = loop.create_future()
+    platform_channel = PlatformChannel()
+    _ws_semaphore_q = _get_workspace_semaphore(workspace_id)
+
+    def _on_pipeline_start(event) -> None:
+        if event.run_id and not run_id_future.done():
+            platform_channel.set_run_id(event.run_id)
+            loop.call_soon_threadsafe(run_id_future.set_result, event.run_id)
+
+    bus.subscribe("pipeline.start", _on_pipeline_start)
+
+    async def _bg() -> None:
+        try:
+            fn = functools.partial(
+                _run_quick_sync, specs, request, thread_id,
+                max_cost_usd, model or "claude", _byok_api_key, _byok_base_url,
+            )
+            if _ws_semaphore_q is not None:
+                async with _ws_semaphore_q:
+                    result = await loop.run_in_executor(_executor, fn)
+            else:
+                result = await loop.run_in_executor(_executor, fn)
+            await _store_result(result)
+            if workspace_id is not None:
+                await _mark_workspace_budget_status(workspace_id)
+        except Exception as exc:
+            log.error("runner: quick pipeline failed: %s", exc)
+            if not run_id_future.done():
+                loop.call_soon_threadsafe(run_id_future.set_result, None)
+        finally:
+            bus.unsubscribe("pipeline.start", _on_pipeline_start)
+
+    asyncio.ensure_future(_bg())
+
+    try:
+        run_id = await asyncio.wait_for(asyncio.shield(run_id_future), timeout=_DISPATCH_TIMEOUT)
+        if (created_by or workspace_id is not None) and run_id:
+            await _set_run_attribution(run_id, created_by, workspace_id, client_label)
+        return run_id
+    except asyncio.TimeoutError:
+        log.warning("runner: quick pipeline.start not received within %.0f s", _DISPATCH_TIMEOUT)
+        return None
+
+
+def _run_custom_sync(
+    steps: list[dict],
+    request: str,
+    thread_id: str,
+    max_cost_usd: Optional[float],
+    platform_channel: PlatformChannel,
+    force_hitl: bool,
+    model: str = "claude",
+    byok_api_key: Optional[str] = None,
+    byok_base_url: Optional[str] = None,
+):
+    """Build a CustomTeam from inline TemplateAgent configs and run it."""
+    from antcrew import CustomTeam, TemplateAgent, build_llm
+
+    _llm_kw2: dict = {}
+    if byok_api_key is not None:
+        _llm_kw2["api_key"] = byok_api_key
+    if byok_base_url is not None:
+        _llm_kw2["base_url"] = byok_base_url
+    llm = build_llm(model or "claude", **_llm_kw2)
+    if max_cost_usd is not None:
+        llm.max_cost_usd = max_cost_usd
+
+    agents = [TemplateAgent(step, llm=llm) for step in steps]
+    team = CustomTeam(steps=agents, llm=llm)
+
+    # CustomTeam._agents is a flat list; regular teams use a dict — handle both
+    _raw = getattr(team, "_agents", [])
+    all_agents = list(_raw.values()) if isinstance(_raw, dict) else list(_raw)
+
+    if force_hitl:
+        for agent in all_agents:
+            if not getattr(agent, "channel", None):
+                agent.channel = platform_channel
+            agent.approval_required = True
+        return team.run_interactive(request, thread_id=thread_id)
+
+    hitl_agents = [a for a in all_agents if getattr(a, "approval_required", False)]
+    if hitl_agents:
+        for agent in hitl_agents:
+            if not getattr(agent, "channel", None):
+                agent.channel = platform_channel
+        return team.run_interactive(request, thread_id=thread_id)
+
+    return team.run(request, thread_id=thread_id)
+
+
+async def dispatch_custom(
+    steps: list[dict],
+    request: str,
+    thread_id: str = "default",
+    *,
+    max_cost_usd: Optional[float] = None,
+    created_by: Optional[str] = None,
+    workspace_id: Optional[int] = None,
+    force_hitl: bool = False,
+    model: str = "claude",
+    client_label: Optional[str] = None,
+) -> Optional[str]:
+    """Dispatch a custom pipeline defined by a list of TemplateAgent step configs."""
+    try:
+        from antcrew import CustomTeam, TemplateAgent  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            f"CustomTeam or TemplateAgent not available: {exc}. "
+            "Ensure antcrew >= 0.14 is installed."
+        ) from exc
+
+    # Validate DAG before touching the thread pool
+    _validate_custom_dag(steps)
+
+    if workspace_id is not None:
+        async with _get_budget_lock(workspace_id):
+            await _check_workspace_budget(workspace_id)
+
+    # Look up per-workspace HITL timeout and BYOK key in a single DB call
+    _hitl_timeout: Optional[float] = None
+    _byok_api_key: Optional[str] = None
+    _byok_base_url: Optional[str] = None
+    if workspace_id is not None:
+        from sqlmodel import select as _sel
+
+        from app.models.run import Workspace as _WS
+        async with AsyncSession(engine, expire_on_commit=False) as _sess:
+            _ws = (await _sess.exec(_sel(_WS).where(_WS.id == workspace_id))).first()
+            if _ws:
+                if _ws.hitl_timeout_s is not None:
+                    _hitl_timeout = _ws.hitl_timeout_s
+                from app.services.runner_base import resolve_workspace_llm_config
+                _byok_api_key, _byok_base_url = await resolve_workspace_llm_config(_sess, _ws, model)
+
+    loop = asyncio.get_running_loop()
+    run_id_future: asyncio.Future[str] = loop.create_future()
+    platform_channel = PlatformChannel(timeout_s=_hitl_timeout)
+    _ws_semaphore_c = _get_workspace_semaphore(workspace_id)
+
+    def _on_pipeline_start(event) -> None:
+        if event.run_id and not run_id_future.done():
+            platform_channel.set_run_id(event.run_id)
+            loop.call_soon_threadsafe(run_id_future.set_result, event.run_id)
+
+    bus.subscribe("pipeline.start", _on_pipeline_start)
+
+    async def _bg() -> None:
+        try:
+            fn = functools.partial(
+                _run_custom_sync, steps, request, thread_id,
+                max_cost_usd, platform_channel, force_hitl, model, _byok_api_key, _byok_base_url,
+            )
+            if _ws_semaphore_c is not None:
+                async with _ws_semaphore_c:
+                    result = await loop.run_in_executor(_executor, fn)
+            else:
+                result = await loop.run_in_executor(_executor, fn)
+            await _store_result(result)
+            if workspace_id is not None:
+                await _mark_workspace_budget_status(workspace_id)
+        except Exception as exc:
+            log.error("runner: custom pipeline failed: %s", exc)
+            if not run_id_future.done():
+                loop.call_soon_threadsafe(run_id_future.set_result, None)
+        finally:
+            bus.unsubscribe("pipeline.start", _on_pipeline_start)
+
+    asyncio.ensure_future(_bg())
+
+    try:
+        run_id = await asyncio.wait_for(asyncio.shield(run_id_future), timeout=_DISPATCH_TIMEOUT)
+        if (created_by or workspace_id is not None) and run_id:
+            await _set_run_attribution(run_id, created_by, workspace_id, client_label)
+        return run_id
+    except asyncio.TimeoutError:
+        log.warning("runner: custom pipeline.start not received within %.0f s", _DISPATCH_TIMEOUT)
+        return None
+
+
+def _resolve_node_channel(
+    channel_type: str,
+    platform_channel: PlatformChannel,
+    slack_creds: Optional[dict],
+    telegram_creds: Optional[dict],
+):
+    """Return the appropriate channel object for a node's channel_type."""
+    if channel_type == "slack" and slack_creds:
+        try:
+            from antcrew import SlackChannel
+            return SlackChannel(
+                bot_token=slack_creds["bot_token"],
+                channel_id=slack_creds["channel_id"],
+                app_token=slack_creds.get("app_token"),
+            )
+        except Exception as exc:
+            log.warning("runner: SlackChannel unavailable (%s) — falling back to PlatformChannel", exc)
+    elif channel_type == "telegram" and telegram_creds:
+        try:
+            from antcrew import TelegramChannel
+            return TelegramChannel(
+                token=telegram_creds["token"],
+                chat_id=telegram_creds.get("chat_id"),
+            )
+        except Exception as exc:
+            log.warning("runner: TelegramChannel unavailable (%s) — falling back to PlatformChannel", exc)
+    return platform_channel
+
+
+def _run_pipeline_sync(
+    definition: dict,
+    request: str,
+    thread_id: str,
+    max_cost_usd: Optional[float],
+    platform_channel: PlatformChannel,
+    force_hitl: bool,
+    model: str = "claude",
+    byok_api_key: Optional[str] = None,
+    byok_base_url: Optional[str] = None,
+    slack_creds: Optional[dict] = None,
+    telegram_creds: Optional[dict] = None,
+    pipeline_id: Optional[str] = None,
+):
+    """Run a visual pipeline definition synchronously in a thread-pool worker.
+
+    Per-node config from definition:
+      node.model        → each agent uses its own LLM instance
+      node.hitl         → interrupt_before wired on downstream nodes (review producer output)
+      node.channel_type → "platform" | "slack" | "telegram"
+    """
+    from antcrew import bus as _bus
+    from antcrew import new_run_id
+
+    from app.services.pipeline_builder import build_team_from_definition
+
+    # Build agents — each node gets its own LLM from node.model
+    agents, supervisor = build_team_from_definition(
+        definition,
+        default_model=model or "claude",
+        byok_api_key=byok_api_key,
+        byok_base_url=byok_base_url,
+    )
+
+    # Build edge map and compute interrupt_before for HITL.
+    # The interrupt must fire BEFORE a downstream node (not before the hitl node itself),
+    # so that the hitl agent runs first, sets current_agent, and its output is available
+    # for review before the next agent proceeds.
+    raw_edges = definition.get("edges", [])
+    edge_map: dict[str, list[str]] = {}
+    for e in raw_edges:
+        edge_map.setdefault(e["from"], []).append(e["to"])
+    all_targets: set[str] = {e["to"] for e in raw_edges}
+
+    nodes_by_id = {n["id"]: n for n in definition.get("nodes", [])}
+    node_type_map = {n["id"]: (n.get("type") or n["id"]) for n in definition.get("nodes", [])}
+    any_hitl = False
+    hitl_producers: set[str] = set()
+
+    for node_id, agent in agents.items():
+        node = nodes_by_id.get(node_id, {})
+        is_hitl = node.get("hitl", False) or force_hitl
+        if is_hitl:
+            ch_type = node.get("channel_type") or "platform"
+            agent.channel = _resolve_node_channel(
+                ch_type, platform_channel, slack_creds, telegram_creds
+            )
+            hitl_producers.add(node_id)
+            any_hitl = True
+
+    # Interrupt before the downstream consumers, not the producers themselves.
+    # force_hitl = all non-entry nodes; per-node hitl = direct downstream of each hitl node.
+    interrupt_before: list[str] = []
+    if any_hitl:
+        if force_hitl:
+            interrupt_before = [nid for nid in agents if nid in all_targets]
+        else:
+            for pid in hitl_producers:
+                for ds in edge_map.get(pid, []):
+                    if ds in agents and ds not in interrupt_before:
+                        interrupt_before.append(ds)
+        # If a hitl node is last (no downstream), it can't be interrupted after — skip.
+        if hitl_producers and not interrupt_before:
+            log.warning(
+                "runner: %d hitl node(s) have no downstream — HITL review skipped for: %s",
+                len(hitl_producers), ", ".join(sorted(hitl_producers)),
+            )
+
+    # Apply per-node max_cost_usd cap to each agent's LLM
+    if max_cost_usd is not None:
+        seen_llms: set[int] = set()
+        for agent in agents.values():
+            llm = getattr(agent, "llm", None)
+            if llm is not None and id(llm) not in seen_llms:
+                llm.max_cost_usd = max_cost_usd
+                seen_llms.add(id(llm))
+
+    _run_id = new_run_id()
+    _team_label = f"pipeline:{pipeline_id}" if pipeline_id else "visual_pipeline"
+    _bus.emit("pipeline.start", {"team": _team_label, "request": request},
+              run_id=_run_id, thread_id=thread_id)
+
+    initial_state: dict = {
+        "request": request,
+        "messages": [{"role": "user", "content": request}],
+        "_run_id": _run_id,
+        "_thread_id": thread_id,
+    }
+
+    app_graph = supervisor.build(
+        agents,
+        interrupt_before=interrupt_before if interrupt_before else None,
+    )
+    if any_hitl and interrupt_before:
+        state = _run_interactive_pipeline(
+            app_graph, initial_state, agents, thread_id, node_type_map=node_type_map
+        )
+    else:
+        state = app_graph.invoke(initial_state, config={"configurable": {"thread_id": thread_id}})
+
+    # Aggregate cost across all unique LLMs
+    seen: set[int] = set()
+    cost = 0.0
+    for agent in agents.values():
+        llm = getattr(agent, "llm", None)
+        if llm is not None and id(llm) not in seen:
+            seen.add(id(llm))
+            try:
+                s = llm.get_usage_summary()
+                cost += (s or {}).get("total_cost_usd", 0.0) or 0.0
+            except Exception:
+                pass
+
+    _bus.emit("pipeline.end", {"cost_usd": cost, "success": True},
+              run_id=_run_id, thread_id=thread_id)
+
+    from antcrew import RunResult
+    return RunResult(state=state, thread_id=thread_id, cost_usd=cost)
+
+
+def _run_interactive_pipeline(
+    app_graph,
+    initial_state: dict,
+    agents: dict,
+    thread_id: str,
+    *,
+    node_type_map: Optional[dict] = None,
+) -> dict:
+    """Run a visual pipeline with HITL pauses using run_interactive() semantics.
+
+    Pattern mirrors InteractiveMixin.run_interactive() but works with any
+    Supervisor-built graph and agents dict without needing a Team instance.
+    """
+    import asyncio
+    import json as _json
+
+    from antcrew import AGENT_ARTIFACT
+
+    def _artifact_info(agent_name: str) -> tuple:
+        """AGENT_ARTIFACT lookup with fallback to base agent type for duplicate nodes."""
+        result = AGENT_ARTIFACT.get(agent_name, ("", None))
+        if not result[0] and node_type_map:
+            base_type = node_type_map.get(agent_name, agent_name)
+            result = AGENT_ARTIFACT.get(base_type, ("", None))
+        return result
+
+    config = {"configurable": {"thread_id": thread_id}}
+    app_graph.invoke(initial_state, config=config)
+
+    while True:
+        snapshot = app_graph.get_state(config)
+        if not snapshot.next:
+            break
+
+        # current_agent is updated by each agent node before it returns,
+        # so it reflects the last agent to have run (whose output needs review).
+        prev_agent = snapshot.values.get("current_agent", "")
+        agent = agents.get(prev_agent)
+        channel = getattr(agent, "channel", None) if agent else None
+
+        state_key, artifact_cls = _artifact_info(prev_agent)
+        artifact = snapshot.values.get(state_key) if state_key else None
+        options = getattr(agent, "response_options", None) or ["approve", "reject"]
+
+        if channel:
+            # We're inside a thread-pool worker so there's no running event loop.
+            # asyncio.run() creates a fresh loop for the async HITL call.
+            result = asyncio.run(
+                channel.send_for_review(artifact, prev_agent, thread_id, options)
+            )
+        else:
+            result = {"decision": "approve", "edited": None, "feedback": None}
+
+        decision = result.get("decision", "approve")
+        if decision == "reject":
+            break
+
+        if decision == "edit" and result.get("edited"):
+            # Inline _apply_edit logic (avoids instantiating InteractiveMixin)
+            edited_json = result["edited"]
+            if state_key:
+                try:
+                    data = _json.loads(edited_json) if isinstance(edited_json, str) else edited_json
+                    if isinstance(data, list) and artifact_cls:
+                        app_graph.update_state(config, {state_key: [artifact_cls.model_validate(i) for i in data]})
+                    elif isinstance(data, dict) and artifact_cls:
+                        app_graph.update_state(config, {state_key: artifact_cls.model_validate(data)})
+                    else:
+                        app_graph.update_state(config, {state_key: data})
+                except Exception as exc:
+                    log.warning("_run_interactive_pipeline: edit apply failed (%s)", exc)
+
+        app_graph.invoke(None, config=config)
+
+    return app_graph.get_state(config).values
+
+
+async def dispatch_pipeline(
+    definition: dict,
+    request: str,
+    thread_id: str = "default",
+    *,
+    max_cost_usd: Optional[float] = None,
+    created_by: Optional[str] = None,
+    workspace_id: Optional[int] = None,
+    force_hitl: bool = False,
+    model: str = "claude",
+    pipeline_id: Optional[str] = None,
+    client_label: Optional[str] = None,
+) -> Optional[str]:
+    """Dispatch a visual pipeline (from pipeline_def JSON) in the background.
+
+    pipeline_id is stored in Run.team as "pipeline:{pipeline_id}" so runs can
+    be filtered per-pipeline without a schema change.
+
+    Fetches workspace Slack/Telegram credentials so per-node channel_type can be
+    wired up in _run_pipeline_sync without a second async DB call.
+    """
+    import os as _os
+
+    if workspace_id is not None:
+        async with _get_budget_lock(workspace_id):
+            await _check_workspace_budget(workspace_id)
+
+    _hitl_timeout: Optional[float] = None
+    _byok_api_key: Optional[str] = None
+    _byok_base_url: Optional[str] = None
+    _slack_creds: Optional[dict] = None
+    _telegram_creds: Optional[dict] = None
+
+    # Determine which channel types any node requests
+    node_channel_types = {n.get("channel_type") for n in definition.get("nodes", [])}
+
+    if workspace_id is not None:
+        from sqlmodel import select as _sel
+
+        from app.models.run import Workspace as _WS
+        async with AsyncSession(engine, expire_on_commit=False) as _sess:
+            _ws = (await _sess.exec(_sel(_WS).where(_WS.id == workspace_id))).first()
+            if _ws:
+                if _ws.hitl_timeout_s is not None:
+                    _hitl_timeout = _ws.hitl_timeout_s
+                from app.services.runner_base import resolve_workspace_llm_config
+                _byok_api_key, _byok_base_url = await resolve_workspace_llm_config(_sess, _ws, model)
+                # Slack creds — only fetch if a node requests slack channel
+                if "slack" in node_channel_types and getattr(_ws, "slack_bot_token_enc", None):
+                    try:
+                        from app.core.slack_hitl import _decrypt as _slack_dec
+                        _slack_creds = {
+                            "bot_token": _slack_dec(_ws.slack_bot_token_enc),
+                            "channel_id": getattr(_ws, "slack_channel_id", None) or "",
+                            "app_token": (
+                                _slack_dec(_ws.slack_app_token_enc)
+                                if getattr(_ws, "slack_app_token_enc", None) else None
+                            ),
+                        }
+                    except Exception as exc:
+                        log.warning("dispatch_pipeline: failed to decrypt Slack creds: %s", exc)
+
+    # Telegram creds from env (no per-workspace storage yet)
+    if "telegram" in node_channel_types:
+        tok = _os.environ.get("TELEGRAM_BOT_TOKEN")
+        if tok:
+            _telegram_creds = {
+                "token": tok,
+                "chat_id": _os.environ.get("TELEGRAM_CHAT_ID"),
+            }
+
+    loop = asyncio.get_running_loop()
+    run_id_future: asyncio.Future[str] = loop.create_future()
+    platform_channel = PlatformChannel(timeout_s=_hitl_timeout)
+    _ws_semaphore_p = _get_workspace_semaphore(workspace_id)
+
+    def _on_pipeline_start(event) -> None:
+        if event.run_id and not run_id_future.done():
+            platform_channel.set_run_id(event.run_id)
+            loop.call_soon_threadsafe(run_id_future.set_result, event.run_id)
+
+    bus.subscribe("pipeline.start", _on_pipeline_start)
+
+    async def _bg() -> None:
+        try:
+            fn = functools.partial(
+                _run_pipeline_sync, definition, request, thread_id,
+                max_cost_usd, platform_channel, force_hitl, model,
+                _byok_api_key, _byok_base_url, _slack_creds, _telegram_creds,
+                pipeline_id,
+            )
+            if _ws_semaphore_p is not None:
+                async with _ws_semaphore_p:
+                    result = await loop.run_in_executor(_executor, fn)
+            else:
+                result = await loop.run_in_executor(_executor, fn)
+            await _store_result(result)
+            if workspace_id is not None:
+                await _mark_workspace_budget_status(workspace_id)
+        except Exception as exc:
+            log.error("runner: visual pipeline failed: %s", exc)
+            if not run_id_future.done():
+                loop.call_soon_threadsafe(run_id_future.set_result, None)
+        finally:
+            bus.unsubscribe("pipeline.start", _on_pipeline_start)
+
+    asyncio.ensure_future(_bg())
+
+    try:
+        run_id = await asyncio.wait_for(asyncio.shield(run_id_future), timeout=_DISPATCH_TIMEOUT)
+        if (created_by or workspace_id is not None) and run_id:
+            await _set_run_attribution(run_id, created_by, workspace_id, client_label)
+        return run_id
+    except asyncio.TimeoutError:
+        log.warning("runner: visual pipeline.start not received within %.0f s", _DISPATCH_TIMEOUT)
+        return None

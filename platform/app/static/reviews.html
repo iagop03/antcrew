@@ -1,0 +1,964 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reviews — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<style>[x-cloak]{display:none}</style>
+    <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+  <link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="reviewQueue()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<!-- Header + tabs -->
+<div class="px-6 py-5">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-semibold" data-i18n="reviews.title">HITL Review Queue</h1>
+      <p class="text-gray-400 text-sm mt-0.5" data-i18n="reviews.subtitle">Approve or reject agent output — the pipeline resumes immediately.</p>
+    </div>
+    <div class="text-sm text-gray-500" x-show="myDisplayName">
+      <span class="text-gray-600" data-i18n="reviews.signed_in_as">Signed in as</span>
+      <span class="text-indigo-300 ml-1" x-text="myDisplayName"></span>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="flex gap-1 bg-gray-900 rounded-lg p-1 w-fit">
+    <button @click="setTab('mine')"
+      :class="activeTab === 'mine'
+        ? 'bg-gray-800 text-white'
+        : 'text-gray-400 hover:text-gray-200'"
+      class="px-4 py-1.5 rounded-md text-sm font-medium transition flex items-center gap-2">
+      <span data-i18n="reviews.tab.mine">Mi cola</span>
+      <span x-show="mineCount > 0"
+        class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-black text-xs font-bold"
+        x-text="mineCount"></span>
+    </button>
+    <button @click="setTab('all')"
+      :class="activeTab === 'all'
+        ? 'bg-gray-800 text-white'
+        : 'text-gray-400 hover:text-gray-200'"
+      class="px-4 py-1.5 rounded-md text-sm font-medium transition flex items-center gap-2">
+      <span data-i18n="reviews.tab.all">Todas</span>
+      <span x-show="allCount > 0"
+        class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-600 text-gray-200 text-xs font-bold"
+        x-text="allCount"></span>
+    </button>
+    <button @click="setTab('analytics')"
+      :class="activeTab === 'analytics'
+        ? 'bg-gray-800 text-white'
+        : 'text-gray-400 hover:text-gray-200'"
+      class="px-4 py-1.5 rounded-md text-sm font-medium transition">
+      <span data-i18n="reviews.tab.analytics">Analytics</span>
+    </button>
+    <button @click="setTab('history')"
+      :class="activeTab === 'history'
+        ? 'bg-gray-800 text-white'
+        : 'text-gray-400 hover:text-gray-200'"
+      class="px-4 py-1.5 rounded-md text-sm font-medium transition">
+      Historial
+    </button>
+  </div>
+</div>
+
+<!-- Analytics panel -->
+<div x-show="activeTab === 'analytics'" x-cloak class="px-6 pb-8">
+  <template x-if="analyticsLoading">
+    <div class="space-y-3 mt-2">
+      <div class="h-24 bg-gray-900 border border-gray-800 rounded-xl animate-pulse"></div>
+      <div class="h-40 bg-gray-900 border border-gray-800 rounded-xl animate-pulse"></div>
+    </div>
+  </template>
+  <template x-if="!analyticsLoading && !analytics">
+    <p class="text-gray-500 text-sm mt-4">No review data yet for this workspace.</p>
+  </template>
+  <template x-if="analytics">
+    <div class="space-y-4 mt-2">
+      <!-- Summary cards -->
+      <div class="grid grid-cols-4 gap-3">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1" data-i18n="reviews.analytics.total">Total Reviews</div>
+          <div class="text-2xl font-semibold font-mono" x-text="analytics.total_reviews"></div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1" data-i18n="reviews.analytics.pending">Pending</div>
+          <div class="text-2xl font-semibold font-mono text-amber-400" x-text="analytics.pending"></div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1" data-i18n="reviews.analytics.rejected">Rejected</div>
+          <div class="text-2xl font-semibold font-mono text-red-400" x-text="analytics.rejected"></div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1" data-i18n="reviews.analytics.rejection_rate">Rejection Rate</div>
+          <div class="text-2xl font-semibold font-mono"
+            :class="analytics.overall_rejection_rate > 0.3 ? 'text-red-400' : analytics.overall_rejection_rate > 0.1 ? 'text-yellow-400' : 'text-green-400'"
+            x-text="analytics.overall_rejection_rate != null ? (analytics.overall_rejection_rate * 100).toFixed(1) + '%' : '—'"></div>
+        </div>
+      </div>
+
+      <!-- By checkpoint -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="px-4 py-2.5 border-b border-gray-800">
+          <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Rejection rate by checkpoint</span>
+        </div>
+        <div class="divide-y divide-gray-800/50">
+          <template x-if="analytics.by_agent.length === 0">
+            <div class="px-4 py-3 text-sm text-gray-500">No data</div>
+          </template>
+          <template x-for="a in analytics.by_agent" :key="a.agent_name">
+            <div class="px-4 py-3 flex items-center gap-4">
+              <span class="text-sm text-gray-300 w-40 truncate font-mono" x-text="a.agent_name"></span>
+              <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+                <div class="h-2 rounded-full transition-all"
+                  :style="'width:' + (a.rejection_rate != null ? (a.rejection_rate * 100).toFixed(0) : 0) + '%'"
+                  :class="a.rejection_rate > 0.3 ? 'bg-red-500' : a.rejection_rate > 0.1 ? 'bg-yellow-500' : 'bg-green-500'"></div>
+              </div>
+              <span class="text-xs font-mono w-12 text-right"
+                :class="a.rejection_rate > 0.3 ? 'text-red-400' : a.rejection_rate > 0.1 ? 'text-yellow-400' : 'text-gray-400'"
+                x-text="a.rejection_rate != null ? (a.rejection_rate * 100).toFixed(0) + '%' : '—'"></span>
+              <span class="text-xs text-gray-600 w-16 text-right" x-text="a.total + ' total'"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- By resolver -->
+      <template x-if="analytics.by_resolver.length > 0">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-gray-800">
+            <span class="text-xs font-semibold uppercase tracking-wide text-gray-400">Decisions by resolver</span>
+          </div>
+          <div class="divide-y divide-gray-800/50">
+            <template x-for="r in analytics.by_resolver" :key="r.resolver">
+              <div class="px-4 py-2.5 flex items-center justify-between">
+                <span class="text-sm text-gray-300 font-mono" x-text="r.resolver || 'client'"></span>
+                <span class="text-sm font-mono text-indigo-400" x-text="r.decisions + ' decisions'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </template>
+</div>
+
+<!-- History panel -->
+<div x-show="activeTab === 'history'" x-cloak class="px-6 pb-8">
+  <template x-if="historyLoading">
+    <div class="space-y-3 mt-2">
+      <div class="h-12 bg-gray-900 border border-gray-800 rounded-xl animate-pulse"></div>
+      <div class="h-12 bg-gray-900 border border-gray-800 rounded-xl animate-pulse"></div>
+    </div>
+  </template>
+  <template x-if="!historyLoading && history.length === 0">
+    <p class="text-gray-500 text-sm mt-4">No resolved reviews yet.</p>
+  </template>
+  <template x-if="!historyLoading && history.length > 0">
+    <div class="space-y-2 mt-2">
+      <template x-for="rev in history" :key="rev.review_id">
+        <div class="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-sm text-gray-200 font-medium truncate" x-text="rev.agent_name || rev.review_id.slice(0,12)"></div>
+            <div class="text-xs text-gray-500 mt-0.5">
+              <span class="font-mono" x-text="'run:' + (rev.run_id || '').slice(0,12)"></span>
+              <span class="mx-1">·</span>
+              <span x-text="timeAgo(rev.created_at)"></span>
+            </div>
+          </div>
+          <span class="shrink-0 text-xs px-2 py-0.5 rounded-full font-medium"
+            :class="{
+              'bg-green-900/50 text-green-300': rev.status === 'approved',
+              'bg-red-900/50 text-red-300': rev.status === 'rejected',
+              'bg-gray-800 text-gray-400': !['approved','rejected'].includes(rev.status)
+            }"
+            x-text="rev.status"></span>
+        </div>
+      </template>
+    </div>
+  </template>
+</div>
+
+<!-- Loading -->
+<template x-if="loading && activeTab !== 'analytics' && activeTab !== 'history'">
+  <div class="px-6 space-y-4">
+    <template x-for="i in [1,2]" :key="i">
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 animate-pulse">
+        <div class="h-4 bg-gray-800 rounded w-40 mb-3"></div>
+        <div class="h-20 bg-gray-800 rounded mb-4"></div>
+        <div class="flex gap-2">
+          <div class="h-8 bg-gray-800 rounded w-24"></div>
+          <div class="h-8 bg-gray-800 rounded w-24"></div>
+        </div>
+      </div>
+    </template>
+  </div>
+</template>
+
+<!-- Empty state -->
+<template x-if="!loading && reviews.length === 0 && activeTab !== 'analytics' && activeTab !== 'history'">
+  <div class="px-6">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
+      <div class="text-4xl mb-3">✓</div>
+      <p class="text-gray-300 font-medium mb-1">
+        <span x-show="activeTab === 'mine'">No tienes reviews pendientes</span>
+        <span x-show="activeTab === 'all'">No hay reviews pendientes</span>
+      </p>
+      <p class="text-gray-500 text-sm">
+        Runs with <code class="bg-gray-800 px-1 rounded text-xs">hitl: true</code> will appear here.
+      </p>
+    </div>
+  </div>
+</template>
+
+<!-- Bulk action bar — appears when any review is selected -->
+<div x-show="!loading && reviews.length > 0 && activeTab !== 'analytics' && activeTab !== 'history'" class="px-6 mb-3">
+  <div class="flex items-center justify-between">
+    <!-- Select all -->
+    <button @click="reviews.forEach(r => { bulkSelected[r.review_id] = true })"
+      class="text-xs text-gray-500 hover:text-gray-300 transition">
+      Select all
+    </button>
+    <!-- Floating approve bar -->
+    <div x-show="Object.values(bulkSelected).some(v => v)" x-cloak x-transition
+      class="flex items-center gap-3 bg-amber-900/80 border border-amber-700 rounded-xl px-4 py-2">
+      <span class="text-sm text-amber-200">
+        <span x-text="Object.values(bulkSelected).filter(v => v).length" class="font-semibold"></span> selected
+      </span>
+      <button @click="Object.keys(bulkSelected).forEach(k => delete bulkSelected[k])"
+        class="text-xs text-amber-400 hover:text-white transition">
+        Clear
+      </button>
+      <button @click="bulkApprove()" :disabled="bulkApproving"
+        class="text-xs px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-white font-medium transition disabled:opacity-50"
+        x-text="bulkApproving ? 'Approving…' : 'Approve selected'">
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Review cards -->
+<div class="px-6 space-y-5" x-show="!loading && reviews.length > 0 && activeTab !== 'analytics' && activeTab !== 'history'">
+  <template x-for="review in reviews" :key="review.review_id">
+    <div class="bg-gray-900 border border-amber-800/50 rounded-xl overflow-hidden">
+
+      <!-- Card header -->
+      <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between bg-amber-900/10">
+        <div class="flex items-center gap-3 flex-wrap">
+          <!-- Bulk selection checkbox -->
+          <input type="checkbox" :id="'bulk-' + review.review_id"
+            x-model="bulkSelected[review.review_id]"
+            @click.stop
+            class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-0 shrink-0 cursor-pointer">
+          <span class="inline-flex items-center gap-1.5 bg-amber-900/40 text-amber-300 text-xs font-medium px-2.5 py-1 rounded-full">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <span x-text="review.agent_name"></span>
+          </span>
+          <a :href="'/run/' + review.run_id"
+            class="text-xs text-gray-500 hover:text-indigo-400 font-mono transition"
+            x-text="'run:' + review.run_id.slice(0,12) + '…'"></a>
+
+          <!-- Assignee chips -->
+          <template x-if="review.assignees && review.assignees.length > 0">
+            <div class="flex items-center gap-1.5">
+              <template x-for="(a, i) in review.assignees" :key="i">
+                <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                  :class="a === myLabel
+                    ? 'bg-indigo-900/60 text-indigo-300 ring-1 ring-indigo-500'
+                    : 'bg-gray-800 text-gray-400'">
+                  <span class="w-1.5 h-1.5 rounded-full"
+                    :class="a === myLabel ? 'bg-indigo-400' : 'bg-gray-500'"></span>
+                  <span x-text="a"></span>
+                </span>
+              </template>
+            </div>
+          </template>
+
+          <!-- Unassigned: claim button or inline label input -->
+          <template x-if="!review.assignees || review.assignees.length === 0">
+            <div>
+              <template x-if="claimingReviewId !== review.review_id">
+                <button @click="startClaim(review)"
+                  class="text-xs text-gray-600 hover:text-blue-400 transition">
+                  Claim
+                </button>
+              </template>
+              <template x-if="claimingReviewId === review.review_id">
+                <div class="flex items-center gap-1.5">
+                  <input x-model="inlineLabel" @keydown.enter="submitInlineClaim(review)" @keydown.escape="claimingReviewId = null"
+                    placeholder="Your label…" autofocus
+                    class="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 text-xs text-white w-28 focus:outline-none focus:border-indigo-500">
+                  <button @click="submitInlineClaim(review)" class="text-xs text-indigo-400 hover:text-indigo-200">OK</button>
+                  <button @click="claimingReviewId = null" class="text-xs text-gray-600 hover:text-gray-400">✕</button>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+        <span class="text-xs text-gray-500 shrink-0 ml-3" x-text="timeAgo(review.created_at)"></span>
+      </div>
+
+      <!-- Artifact -->
+      <div class="p-5">
+
+        <!-- PRD artifact -->
+        <template x-if="artifactType(review) === 'prd'">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Product Requirements Document</p>
+            <h3 class="text-base font-semibold mb-1" x-text="parsedArtifact(review).title"></h3>
+            <p class="text-gray-300 text-sm mb-3" x-text="parsedArtifact(review).summary"></p>
+            <template x-if="parsedArtifact(review).functional_requirements?.length">
+              <div>
+                <p class="text-xs text-gray-500 mb-1.5">Functional requirements</p>
+                <ul class="space-y-1">
+                  <template x-for="(req, i) in parsedArtifact(review).functional_requirements" :key="i">
+                    <li class="text-sm text-gray-300 flex gap-2">
+                      <span class="text-gray-600 shrink-0" x-text="(i+1) + '.'"></span>
+                      <span x-text="req"></span>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Tickets artifact -->
+        <template x-if="artifactType(review) === 'tickets'">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <p class="text-xs text-gray-500 uppercase tracking-wide">Tickets</p>
+              <button @click="loadAudit(review.review_id)"
+                class="text-xs text-gray-600 hover:text-indigo-400 transition">
+                <span x-show="!loadingAudit[review.review_id] && ticketAudit[review.review_id] === undefined">Ver historial</span>
+                <span x-show="loadingAudit[review.review_id]">Cargando…</span>
+                <span x-show="ticketAudit[review.review_id] !== undefined && !loadingAudit[review.review_id]">Historial</span>
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-gray-500 text-xs border-b border-gray-800">
+                    <th class="text-left pb-2 pr-4">ID</th>
+                    <th class="text-left pb-2 pr-4">Title</th>
+                    <th class="text-left pb-2 pr-4">Priority</th>
+                    <th class="text-left pb-2 text-indigo-500">Nota</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(t, i) in parsedArtifact(review)" :key="i">
+                    <tr class="border-t border-gray-800/50">
+                      <td class="py-1.5 pr-4 font-mono text-xs text-gray-400 align-top" x-text="t.id || t.ticket_id || '—'"></td>
+                      <td class="py-1.5 pr-4 text-gray-200 align-top" x-text="t.title"></td>
+                      <td class="py-1.5 pr-4 align-top">
+                        <span class="text-xs px-1.5 py-0.5 rounded"
+                          :class="{
+                            'bg-red-900/40 text-red-300': ['high','critical'].includes(t.priority),
+                            'bg-yellow-900/40 text-yellow-300': t.priority === 'medium',
+                            'bg-gray-800 text-gray-400': t.priority === 'low' || !t.priority
+                          }"
+                          x-text="t.priority || '—'"></span>
+                      </td>
+                      <td class="py-1.5 align-top">
+                        <template x-if="t.custom_fields?.user_notes">
+                          <span class="text-xs text-indigo-300 italic" x-text="t.custom_fields.user_notes"></span>
+                        </template>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <!-- Audit trail (lazy) -->
+            <template x-if="ticketAudit[review.review_id]?.length > 0">
+              <div class="mt-3 border-t border-gray-800 pt-3 space-y-1.5">
+                <p class="text-xs text-gray-600 uppercase tracking-wide mb-1.5">Historial de revisión</p>
+                <template x-for="(entry, ei) in ticketAudit[review.review_id]" :key="ei">
+                  <div class="flex items-start gap-2 text-xs">
+                    <span class="text-gray-600 shrink-0 pt-0.5 font-mono" x-text="entry.action"></span>
+                    <span x-show="entry.actor_label" class="text-indigo-400 shrink-0" x-text="entry.actor_label"></span>
+                    <span x-show="entry.note" class="text-gray-400 italic" x-text="entry.note"></span>
+                    <span class="ml-auto text-gray-700 shrink-0" x-text="timeAgo(entry.created_at)"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="ticketAudit[review.review_id]?.length === 0">
+              <p class="mt-2 text-xs text-gray-700 italic">Sin historial aún.</p>
+            </template>
+          </div>
+        </template>
+
+        <!-- Code artifact -->
+        <template x-if="artifactType(review) === 'code'">
+          <div class="space-y-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Code artifacts</p>
+            <template x-for="(f, i) in parsedArtifact(review)" :key="i">
+              <div class="bg-gray-950 rounded-lg border border-gray-800 overflow-hidden">
+                <div class="px-3 py-1.5 border-b border-gray-800 flex items-center justify-between">
+                  <span class="font-mono text-xs text-indigo-300" x-text="f.file_path"></span>
+                  <span class="text-xs text-gray-500" x-text="f.language || ''"></span>
+                </div>
+                <pre class="px-3 py-3 text-xs text-gray-300 overflow-x-auto max-h-40 font-mono leading-relaxed"
+                  x-text="(f.content || '').slice(0, 2000) + ((f.content?.length > 2000) ? '\n…' : '')"></pre>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Code review artifact -->
+        <template x-if="artifactType(review) === 'code_review'">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Code Review</p>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-sm font-medium px-2 py-0.5 rounded"
+                :class="{
+                  'bg-green-900/40 text-green-300': parsedArtifact(review).verdict === 'approve',
+                  'bg-yellow-900/40 text-yellow-300': parsedArtifact(review).verdict === 'request_changes',
+                  'bg-red-900/40 text-red-300': parsedArtifact(review).verdict === 'reject'
+                }"
+                x-text="(parsedArtifact(review).verdict || '').toUpperCase()"></span>
+            </div>
+            <p class="text-sm text-gray-300 mb-3" x-text="parsedArtifact(review).summary"></p>
+            <template x-if="parsedArtifact(review).findings?.length">
+              <div class="space-y-1.5">
+                <template x-for="(f, i) in parsedArtifact(review).findings" :key="i">
+                  <div class="flex gap-2 text-xs">
+                    <span class="text-gray-500 font-mono" x-text="f.file_path || '—'"></span>
+                    <span class="text-gray-300" x-text="f.message"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- UI screens artifact (UIDesignSpec) -->
+        <template x-if="artifactType(review) === 'screens'">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">UI Screen Proposals</p>
+            <template x-if="parsedArtifact(review).screens?.length">
+              <div class="space-y-2">
+                <template x-for="(screen, i) in parsedArtifact(review).screens" :key="i">
+                  <div class="bg-gray-900 rounded-lg border border-gray-800 px-4 py-3">
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <div class="flex items-center gap-2 mb-0.5">
+                          <span class="text-sm font-medium text-gray-100" x-text="screen.name"></span>
+                          <span class="font-mono text-xs text-indigo-400" x-text="screen.route || ''"></span>
+                        </div>
+                        <p class="text-xs text-gray-400" x-text="screen.description"></p>
+                      </div>
+                      <span class="text-xs text-gray-600 shrink-0" x-text="screen.id"></span>
+                    </div>
+                    <template x-if="screen.components?.length">
+                      <div class="mt-2 flex flex-wrap gap-1.5">
+                        <template x-for="(c, ci) in screen.components" :key="ci">
+                          <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded" x-text="c"></span>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!parsedArtifact(review).screens?.length">
+              <p class="text-sm text-gray-500 italic">No screens defined.</p>
+            </template>
+          </div>
+        </template>
+
+        <!-- API endpoints artifact (APISpec) -->
+        <template x-if="artifactType(review) === 'endpoints'">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">
+              API Endpoint Proposals
+              <span class="font-mono text-indigo-400 ml-1.5" x-text="parsedArtifact(review).base_path || ''"></span>
+            </p>
+            <template x-if="parsedArtifact(review).endpoints?.length">
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-gray-500 text-xs border-b border-gray-800">
+                      <th class="text-left pb-2 pr-3 w-16">Method</th>
+                      <th class="text-left pb-2 pr-3">Path</th>
+                      <th class="text-left pb-2">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="(ep, i) in parsedArtifact(review).endpoints" :key="i">
+                      <tr class="border-t border-gray-800/50 align-top">
+                        <td class="py-1.5 pr-3">
+                          <span class="text-xs font-bold px-1.5 py-0.5 rounded font-mono"
+                            :class="{
+                              'bg-green-900/40 text-green-300': ep.method === 'GET',
+                              'bg-blue-900/40 text-blue-300': ep.method === 'POST',
+                              'bg-yellow-900/40 text-yellow-300': ep.method === 'PUT' || ep.method === 'PATCH',
+                              'bg-red-900/40 text-red-300': ep.method === 'DELETE',
+                              'bg-gray-800 text-gray-400': !['GET','POST','PUT','PATCH','DELETE'].includes(ep.method)
+                            }"
+                            x-text="ep.method"></span>
+                        </td>
+                        <td class="py-1.5 pr-3 font-mono text-xs text-indigo-300" x-text="ep.path"></td>
+                        <td class="py-1.5 text-xs text-gray-300" x-text="ep.description"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+            <template x-if="!parsedArtifact(review).endpoints?.length">
+              <p class="text-sm text-gray-500 italic">No endpoints defined.</p>
+            </template>
+          </div>
+        </template>
+
+        <!-- Fallback: pretty JSON -->
+        <template x-if="artifactType(review) === 'json'">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide mb-2">Artifact</p>
+            <pre class="bg-gray-950 rounded-lg border border-gray-800 px-4 py-3 text-xs text-gray-300 font-mono overflow-x-auto max-h-64"
+              x-text="JSON.stringify(review.artifact, null, 2)"></pre>
+          </div>
+        </template>
+
+      </div><!-- /artifact -->
+
+      <!-- Edit mode -->
+      <template x-if="editingId === review.review_id">
+        <div class="border-t border-gray-800">
+
+          <!-- Per-ticket form (tickets gate) -->
+          <template x-if="review.item_schema === 'tickets'">
+            <div class="px-5 pt-4 pb-5 space-y-3">
+              <p class="text-xs text-gray-500 uppercase tracking-wide">Editar tickets — añade notas para el agente</p>
+              <template x-for="(ticket, ti) in editedTickets" :key="ticket.id || ti">
+                <div class="bg-gray-950 rounded-lg border border-gray-800 px-4 py-3 space-y-2">
+                  <div class="flex items-center gap-3">
+                    <span class="font-mono text-xs text-gray-500" x-text="ticket.id || ticket.ticket_id || '—'"></span>
+                    <span class="text-sm font-medium text-gray-100 truncate flex-1" x-text="ticket.title"></span>
+                    <span class="text-xs px-1.5 py-0.5 rounded shrink-0"
+                      :class="{
+                        'bg-red-900/40 text-red-300': ['high','critical'].includes(ticket.priority),
+                        'bg-yellow-900/40 text-yellow-300': ticket.priority === 'medium',
+                        'bg-gray-800 text-gray-400': ticket.priority === 'low' || !ticket.priority
+                      }"
+                      x-text="ticket.priority || '—'"></span>
+                  </div>
+                  <div>
+                    <label class="text-xs text-indigo-400 mb-1 block">Nota para el agente</label>
+                    <textarea x-model="editedTickets[ti]._note" rows="2"
+                      placeholder="Añade contexto o instrucciones específicas para este ticket…"
+                      class="w-full bg-gray-900 border border-gray-700 focus:border-indigo-500 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none resize-y placeholder-gray-600"></textarea>
+                  </div>
+                </div>
+              </template>
+              <div class="flex gap-2 pt-1">
+                <button @click="submitTicketEdit(review)"
+                  :disabled="resolving[review.review_id]"
+                  class="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-700 hover:bg-indigo-600 text-white transition disabled:opacity-50"
+                  x-text="resolving[review.review_id] ? '…' : 'Confirmar edición'">
+                </button>
+                <button @click="editingId = null; editedTickets = []"
+                  class="px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 transition">
+                  Cancelar
+                </button>
+              </div>
+              <p x-show="resolveErrors[review.review_id]" class="text-red-400 text-xs"
+                x-text="resolveErrors[review.review_id]"></p>
+            </div>
+          </template>
+
+          <!-- Generic JSON edit (all other types) -->
+          <template x-if="review.item_schema !== 'tickets'">
+            <div class="px-5 pb-4 space-y-2 pt-4">
+              <p class="text-xs text-gray-500 uppercase tracking-wide">Edit artifact — modify JSON then submit</p>
+              <textarea x-model="editedJson" rows="10"
+                class="w-full bg-gray-950 border border-indigo-600 rounded-lg px-3 py-2 text-xs font-mono text-gray-200 focus:outline-none resize-y"></textarea>
+              <div class="flex gap-2">
+                <button @click="submitEdit(review)"
+                  :disabled="resolving[review.review_id]"
+                  class="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-700 hover:bg-indigo-600 text-white transition disabled:opacity-50"
+                  x-text="resolving[review.review_id] ? '…' : 'Submit edit'">
+                </button>
+                <button @click="editingId = null; editedJson = ''"
+                  class="px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 transition">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </template>
+
+        </div>
+      </template>
+
+      <!-- Actions -->
+      <div class="px-5 pb-5 space-y-3" x-show="editingId !== review.review_id">
+        <input
+          :id="'fb-' + review.review_id"
+          x-model="feedbacks[review.review_id]"
+          placeholder="Optional note sent alongside any decision…"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 placeholder-gray-600">
+
+        <div class="flex gap-2 flex-wrap">
+          <template x-for="opt in parseOptions(review)" :key="opt">
+            <button
+              @click="opt === 'edit' ? startEdit(review) : resolve(review, opt)"
+              :disabled="resolving[review.review_id]"
+              :class="{
+                'bg-green-700 hover:bg-green-600 text-white': opt === 'approve',
+                'bg-red-800 hover:bg-red-700 text-white': opt === 'reject',
+                'bg-indigo-800 hover:bg-indigo-700 text-indigo-100': opt === 'edit',
+                'bg-gray-700 hover:bg-gray-600 text-gray-200': opt === 'feedback',
+                'bg-gray-800 hover:bg-gray-700 text-gray-300': !['approve','reject','feedback','edit'].includes(opt),
+                'opacity-50 cursor-not-allowed': resolving[review.review_id],
+              }"
+              class="px-4 py-2 rounded-lg text-sm font-medium transition capitalize"
+              x-text="resolving[review.review_id] ? '…' : opt">
+            </button>
+          </template>
+        </div>
+
+        <p x-show="resolveErrors[review.review_id]" class="text-red-400 text-xs"
+          x-text="resolveErrors[review.review_id]"></p>
+      </div>
+
+    </div><!-- /card -->
+  </template>
+</div>
+
+<!-- Toast -->
+<div x-show="toast" x-cloak x-transition
+  class="fixed bottom-6 right-6 bg-amber-700 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 z-50">
+  <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+  <span x-text="toast"></span>
+  <button @click="toast=''" class="ml-2 text-amber-200 hover:text-white">✕</button>
+</div>
+
+<script>
+function reviewQueue() {
+  return {
+    reviews: [],
+    loading: true,
+    activeTab: 'all',
+    allCount: 0,
+    mineCount: 0,
+    analytics: null,
+    analyticsLoading: false,
+    feedbacks: {},
+    resolving: {},
+    resolveErrors: {},
+    editingId: null,
+    editedJson: '',
+    ws: null,
+    wsConnected: false,
+    _wsBackoff: 1000,
+    toast: '',
+    myLabel: localStorage.getItem('antcrew_api_key_label') || '',
+    myDisplayName: '',
+    claimingReviewId: null,
+    inlineLabel: '',
+    history: [],
+    historyLoading: false,
+    bulkSelected: {},
+    bulkApproving: false,
+    editedTickets: [],
+    ticketAudit: {},
+    loadingAudit: {},
+
+    async init() {
+      const meR = await fetch('/auth/me', { credentials: 'same-origin' }).catch(() => null);
+      if (meR && meR.ok) {
+        const me = await meR.json();
+        this.myDisplayName = me.display_name || me.email || '';
+      }
+      await this.loadReviews();
+      this.connectWs();
+    },
+
+    setTab(tab) {
+      this.activeTab = tab;
+      if (tab === 'analytics') {
+        this.loadAnalytics();
+      } else if (tab === 'history') {
+        this.loadHistory();
+      } else {
+        this.loadReviews();
+      }
+    },
+
+    async loadHistory() {
+      this.historyLoading = true;
+      try {
+        const [approvedR, rejectedR] = await Promise.all([
+          fetch('/reviews/?status=approved&limit=50', { headers: this.apiHeaders() }),
+          fetch('/reviews/?status=rejected&limit=50', { headers: this.apiHeaders() }),
+        ]);
+        const approved = approvedR.ok ? await approvedR.json() : [];
+        const rejected = rejectedR.ok ? await rejectedR.json() : [];
+        this.history = [...approved, ...rejected].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      } catch {}
+      this.historyLoading = false;
+    },
+
+    async loadAnalytics() {
+      this.analyticsLoading = true;
+      try {
+        // Get workspace_id from the workspaces list (first accessible workspace)
+        const wsr = await fetch('/workspaces/', { headers: this.apiHeaders() });
+        if (!wsr.ok) return;
+        const workspaces = await wsr.json();
+        if (!workspaces.length) return;
+        const wsId = workspaces[0].id;
+        const r = await fetch(`/workspaces/${wsId}/hitl/analytics`, { headers: this.apiHeaders() });
+        if (r.ok) this.analytics = await r.json();
+      } catch {}
+      this.analyticsLoading = false;
+    },
+
+    apiHeaders(extra = {}) {
+      const k = localStorage.getItem('antcrew_api_key');
+      const h = { 'Content-Type': 'application/json', ...extra };
+      if (k) h['X-Api-Key'] = k;
+      return h;
+    },
+
+    async loadReviews() {
+      this.loading = true;
+      try {
+        // Load the active tab
+        const isMine = this.activeTab === 'mine';
+        const url = isMine
+          ? '/reviews/?status=pending&mine=true&limit=50'
+          : '/reviews/?status=pending&limit=50';
+        const r = await fetch(url, { headers: this.apiHeaders() });
+        if (r.ok) this.reviews = await r.json();
+
+        // Update counts
+        this.allCount = isMine
+          ? (await (await fetch('/reviews/?status=pending&limit=1', { headers: this.apiHeaders() })).json()).length
+          : this.reviews.length;
+        if (!isMine && this.myLabel) {
+          const mr = await fetch(`/reviews/?status=pending&mine=true&limit=50`, { headers: this.apiHeaders() });
+          if (mr.ok) this.mineCount = (await mr.json()).length;
+        } else if (isMine) {
+          this.mineCount = this.reviews.length;
+          const ar = await fetch('/reviews/?status=pending&limit=200', { headers: this.apiHeaders() });
+          if (ar.ok) this.allCount = (await ar.json()).length;
+        }
+      } catch {}
+      this.loading = false;
+    },
+
+    artifactType(review) {
+      try {
+        // structured_list reviews use item_schema as the type hint
+        if (review.review_type === 'structured_list') {
+          const s = review.item_schema;
+          if (s === 'screens') return 'screens';
+          if (s === 'endpoints') return 'endpoints';
+          if (s === 'requirements') return 'prd';
+          if (s === 'tickets') return 'tickets';
+        }
+        const a = review.artifact;
+        if (!a) return 'empty';
+        if (Array.isArray(a)) {
+          if (a[0]?.file_path && a[0]?.content !== undefined) return 'code';
+          if (a[0]?.id !== undefined && a[0]?.title !== undefined) return 'tickets';
+          if (a[0]?.ticket_id !== undefined && a[0]?.title !== undefined) return 'tickets';
+          return 'json';
+        }
+        if (a.verdict && a.summary && a.findings !== undefined) return 'code_review';
+        if (a.endpoints !== undefined && a.base_path !== undefined) return 'endpoints';
+        if (a.screens !== undefined && a.tokens !== undefined) return 'screens';
+        if (a.title && a.summary !== undefined) return 'prd';
+        return 'json';
+      } catch { return 'json'; }
+    },
+
+    parsedArtifact(review) {
+      return review.artifact || {};
+    },
+
+    parseOptions(review) {
+      return review.options?.length ? review.options : ['approve', 'reject'];
+    },
+
+    startClaim(review) {
+      if (this.myLabel) {
+        this.claimReview(review, this.myLabel);
+      } else {
+        this.claimingReviewId = review.review_id;
+        this.inlineLabel = '';
+      }
+    },
+
+    async submitInlineClaim(review) {
+      if (!this.inlineLabel.trim()) return;
+      this.myLabel = this.inlineLabel.trim();
+      localStorage.setItem('antcrew_api_key_label', this.myLabel);
+      this.claimingReviewId = null;
+      await this.claimReview(review, this.myLabel);
+    },
+
+    async claimReview(review, label) {
+      if (!label?.trim()) return;
+      try {
+        const r = await fetch(`/reviews/${review.review_id}/assign`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ assigned_to: label.trim() }),
+        });
+        if (r.ok) {
+          const updated = await r.json();
+          const idx = this.reviews.findIndex(rv => rv.review_id === review.review_id);
+          if (idx !== -1) this.reviews[idx] = updated;
+        }
+      } catch {}
+    },
+
+    startEdit(review) {
+      this.editingId = review.review_id;
+      if (review.item_schema === 'tickets') {
+        const tickets = Array.isArray(review.artifact) ? review.artifact : [];
+        this.editedTickets = tickets.map(t => ({
+          ...t,
+          _note: t.custom_fields?.user_notes || '',
+        }));
+      } else {
+        this.editedJson = JSON.stringify(review.artifact, null, 2);
+      }
+    },
+
+    async submitEdit(review) {
+      try { JSON.parse(this.editedJson); }
+      catch (e) {
+        this.resolveErrors[review.review_id] = 'Invalid JSON: ' + e.message;
+        return;
+      }
+      await this.resolve(review, 'edit', null, this.editedJson);
+      if (!this.resolveErrors[review.review_id]) {
+        this.editingId = null;
+        this.editedJson = '';
+      }
+    },
+
+    buildTicketJson() {
+      return JSON.stringify(this.editedTickets.map(({ _note, ...rest }) => ({
+        ...rest,
+        custom_fields: { ...(rest.custom_fields || {}), ...(_note ? { user_notes: _note } : {}) },
+      })));
+    },
+
+    async submitTicketEdit(review) {
+      const json = this.buildTicketJson();
+      await this.resolve(review, 'edit', null, json);
+      if (!this.resolveErrors[review.review_id]) {
+        this.editingId = null;
+        this.editedTickets = [];
+      }
+    },
+
+    async loadAudit(reviewId) {
+      if (this.ticketAudit[reviewId] !== undefined || this.loadingAudit[reviewId]) return;
+      this.loadingAudit[reviewId] = true;
+      try {
+        const r = await fetch(`/reviews/${reviewId}/audit`, { headers: this.apiHeaders() });
+        if (r.ok) this.ticketAudit[reviewId] = await r.json();
+        else this.ticketAudit[reviewId] = [];
+      } catch { this.ticketAudit[reviewId] = []; }
+      this.loadingAudit[reviewId] = false;
+    },
+
+    async bulkApprove() {
+      if (this.bulkApproving) return;
+      const selected = Object.keys(this.bulkSelected).filter(id => this.bulkSelected[id]);
+      if (!selected.length) return;
+      this.bulkApproving = true;
+      const targets = this.reviews.filter(r => selected.includes(r.review_id));
+      const BATCH = 5;
+      for (let i = 0; i < targets.length; i += BATCH) {
+        await Promise.allSettled(targets.slice(i, i + BATCH).map(r => this.resolve(r, 'approve')));
+      }
+      this.bulkSelected = {};
+      this.bulkApproving = false;
+    },
+
+    async resolve(review, decision, _unused, editedJson) {
+      if (this.resolving[review.review_id]) return;
+      this.resolving[review.review_id] = true;
+      this.resolveErrors[review.review_id] = '';
+      try {
+        const body = { decision };
+        const fb = this.feedbacks[review.review_id]?.trim();
+        if (fb) body.feedback = fb;
+        if (editedJson) body.edited = editedJson;
+        const r = await fetch(`/reviews/${review.review_id}`, {
+          method: 'POST',
+          headers: this.apiHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (r.ok) {
+          this.reviews = this.reviews.filter(rv => rv.review_id !== review.review_id);
+          delete this.feedbacks[review.review_id];
+          // Update counts
+          if (this.activeTab === 'mine') this.mineCount = Math.max(0, this.mineCount - 1);
+          this.allCount = Math.max(0, this.allCount - 1);
+        } else {
+          const d = await r.json().catch(() => ({}));
+          this.resolveErrors[review.review_id] = d.detail || `HTTP ${r.status}`;
+        }
+      } catch (e) {
+        this.resolveErrors[review.review_id] = e.message;
+      } finally {
+        this.resolving[review.review_id] = false;
+      }
+    },
+
+    connectWs() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const k = localStorage.getItem('antcrew_api_key') || '';
+      this.ws = new WebSocket(`${proto}://${location.host}/ws/events`);
+      this.ws.onopen = () => {
+        this.wsConnected = true; this._wsBackoff = 1000;
+        if (k) this.ws.send(JSON.stringify({ auth: k }));
+      };
+      this.ws.onmessage = (e) => {
+        const ev = JSON.parse(e.data);
+        if (ev.type === 'ping') return;
+        if (ev.type === 'hitl.review_required') {
+          this.loadReviews();
+          this.toast = 'New review — ' + (ev.payload?.agent_name || 'agent');
+          setTimeout(() => { this.toast = ''; }, 5000);
+        }
+      };
+      this.ws.onclose = () => {
+        this.wsConnected = false;
+        setTimeout(() => this.connectWs(), this._wsBackoff);
+        this._wsBackoff = Math.min(this._wsBackoff * 2, 30000);
+      };
+    },
+
+    timeAgo(iso) {
+      if (!iso) return '';
+      const diff = (Date.now() - new Date(iso)) / 1000;
+      if (diff < 60) return Math.floor(diff) + 's ago';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      return Math.floor(diff / 3600) + 'h ago';
+    },
+  };
+}
+</script>
+</body>
+</html>
+

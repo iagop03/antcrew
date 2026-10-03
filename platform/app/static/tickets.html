@@ -1,0 +1,412 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tickets — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+  <link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+</head>
+<style>[x-cloak]{display:none}</style>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="kanban()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<div class="px-6 py-5">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-semibold" data-i18n="tickets.title">Tickets</h1>
+      <p class="text-gray-400 text-sm mt-0.5" data-i18n="tickets.subtitle">Kanban board — click a card to move it</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <!-- Search -->
+      <input type="text" x-model="search" data-i18n="tickets.search" placeholder="Search tickets…"
+        class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 w-56">
+      <div class="text-sm text-gray-500" x-text="`${filteredTickets.length} / ${tickets.length}`"></div>
+    </div>
+  </div>
+
+  <!-- Run filter banner -->
+  <div x-show="runIdFilter" class="mb-4 bg-indigo-950 border border-indigo-800 rounded-lg px-4 py-2.5 flex items-center gap-3 text-sm">
+    <span class="text-indigo-300">Filtered to run <span class="font-mono text-indigo-200" x-text="runIdFilter ? runIdFilter.slice(0,16) + '…' : ''"></span></span>
+    <a :href="'/run/' + runIdFilter" class="text-indigo-400 hover:underline text-xs">View run →</a>
+    <button @click="runIdFilter = null; ticketsOffset = 0; load()" class="ml-auto text-indigo-500 hover:text-indigo-300 text-xs">✕ Clear filter</button>
+  </div>
+
+  <!-- Error banner -->
+  <div x-show="loadError" class="mb-4">
+    <div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300 flex items-center gap-3">
+      <span>⚠</span>
+      <span x-text="loadError"></span>
+      <button @click="load()" class="ml-auto text-xs text-red-400 hover:text-red-200 underline">Retry</button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-4 gap-4">
+    <template x-for="col in columns" :key="col.status">
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-3">
+        <!-- Column header -->
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-medium uppercase tracking-wide px-2 py-0.5 rounded"
+            :class="col.headerClass"
+            x-text="col.label"></span>
+          <span class="text-xs text-gray-500"
+            x-text="ticketsByStatus(col.status).length"></span>
+        </div>
+
+        <!-- Loading skeleton -->
+        <template x-if="loading">
+          <div class="space-y-2">
+            <div class="h-16 bg-gray-800 rounded-lg animate-pulse"></div>
+            <div class="h-16 bg-gray-800 rounded-lg animate-pulse"></div>
+          </div>
+        </template>
+
+        <!-- Cards -->
+        <div class="space-y-2 min-h-20" x-show="!loading">
+          <template x-if="ticketsByStatus(col.status).length === 0">
+            <p class="text-gray-700 text-xs text-center py-4">Empty</p>
+          </template>
+          <template x-for="t in ticketsByStatus(col.status)" :key="t.ticket_id">
+            <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 cursor-pointer hover:border-gray-500 transition"
+                 @click="openTicket(t)">
+              <div class="font-mono text-xs mb-1"
+                :class="t.display_id ? 'text-indigo-400' : 'text-gray-600'"
+                x-text="t.display_id || t.ticket_id.slice(0,8)"></div>
+              <div class="text-sm text-white leading-snug" x-text="t.title"></div>
+              <div class="flex items-center gap-2 mt-2">
+                <span class="text-xs px-1.5 py-0.5 rounded"
+                  :class="{
+                    'bg-red-900/50 text-red-300': t.priority === 'high' || t.priority === 'critical',
+                    'bg-yellow-900/50 text-yellow-300': t.priority === 'medium',
+                    'bg-gray-700 text-gray-400': t.priority === 'low',
+                  }"
+                  x-text="t.priority"></span>
+                <span class="text-xs text-gray-500 truncate" x-text="t.prd_title"></span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-between mt-4 px-1" x-show="ticketsOffset > 0 || hasMore">
+    <button @click="prevPage()" :disabled="ticketsOffset === 0"
+      class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition"
+      :class="ticketsOffset === 0 ? 'border-gray-800 text-gray-600 cursor-not-allowed' : 'border-gray-700 text-gray-300 hover:border-gray-500 hover:text-white'">
+      ← Anterior
+    </button>
+    <span class="text-xs text-gray-500" x-text="`${ticketsOffset + 1}–${ticketsOffset + tickets.length} tickets`"></span>
+    <button @click="nextPage()" :disabled="!hasMore"
+      class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition"
+      :class="!hasMore ? 'border-gray-800 text-gray-600 cursor-not-allowed' : 'border-gray-700 text-gray-300 hover:border-gray-500 hover:text-white'">
+      Siguiente →
+    </button>
+  </div>
+</div>
+
+<!-- Ticket detail modal -->
+<div x-show="selected" x-cloak class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" @click="selected = null">
+  <div class="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-lg shadow-2xl" @click.stop>
+    <template x-if="selected">
+      <div>
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="font-mono text-sm font-bold"
+                :class="selected.display_id ? 'text-indigo-400' : 'text-gray-600'"
+                x-text="selected.display_id || selected.ticket_id.slice(0,8)"></span>
+              <span x-show="selected.display_id" class="font-mono text-xs text-gray-600" x-text="selected.ticket_id.slice(0,8)"></span>
+            </div>
+            <h2 class="text-lg font-semibold" x-text="selected.title"></h2>
+            <p class="text-sm text-gray-400 mt-1" x-text="selected.prd_title"></p>
+          </div>
+          <button @click="selected = null" class="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+        </div>
+
+        <p class="text-sm text-gray-300 mb-4" x-text="selected.description || 'No description.'"></p>
+
+        <template x-if="selected.acceptance_criteria">
+          <div class="mb-4">
+            <div class="text-xs text-gray-400 uppercase tracking-wide mb-1">Acceptance criteria</div>
+            <p class="text-sm text-gray-300" x-text="selected.acceptance_criteria"></p>
+          </div>
+        </template>
+
+        <div class="mb-5">
+          <label class="block text-xs text-gray-400 uppercase tracking-wide mb-2">Move to</label>
+          <div class="flex gap-2 flex-wrap">
+            <template x-for="col in columns" :key="col.status">
+              <button @click="moveTicket(selected.ticket_id, col.status)"
+                :disabled="selected.status === col.status || moving"
+                class="text-xs px-3 py-1.5 rounded-lg border transition"
+                :class="selected.status === col.status
+                  ? 'border-indigo-500 text-indigo-300 bg-indigo-950 cursor-default'
+                  : 'border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white disabled:opacity-50'"
+                x-text="col.label"></button>
+            </template>
+          </div>
+          <p x-show="moveError" class="text-red-400 text-xs mt-2" x-text="moveError"></p>
+        </div>
+
+        <!-- Export to external tools -->
+        <template x-if="exportTargets.length > 0">
+          <div class="mb-4">
+            <label class="block text-xs text-gray-400 uppercase tracking-wide mb-2">Export to</label>
+            <div class="flex gap-2 flex-wrap">
+              <template x-for="target in exportTargets" :key="target">
+                <button @click="exportTicket(selected.ticket_id, target)"
+                  :disabled="exporting"
+                  class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white disabled:opacity-50 transition capitalize"
+                  x-text="exporting ? 'Exporting…' : target"></button>
+              </template>
+            </div>
+            <template x-if="exportResult">
+              <div class="mt-2 text-xs">
+                <template x-if="exportResult.url">
+                  <a :href="exportResult.url" target="_blank" rel="noopener"
+                    class="text-indigo-400 hover:underline"
+                    x-text="'Exported → ' + exportResult.url"></a>
+                </template>
+                <template x-if="exportResult.error">
+                  <span class="text-red-400" x-text="exportResult.error"></span>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Linked commits (only when display_id is available) -->
+        <template x-if="selected.display_id">
+          <div class="mb-4 border-t border-gray-800 pt-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs text-gray-400 uppercase tracking-wide">Commits &amp; PRs vinculados</span>
+              <button @click="loadCommits(selected.ticket_id)"
+                :disabled="commitsLoading"
+                class="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition"
+                x-text="commitsLoaded ? 'Actualizar' : 'Cargar'"></button>
+            </div>
+            <template x-if="commitsLoading">
+              <p class="text-xs text-gray-600 animate-pulse">Buscando en GitHub…</p>
+            </template>
+            <template x-if="!commitsLoading && commitsError">
+              <p class="text-xs text-gray-600" x-text="commitsError"></p>
+            </template>
+            <template x-if="!commitsLoading && commitsLoaded && commits.length === 0 && pullRequests.length === 0">
+              <p class="text-xs text-gray-600">Sin resultados en GitHub para <span class="font-mono" x-text="selected.display_id"></span>.</p>
+            </template>
+            <template x-if="!commitsLoading && commits.length > 0">
+              <div class="space-y-1 mb-2">
+                <template x-for="c in commits" :key="c.sha">
+                  <a :href="c.url" target="_blank" rel="noopener"
+                    class="flex items-start gap-2 text-xs rounded px-2 py-1.5 bg-gray-800 hover:bg-gray-700 transition group">
+                    <span class="font-mono text-gray-500 group-hover:text-gray-300 shrink-0" x-text="c.sha"></span>
+                    <span class="text-gray-300 truncate" x-text="c.message"></span>
+                  </a>
+                </template>
+              </div>
+            </template>
+            <template x-if="!commitsLoading && pullRequests.length > 0">
+              <div class="space-y-1">
+                <template x-for="pr in pullRequests" :key="pr.number">
+                  <a :href="pr.url" target="_blank" rel="noopener"
+                    class="flex items-center gap-2 text-xs rounded px-2 py-1.5 bg-gray-800 hover:bg-gray-700 transition">
+                    <span class="font-mono text-gray-500" x-text="'#'+pr.number"></span>
+                    <span :class="pr.state === 'open' ? 'text-green-400' : 'text-purple-400'" x-text="pr.state"></span>
+                    <span class="text-gray-300 truncate" x-text="pr.title"></span>
+                  </a>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <div class="text-xs text-gray-600 flex gap-4">
+          <span>Priority: <span class="text-gray-400" x-text="selected.priority"></span></span>
+          <a :href="'/run/' + selected.run_id" class="text-indigo-400 hover:underline">
+            View run →
+          </a>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<script>
+function kanban() {
+  return {
+    tickets: [],
+    search: '',
+    selected: null,
+    loading: true,
+    moving: false,
+    loadError: '',
+    moveError: '',
+    exportTargets: [],
+    exporting: false,
+    exportResult: null,
+    commits: [],
+    pullRequests: [],
+    commitsLoading: false,
+    commitsLoaded: false,
+    commitsError: '',
+    runIdFilter: new URLSearchParams(location.search).get('run_id') || null,
+    ticketsOffset: 0,
+    ticketsLimit: 100,
+    hasMore: false,
+    columns: [
+      { status: 'open',        label: 'Open',        headerClass: 'bg-gray-800 text-gray-300' },
+      { status: 'in_progress', label: 'In Progress',  headerClass: 'bg-yellow-900/50 text-yellow-300' },
+      { status: 'done',        label: 'Done',         headerClass: 'bg-green-900/50 text-green-300' },
+      { status: 'blocked',     label: 'Blocked',      headerClass: 'bg-red-900/50 text-red-300' },
+    ],
+
+    apiHeaders(extra = {}) {
+      const k = localStorage.getItem('antcrew_api_key');
+      const h = { 'Content-Type': 'application/json', ...extra };
+      if (k) h['X-Api-Key'] = k;
+      return h;
+    },
+
+    async init() {
+      await Promise.all([this.load(), this.loadExportTargets()]);
+    },
+
+    async loadExportTargets() {
+      try {
+        const r = await fetch('/tickets/export-targets', { headers: this.apiHeaders() });
+        if (r.ok) {
+          const d = await r.json();
+          this.exportTargets = d.targets || [];
+        }
+      } catch {}
+    },
+
+    async load() {
+      this.loading = true;
+      this.loadError = '';
+      try {
+        let url = `/tickets/?limit=${this.ticketsLimit}&offset=${this.ticketsOffset}`;
+        if (this.runIdFilter) url += `&run_id=${encodeURIComponent(this.runIdFilter)}`;
+        const r = await fetch(url, { headers: this.apiHeaders() });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        this.tickets = data;
+        this.hasMore = data.length >= this.ticketsLimit;
+      } catch (err) {
+        this.loadError = `Failed to load tickets: ${err.message}`;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    prevPage() {
+      if (this.ticketsOffset === 0) return;
+      this.ticketsOffset = Math.max(0, this.ticketsOffset - this.ticketsLimit);
+      this.load();
+    },
+
+    nextPage() {
+      if (!this.hasMore) return;
+      this.ticketsOffset += this.ticketsLimit;
+      this.load();
+    },
+
+    get filteredTickets() {
+      if (!this.search) return this.tickets;
+      const q = this.search.toLowerCase();
+      return this.tickets.filter(t =>
+        t.title.toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q) ||
+        (t.prd_title || '').toLowerCase().includes(q) ||
+        t.ticket_id.toLowerCase().includes(q)
+      );
+    },
+
+    ticketsByStatus(status) {
+      return this.filteredTickets.filter(t => t.status === status);
+    },
+
+    openTicket(t) {
+      this.selected = { ...t };
+      this.moveError = '';
+      this.exportResult = null;
+      this.commits = [];
+      this.pullRequests = [];
+      this.commitsLoaded = false;
+      this.commitsError = '';
+    },
+
+    async loadCommits(ticketId) {
+      this.commitsLoading = true;
+      this.commitsError = '';
+      try {
+        const r = await fetch(`/tickets/${ticketId}/commits`, { headers: this.apiHeaders() });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { this.commitsError = d.detail || `HTTP ${r.status}`; return; }
+        if (d.error === 'no_repo_configured') { this.commitsError = 'Sin repositorio configurado en el workspace.'; return; }
+        if (d.error === 'no_github_token') { this.commitsError = 'GITHUB_TOKEN no configurado.'; return; }
+        this.commits = d.commits || [];
+        this.pullRequests = d.pull_requests || [];
+        this.commitsLoaded = true;
+      } catch(e) { this.commitsError = e.message; }
+      finally { this.commitsLoading = false; }
+    },
+
+    async exportTicket(ticketId, target) {
+      this.exporting = true;
+      this.exportResult = null;
+      try {
+        const r = await fetch(`/tickets/${ticketId}/export?target=${target}`, { method: 'POST', headers: this.apiHeaders() });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          this.exportResult = { error: d.detail || `HTTP ${r.status}` };
+        } else {
+          this.exportResult = { url: d.url };
+        }
+      } catch (err) {
+        this.exportResult = { error: err.message };
+      } finally {
+        this.exporting = false;
+      }
+    },
+
+    async moveTicket(ticketId, newStatus) {
+      this.moving = true;
+      this.moveError = '';
+      try {
+        const r = await fetch(`/tickets/${ticketId}/status`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(d.detail || `HTTP ${r.status}`);
+        }
+        const updated = await r.json();
+        const idx = this.tickets.findIndex(t => t.ticket_id === ticketId);
+        if (idx !== -1) this.tickets[idx] = updated;
+        this.selected = { ...updated };
+      } catch (err) {
+        this.moveError = err.message;
+      } finally {
+        this.moving = false;
+      }
+    },
+  }
+}
+</script>
+</body>
+</html>
+

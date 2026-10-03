@@ -1,0 +1,124 @@
+name: Weekly changelog
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout antcrew-docs
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout antcrew (CHANGELOG only)
+        uses: actions/checkout@v4
+        with:
+          repository: iagop03/antcrew
+          path: _repos/antcrew
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout antcrew-engine (CHANGELOG only)
+        uses: actions/checkout@v4
+        with:
+          repository: iagop03/antcrew-engine
+          path: _repos/antcrew-engine
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout antcrew-platform (CHANGELOG only)
+        uses: actions/checkout@v4
+        with:
+          repository: iagop03/antcrew-platform
+          path: _repos/antcrew-platform
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout antcrew-proxy (CHANGELOG only)
+        uses: actions/checkout@v4
+        with:
+          repository: iagop03/antcrew-proxy
+          path: _repos/antcrew-proxy
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - name: Generate weekly changelog draft
+        run: |
+          python - <<'EOF'
+          import re, sys
+          from datetime import datetime, timedelta
+          from pathlib import Path
+
+          now = datetime.utcnow()
+          iso = now.isocalendar()
+          year, week = iso[0], iso[1]
+          out_path = Path(f"docs/releases/{year}-w{week:02d}.md")
+
+          if out_path.exists():
+              print(f"Already exists: {out_path} — skipping.")
+              sys.exit(0)
+
+          # Monday of this ISO week
+          monday = now - timedelta(days=now.weekday())
+          week_label = monday.strftime("%-d %B %Y")
+
+          REPOS = [
+              ("antcrew",          "_repos/antcrew/CHANGELOG.md"),
+              ("antcrew-engine",   "_repos/antcrew-engine/CHANGELOG.md"),
+              ("antcrew-platform", "_repos/antcrew-platform/CHANGELOG.md"),
+              ("antcrew-proxy",    "_repos/antcrew-proxy/CHANGELOG.md"),
+          ]
+
+          def first_section(path):
+              try:
+                  text = Path(path).read_text(encoding="utf-8")
+              except FileNotFoundError:
+                  return "_CHANGELOG.md not found._"
+              lines = text.splitlines()
+              start = None
+              for i, line in enumerate(lines):
+                  if re.match(r'^##? \[', line) or re.match(r'^##? v', line):
+                      if start is None:
+                          start = i
+                      else:
+                          return "\n".join(lines[start:i]).rstrip()
+              if start is not None:
+                  return "\n".join(lines[start:]).rstrip()
+              return "_No version entries found._"
+
+          lines = [
+              f"# Release notes — week of {week_label}",
+              "",
+              "> **Draft** — auto-generated from repo CHANGELOGs on Monday {}.".format(
+                  now.strftime("%Y-%m-%d")
+              ),
+              "> Edit this file to add narrative context before publishing.",
+              "",
+              "---",
+              "",
+          ]
+
+          for repo, path in REPOS:
+              section = first_section(path)
+              lines += [f"## {repo}", "", section, "", "---", ""]
+
+          out_path.parent.mkdir(parents=True, exist_ok=True)
+          out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(f"Generated {out_path}")
+          EOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/releases/
+          git diff --cached --quiet && echo "No changes to commit." && exit 0
+          git commit -m "chore: weekly changelog draft $(date -u +%Y-w%V)"
+          git push

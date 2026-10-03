@@ -1,0 +1,82 @@
+# PROD — standalone compose for the permanent Hetzner server.
+# Not an override of docker-compose.yml; deployed alone on the remote host.
+#
+# PLATFORM_IMAGE must be set before running:
+#   export PLATFORM_IMAGE=ghcr.io/<owner>/<repo>:prod-latest
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Secrets come from .env.prod (written by the deploy workflow — never commit it).
+# Alembic migrations run automatically before uvicorn starts.
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 128 MB cap, LRU eviction. Persistence enabled (RDB every 60 s if ≥1 write)
+    # so rate-limit counters and Celery state survive container restarts.
+    # REDIS_URL in .env.prod should point to Upstash for rate limiting (survives
+    # full server restarts); this local Redis is used for Celery broker + SSE pub/sub.
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --save "60 1" --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  platform:
+    image: ${PLATFORM_IMAGE}
+    env_file: .env.prod
+    environment:
+      APP_ENV: prod
+      HOST: 0.0.0.0
+      ANTCREW_SANDBOX: required
+      LOG_FORMAT: json
+      LOG_LEVEL: INFO
+      ANTCREW_REQUIRE_AUTH: "true"
+      # REDIS_URL comes from .env.prod (Upstash) — rate limiting state that must survive deploys.
+      # Local Redis handles Celery broker and SSE pub/sub (latency-sensitive, can reset on restart).
+      REDIS_PUBSUB_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/2
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      ANTCREW_SKIP_MIGRATION: "true"   # alembic runs in the shell prefix below
+    ports:
+      - "80:8000"
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: >
+      sh -c "python -m alembic upgrade head && uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 4"
+
+  celery-worker:
+    image: ${PLATFORM_IMAGE}
+    env_file: .env.prod
+    environment:
+      APP_ENV: prod
+      ANTCREW_SANDBOX: required
+      LOG_FORMAT: json
+      LOG_LEVEL: INFO
+      ANTCREW_SKIP_MIGRATION: "true"
+      REDIS_PUBSUB_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/2
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    restart: unless-stopped
+    depends_on:
+      - redis
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2
+
+  celery-beat:
+    image: ${PLATFORM_IMAGE}
+    env_file: .env.prod
+    environment:
+      APP_ENV: prod
+      ANTCREW_SKIP_MIGRATION: "true"
+      CELERY_BROKER_URL: redis://redis:6379/2
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    restart: unless-stopped
+    depends_on:
+      - redis
+    # Single instance — beat must never run as more than one process.
+    command: celery -A app.celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler
+
+volumes:
+  redis_data:

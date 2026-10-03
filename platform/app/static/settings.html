@@ -1,0 +1,3148 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>antcrew · Settings</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+  <link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="settings()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<div class="px-6 py-5">
+  <h1 class="text-xl font-semibold">Settings</h1>
+  <p class="text-gray-400 text-sm mt-0.5" data-i18n="settings.subtitle">Workspaces, reviewers and LLM configuration</p>
+</div>
+
+
+<!-- API key banner -->
+<div x-show="!me && !apiKey"
+  class="px-6 py-3 bg-amber-950/40 border-b border-amber-800/40 flex items-center gap-3">
+  <span class="text-amber-300 text-xs font-medium shrink-0">API key requerida</span>
+  <input x-model="keyInput" type="password" placeholder="Introduce tu PLATFORM_API_KEY o una key de /api-keys/"
+    @keydown.enter="saveApiKey()"
+    class="flex-1 max-w-sm bg-gray-900 border border-amber-800/50 rounded px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+  <button @click="saveApiKey()" :disabled="!keyInput.trim()"
+    class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs rounded transition-colors shrink-0">
+    Guardar
+  </button>
+</div>
+<div x-show="!me && apiKey"
+  class="px-6 py-2 border-b border-gray-800/40 flex items-center gap-2 bg-gray-900/30">
+  <span class="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0"></span>
+  <span class="text-xs text-gray-600 font-mono">X-Api-Key configurada</span>
+  <button @click="clearApiKey()" class="ml-auto text-xs text-gray-700 hover:text-red-400 transition-colors">Limpiar</button>
+</div>
+
+
+<div class="px-6 py-6 max-w-5xl">
+
+  <!-- ── WORKSPACES ── -->
+  <div x-show="tab==='workspaces'">
+    <div class="flex items-center justify-between mb-4">
+      <span class="text-sm text-gray-400 flex items-center gap-1">
+        <span data-i18n="ws.all">All configured workspaces</span>
+        <span class="relative inline-flex items-center ml-1">
+          <span class="peer/tip inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 text-[9px] font-bold cursor-help hover:text-gray-300 hover:border-gray-500 transition-colors select-none leading-none">i</span>
+          <span class="pointer-events-none absolute bottom-full left-0 mb-2 w-64 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-xs text-gray-300 leading-relaxed shadow-xl opacity-0 peer-hover/tip:opacity-100 transition-opacity duration-150 z-50">
+            Un workspace agrupa pipelines y runs bajo un mismo presupuesto y permisos. Puedes tener varios — por ejemplo uno por proyecto, cliente o entorno. Cada API key de revisor puede estar limitada a un workspace concreto.
+          </span>
+        </span>
+      </span>
+    </div>
+
+    <p x-show="wsError" class="text-red-400 text-sm mb-3" x-text="wsError"></p>
+    <div x-show="wsLoading" class="text-gray-600 text-sm py-8 text-center" data-i18n="loading">Loading…</div>
+
+    <div x-show="!wsLoading && workspaces.length === 0 && !wsError"
+      class="border border-dashed border-gray-800 rounded-lg py-12 text-center text-gray-600 text-sm" data-i18n="ws.none">
+      No workspaces yet.
+    </div>
+
+    <div x-show="!wsLoading && workspaces.length > 0" class="overflow-x-auto rounded-lg border border-gray-800">
+      <table class="w-full text-sm" style="font-variant-numeric:tabular-nums">
+        <thead>
+          <tr class="border-b border-gray-800 text-xs text-gray-600 uppercase tracking-wider">
+            <th class="px-4 py-2.5 text-left font-medium" data-i18n="ws.name">Name</th>
+            <th class="px-4 py-2.5 text-left font-medium" data-i18n="ws.slug">Slug</th>
+            <th class="px-4 py-2.5 text-right font-medium" data-i18n="ws.budget">Budget</th>
+            <th class="px-4 py-2.5 text-center font-medium" data-i18n="ws.hitl">HITL</th>
+            <th class="px-4 py-2.5 text-center font-medium" data-i18n="ws.llm">LLM</th>
+            <th class="px-4 py-2.5 text-right font-medium" data-i18n="ws.actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="ws in workspaces" :key="ws.id">
+            <tr class="border-b border-gray-800/40 last:border-0 hover:bg-gray-900/40 transition-colors">
+              <td class="px-4 py-3 font-medium">
+                <div class="flex items-center gap-2">
+                  <span x-text="ws.name"></span>
+                  <span x-show="ws.is_trial"
+                    class="inline-block px-1.5 py-0.5 rounded text-xs font-mono bg-amber-900/50 text-amber-400">trial</span>
+                </div>
+              </td>
+              <td class="px-4 py-3 font-mono text-gray-500 text-xs" x-text="ws.slug"></td>
+              <td class="px-4 py-3 text-right text-gray-300">
+                <template x-if="ws.is_trial && ws.max_cost_usd != null">
+                  <span class="text-amber-400 text-xs"
+                    x-text="`$${(ws.max_cost_usd - ws.total_cost_usd).toFixed(2)} / $${ws.max_cost_usd.toFixed(2)}`"></span>
+                </template>
+                <template x-if="!ws.is_trial">
+                  <span>
+                    <span x-show="ws.max_cost_usd != null" x-text="`$${ws.max_cost_usd?.toFixed(2)}`"></span>
+                    <span x-show="ws.max_cost_usd == null" class="text-gray-700">—</span>
+                  </span>
+                </template>
+              </td>
+              <td class="px-4 py-3 text-center text-xs">
+                <span x-show="ws.hitl_default" class="text-indigo-400">Sí</span>
+                <span x-show="!ws.hitl_default" class="text-gray-700">No</span>
+              </td>
+              <td class="px-4 py-3 text-center">
+                <span :class="ws.llm_key_mode==='byok'
+                    ? 'bg-emerald-900/50 text-emerald-400'
+                    : ws.llm_key_mode==='proxy'
+                    ? 'bg-violet-900/50 text-violet-400'
+                    : 'bg-gray-800 text-gray-500'"
+                  class="inline-block px-2 py-0.5 rounded text-xs font-mono" x-text="ws.llm_key_mode"></span>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <div class="flex items-center justify-end gap-1">
+                  <button x-show="ws.is_trial" @click="startEditWs(ws)" x-text="$t('ws.upgrade')"
+                    class="text-xs text-amber-400 hover:text-amber-300 px-2.5 py-1 rounded hover:bg-amber-900/20 transition-colors">
+                  </button>
+                  <button @click="startEditWs(ws)" x-text="$t('ws.edit')"
+                    class="text-xs text-gray-500 hover:text-white px-2.5 py-1 rounded hover:bg-gray-800 transition-colors">
+                  </button>
+                  <button @click="deleteWs(ws)" x-text="$t('ws.delete')"
+                    class="text-xs text-gray-700 hover:text-red-400 px-2.5 py-1 rounded hover:bg-gray-800 transition-colors">
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── REVISORES ── -->
+  <div x-show="tab==='reviewers'">
+
+    <!-- CLI quick-connect -->
+    <div class="mb-6 bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <h3 class="text-sm font-semibold text-gray-100 flex items-center gap-1.5">
+            <i class="ti ti-terminal-2 text-indigo-400"></i> Conectar la CLI
+          </h3>
+          <p class="text-xs text-gray-500 mt-0.5">Usa estas variables de entorno para lanzar runs desde tu terminal o CI.</p>
+        </div>
+        <a href="https://docs.antcrew.org/platform/cli-integration/" target="_blank" rel="noopener"
+          class="shrink-0 text-xs text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1">
+          <i class="ti ti-external-link text-xs"></i> Docs
+        </a>
+      </div>
+      <pre class="bg-gray-950 border border-gray-800 rounded-lg px-4 py-3 text-xs font-mono text-gray-300 overflow-x-auto select-all leading-relaxed"><span class="text-gray-600"># exporta en tu .env o shell</span>
+export ANTCREW_PLATFORM_URL="<span x-text="window.location.origin" class="text-indigo-300"></span>"
+export ANTCREW_API_KEY="<span class="text-amber-400">acw_...</span>"  <span class="text-gray-600"># copia una key de abajo</span></pre>
+      <p class="text-xs text-gray-700 mt-2.5">La URL es la de esta plataforma. Crea o copia una API key con rol <code class="text-blue-400 font-mono">write</code> de la tabla inferior.</p>
+    </div>
+
+    <!-- New key banner -->
+    <div x-show="newKeyValue" x-transition
+      class="mb-5 p-4 bg-amber-950/40 border border-amber-700/40 rounded-lg">
+      <p class="text-amber-300 text-sm font-medium mb-2.5">Clave creada — cópiala ahora, no se volverá a mostrar</p>
+      <div class="flex items-center gap-2">
+        <code class="flex-1 font-mono text-xs bg-gray-900/80 px-3 py-2 rounded border border-gray-700 text-gray-100 break-all select-all"
+          x-text="newKeyValue"></code>
+        <button @click="copyKey()"
+          class="shrink-0 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded transition-colors">
+          Copiar
+        </button>
+        <button @click="newKeyValue=''" class="shrink-0 text-gray-600 hover:text-gray-300 px-1.5 py-1 text-sm">✕</button>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between mb-4">
+      <span class="text-sm text-gray-400 flex items-center gap-1">
+        <span data-i18n="keys.active">Active API keys</span>
+        <span class="relative inline-flex items-center ml-1">
+          <span class="peer/tip inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 text-[9px] font-bold cursor-help hover:text-gray-300 hover:border-gray-500 transition-colors select-none leading-none">i</span>
+          <span class="pointer-events-none absolute bottom-full left-0 mb-2 w-64 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-xs text-gray-300 leading-relaxed shadow-xl opacity-0 peer-hover/tip:opacity-100 transition-opacity duration-150 z-50">
+            Las API keys dan acceso a la plataforma. El rol <span class="font-mono text-amber-300">reviewer</span> solo puede resolver revisiones HITL — ideal para colaboradores no técnicos que únicamente aprueban el trabajo. Los roles <span class="font-mono text-blue-300">write</span> y <span class="font-mono text-red-300">admin</span> permiten lanzar runs y gestionar la plataforma.
+          </span>
+        </span>
+      </span>
+      <button @click="showCreateKey=true; keyFormError=''"
+        class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-md transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        <span data-i18n="keys.new">New key</span>
+      </button>
+    </div>
+
+    <p x-show="keysError" class="text-red-400 text-sm mb-3" x-text="keysError"></p>
+    <div x-show="keysLoading" class="text-gray-600 text-sm py-8 text-center" data-i18n="loading">Loading…</div>
+
+    <div x-show="!keysLoading && keys.length === 0 && !keysError"
+      class="border border-dashed border-gray-800 rounded-lg py-12 text-center text-gray-600 text-sm" data-i18n="keys.none">
+      No API keys configured.
+    </div>
+
+    <div x-show="!keysLoading && keys.length > 0" class="overflow-x-auto rounded-lg border border-gray-800">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-800 text-xs text-gray-600 uppercase tracking-wider">
+            <th class="px-4 py-2.5 text-left font-medium" data-i18n="keys.label">Label</th>
+            <th class="px-4 py-2.5 text-left font-medium" data-i18n="keys.role">Role</th>
+            <th class="px-4 py-2.5 text-left font-medium" data-i18n="keys.workspace">Workspace</th>
+            <th class="px-4 py-2.5 text-left font-medium" data-i18n="keys.notifs">Notifications</th>
+            <th class="px-4 py-2.5 text-left font-medium" data-i18n="keys.created">Created</th>
+            <th class="px-4 py-2.5 text-right font-medium" data-i18n="keys.actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="key in keys" :key="key.label">
+            <tr class="border-b border-gray-800/40 last:border-0 hover:bg-gray-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-sm">
+                <span x-text="key.label"></span>
+                <template x-if="isMyKey(key)">
+                  <span class="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-sans font-medium bg-indigo-900/60 text-indigo-300">tú</span>
+                </template>
+              </td>
+              <td class="px-4 py-3">
+                <span :class="roleBadgeClass(key.role)"
+                  class="inline-block px-2 py-0.5 rounded text-xs font-medium" x-text="key.role"></span>
+              </td>
+              <td class="px-4 py-3 text-gray-500 text-xs" x-text="wsName(key.workspace_id)"></td>
+              <td class="px-4 py-3 text-xs">
+                <div class="flex flex-col gap-0.5">
+                  <span x-show="key.email" class="flex items-center gap-1 text-gray-400">
+                    <span class="text-gray-600">✉</span> <span x-text="key.email"></span>
+                  </span>
+                  <span x-show="key.slack_user_id" class="flex items-center gap-1 text-gray-400">
+                    <span class="text-gray-600">#</span> <span x-text="key.slack_user_id"></span>
+                  </span>
+                  <span x-show="key.telegram_chat_id" class="flex items-center gap-1 text-gray-400">
+                    <span class="text-gray-600">✈</span> <span x-text="key.telegram_chat_id"></span>
+                  </span>
+                  <span x-show="!key.email && !key.slack_user_id && !key.telegram_chat_id" class="text-gray-800">—</span>
+                </div>
+              </td>
+              <td class="px-4 py-3 text-gray-600 text-xs" x-text="fmtDate(key.created_at)"></td>
+              <td class="px-4 py-3 text-right">
+                <div class="flex items-center justify-end gap-1">
+                  <template x-if="isMyKey(key)">
+                    <span class="text-xs text-gray-700 px-2.5 py-1 italic" x-text="$t('keys.myAccount')"></span>
+                  </template>
+                  <template x-if="!isMyKey(key)">
+                    <button @click="startEditKey(key)" x-text="$t('keys.edit')"
+                      class="text-xs text-gray-500 hover:text-white px-2.5 py-1 rounded hover:bg-gray-800 transition-colors">
+                    </button>
+                  </template>
+                  <template x-if="!isMyKey(key)">
+                    <button @click="revokeKey(key)" x-text="$t('keys.revoke')"
+                      class="text-xs text-gray-700 hover:text-red-400 px-2.5 py-1 rounded hover:bg-gray-800 transition-colors">
+                    </button>
+                  </template>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── MODO LLM ── -->
+  <div x-show="tab==='llm'">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-xs text-gray-600 mr-1">Vista:</span>
+      <button @click="llmView='detail'"
+        :class="llmView==='detail' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'"
+        class="px-3 py-1.5 text-xs rounded transition-colors">Individual</button>
+      <button @click="llmView='matrix'; loadMatrix()"
+        :class="llmView==='matrix' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'"
+        class="px-3 py-1.5 text-xs rounded transition-colors">Matriz de proveedores</button>
+    </div>
+
+    <!-- Matrix view -->
+    <div x-show="llmView==='matrix'">
+      <div x-show="matrixLoading" class="text-gray-600 text-sm py-8 text-center">Loading…</div>
+      <div x-show="!matrixLoading && matrixData.length === 0" class="border border-dashed border-gray-800 rounded-lg py-12 text-center text-gray-600 text-sm">
+        No hay workspaces. Crea uno primero.
+      </div>
+      <div x-show="!matrixLoading && matrixData.length > 0" class="overflow-x-auto rounded-lg border border-gray-800">
+        <table class="w-full text-xs" style="font-variant-numeric:tabular-nums">
+          <thead>
+            <tr class="border-b border-gray-800 text-gray-600 uppercase tracking-wider">
+              <th class="px-4 py-2.5 text-left font-medium">Workspace</th>
+              <th class="px-4 py-2.5 text-left font-medium">Proveedor</th>
+              <th class="px-4 py-2.5 text-center font-medium text-indigo-400">Managed</th>
+              <th class="px-4 py-2.5 text-center font-medium text-emerald-400">BYOK</th>
+              <th class="px-4 py-2.5 text-center font-medium text-violet-400">Proxy</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in matrixRows" :key="`${row.wsId}-${row.provider}`">
+              <tr :class="row.isFirst ? 'border-t-2 border-gray-700' : (row.isLast ? 'border-b border-gray-700/40' : 'border-b border-gray-800/20')"
+                  class="hover:bg-gray-900/30 transition-colors">
+                <td class="px-4 py-2 align-top" :style="row.isFirst ? '' : 'color:transparent;user-select:none'">
+                  <template x-if="row.isFirst">
+                    <div>
+                      <div class="font-medium text-gray-200" x-text="row.wsName"></div>
+                      <div :class="row.wsMode==='byok' ? 'text-emerald-500' : row.wsMode==='proxy' ? 'text-violet-400' : 'text-gray-600'"
+                           class="font-mono mt-0.5" x-text="row.wsMode"></div>
+                    </div>
+                  </template>
+                </td>
+                <td class="px-4 py-2 text-gray-500" x-text="row.provider"></td>
+                <td class="px-4 py-2 text-center">
+                  <span x-show="row.mode==='managed'" class="text-indigo-400 text-base">●</span>
+                  <span x-show="row.mode==='managed*'" class="text-indigo-300 text-base" title="Fallback managed (sin clave BYOK)">◐</span>
+                  <span x-show="row.mode!=='managed' && row.mode!=='managed*'" class="text-gray-800">○</span>
+                </td>
+                <td class="px-4 py-2 text-center">
+                  <span x-show="row.mode==='byok'" class="text-emerald-400 text-base">●</span>
+                  <span x-show="row.mode!=='byok'" class="text-gray-800">○</span>
+                </td>
+                <td class="px-4 py-2 text-center">
+                  <span x-show="row.mode==='proxy'" class="text-violet-400 text-base">●</span>
+                  <span x-show="row.mode!=='proxy'" class="text-gray-800">○</span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p class="px-4 py-2 text-xs text-gray-700">◐ = fallback a managed (sin clave BYOK para ese proveedor)</p>
+      </div>
+    </div>
+
+    <div x-show="llmView==='detail'" class="mb-6">
+      <label class="block text-sm text-gray-400 mb-2">Workspace</label>
+      <select x-model="llmWsId" @change="selectLlmWs()"
+        class="bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 w-72">
+        <option value="">— selecciona un workspace —</option>
+        <template x-for="ws in workspaces" :key="ws.id">
+          <option :value="ws.id" x-text="`${ws.name} (${ws.slug})`"></option>
+        </template>
+      </select>
+    </div>
+
+    <div x-show="llmView==='detail' && !llmWsId" class="text-gray-700 text-sm">Selecciona un workspace para ver su configuración.</div>
+
+    <div x-show="llmView==='detail' && !!llmWsId">
+      <p x-show="llmError" class="text-red-400 text-sm mb-4" x-text="llmError"></p>
+      <div x-show="llmLoading" class="text-gray-600 text-sm" data-i18n="loading">Loading…</div>
+
+      <div x-show="!llmLoading" class="flex flex-col gap-5">
+        <!-- Mode selector -->
+        <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
+          <p class="text-xs text-gray-600 uppercase tracking-wider mb-3">Modo de facturación LLM</p>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button @click="setLlmMode('managed')"
+              :class="llmMode==='managed'
+                ? 'bg-indigo-600 text-white border-transparent'
+                : 'bg-transparent text-gray-400 border-gray-700 hover:text-gray-200 hover:border-gray-500'"
+              class="px-4 py-1.5 rounded border text-sm transition-colors">
+              Managed <span class="text-xs opacity-70">×3.0</span>
+            </button>
+            <button @click="setLlmMode('byok')"
+              :class="llmMode==='byok'
+                ? 'bg-emerald-700 text-white border-transparent'
+                : 'bg-transparent text-gray-400 border-gray-700 hover:text-gray-200 hover:border-gray-500'"
+              class="px-4 py-1.5 rounded border text-sm transition-colors"
+              :disabled="llmKeys.length === 0"
+              :title="llmKeys.length === 0 ? 'Añade al menos una clave antes de activar BYOK' : ''">
+              BYOK <span class="text-xs opacity-70">×0.4</span>
+            </button>
+            <button @click="activateProxy()"
+              :class="llmMode==='proxy'
+                ? 'bg-violet-700 text-white border-transparent'
+                : 'bg-transparent text-gray-400 border-gray-700 hover:text-gray-200 hover:border-gray-500'"
+              class="px-4 py-1.5 rounded border text-sm transition-colors"
+              :disabled="!proxyConfigured"
+              :title="!proxyConfigured ? 'Genera un token proxy antes de activar este modo' : ''">
+              Proxy <span class="text-xs opacity-70">×0.7</span>
+            </button>
+          </div>
+          <p x-show="llmMode==='byok'" class="text-emerald-500 text-xs mt-2.5">Usando tus claves — multiplicador ×0.4 activo</p>
+          <p x-show="llmMode==='managed'" class="text-gray-600 text-xs mt-2.5">Usando claves de la plataforma — multiplicador ×3.0</p>
+          <p x-show="llmMode==='proxy'" class="text-violet-400 text-xs mt-2.5">Modo proxy activo — la plataforma nunca ve tu clave Anthropic · multiplicador ×0.7</p>
+
+          <!-- Per-model managed fallback (only relevant for byok / proxy) -->
+          <div x-show="llmMode !== 'managed'" x-cloak class="mt-4 pt-4 border-t border-gray-800">
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" x-model="byokManagedFallback" @change="saveByokFallback()"
+                class="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 accent-indigo-500 shrink-0">
+              <div>
+                <p class="text-sm text-gray-200 select-none">Usar claves de la plataforma como respaldo</p>
+                <p class="text-xs text-gray-500 mt-0.5">Si un modelo no tiene clave configurada, antcrew usa su propia clave (×3.0 solo para esos modelos).</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Proxy configuration -->
+        <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
+          <p class="text-xs text-gray-600 uppercase tracking-wider mb-3">Proxy local (opcional)</p>
+          <p class="text-xs text-gray-500 mb-4 leading-relaxed">
+            Ejecuta <code class="bg-gray-800 px-1 rounded text-gray-300">antcrew-proxy</code> en tu infraestructura.
+            La plataforma envía llamadas LLM a tu proxy; el proxy sustituye con tu clave real de Anthropic.
+            La plataforma nunca recibe tu API key.
+          </p>
+
+          <div x-show="proxyConfigured" class="mb-4 p-3 bg-violet-950/30 border border-violet-800/40 rounded-lg text-xs">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0"></span>
+              <span class="text-violet-300 font-medium">Proxy configurado</span>
+            </div>
+            <span class="text-gray-500" x-text="proxyUrl"></span>
+          </div>
+
+          <div class="flex flex-col gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">URL del proxy</label>
+              <input x-model="proxyUrlInput" type="url"
+                placeholder="https://proxy.tudominio.com"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-violet-500 transition-colors">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">
+                Failover chain
+                <span class="text-gray-700 font-normal ml-1">— opcional, orden de proveedores si el primario falla</span>
+              </label>
+              <input x-model="failoverChain" type="text"
+                placeholder="anthropic:claude-sonnet-4-6,openai:gpt-4o,groq:llama-3.3-70b-versatile"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-xs font-mono focus:outline-none focus:border-violet-500 transition-colors">
+              <p class="text-xs text-gray-700 mt-1">Formato: <code class="bg-gray-800 px-1 rounded text-gray-500">proveedor:modelo,proveedor:modelo</code>. Se incluye en el comando Docker generado.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button @click="generateProxyToken()"
+                :disabled="!proxyUrlInput"
+                class="px-3 py-1.5 bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm rounded-md transition-colors">
+                <span x-text="proxyConfigured ? 'Rotar token' : 'Generar token'"></span>
+              </button>
+              <button x-show="proxyConfigured" @click="revokeProxy()"
+                class="px-3 py-1.5 text-xs text-gray-600 hover:text-red-400 rounded hover:bg-gray-800 transition-colors">
+                Revocar
+              </button>
+            </div>
+          </div>
+
+          <div x-show="proxyToken" class="mt-4 p-3 bg-gray-800 border border-violet-700/40 rounded-lg space-y-3">
+            <p class="text-xs text-violet-400 font-medium">Token generado — cópialo ahora, no se volverá a mostrar</p>
+            <div class="flex items-start gap-2">
+              <code class="text-xs text-gray-300 break-all flex-1 font-mono" x-text="proxyToken"></code>
+              <button @click="copyProxyToken()" class="shrink-0 text-xs text-gray-500 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors">Copiar</button>
+            </div>
+            <div class="border-t border-gray-700/50 pt-3">
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-xs text-gray-500 uppercase tracking-wider">Comando Docker</p>
+                <div class="flex items-center gap-2">
+                  <button @click="copyDockerCmd()" class="text-xs text-gray-500 hover:text-white px-2 py-1 rounded hover:bg-gray-700 transition-colors">Copiar cmd</button>
+                  <button @click="downloadEnv()" class="text-xs text-violet-400 hover:text-violet-300 px-2 py-1 rounded border border-violet-700/50 hover:bg-violet-900/20 transition-colors">↓ Descargar .env</button>
+                </div>
+              </div>
+              <pre class="text-xs text-gray-300 bg-gray-900 rounded-md p-3 whitespace-pre-wrap break-all font-mono leading-relaxed" x-text="proxyDockerCmd"></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cost Routing Policy -->
+        <div class="p-4 bg-gray-900 border border-gray-800 rounded-lg">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-gray-600 uppercase tracking-wider">Routing de costes automático</p>
+            <span x-show="routingMsg" class="text-xs text-emerald-400" x-text="routingMsg"></span>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button @click="setRoutingPolicy('none')"
+              :class="routingPolicy==='none' ? 'bg-gray-700 text-white border-transparent' : 'bg-transparent text-gray-500 border-gray-700 hover:text-gray-200'"
+              class="px-4 py-1.5 rounded border text-sm transition-colors">
+              Ninguno
+            </button>
+            <button @click="setRoutingPolicy('economy')"
+              :class="routingPolicy==='economy' ? 'bg-emerald-700 text-white border-transparent' : 'bg-transparent text-gray-500 border-gray-700 hover:text-gray-200'"
+              class="px-4 py-1.5 rounded border text-sm transition-colors">
+              Economy
+            </button>
+            <button @click="setRoutingPolicy('auto')"
+              :class="routingPolicy==='auto' ? 'bg-indigo-600 text-white border-transparent' : 'bg-transparent text-gray-500 border-gray-700 hover:text-gray-200'"
+              class="px-4 py-1.5 rounded border text-sm transition-colors">
+              Auto
+            </button>
+          </div>
+          <p x-show="routingPolicy==='none'" class="text-gray-700 text-xs mt-2.5">Sin routing automático — se usan los modelos configurados en agent_models.</p>
+          <p x-show="routingPolicy==='economy'" class="text-emerald-500 text-xs mt-2.5">Todos los agentes usan el modelo barato de la plataforma. Máximo ahorro de coste.</p>
+          <p x-show="routingPolicy==='auto'" class="text-indigo-300 text-xs mt-2.5">Cada agente se clasifica por nombre (validator → cheap, architect → premium, etc.) y se le asigna el tier correspondiente.</p>
+        </div>
+
+        <!-- Outbound Webhooks -->
+        <div class="mt-6 border-t border-gray-800/60 pt-5">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-gray-600 uppercase tracking-wider">Webhooks salientes</p>
+            <button @click="showAddWebhook=true; newWebhookUrl=''; newWebhookLabel=''"
+              class="flex items-center gap-1.5 px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded transition-colors">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              Añadir
+            </button>
+          </div>
+          <p class="text-xs text-gray-700 mb-3">Cada evento del pipeline (pipeline.start, agent.end, etc.) se enviará como POST JSON a las URLs registradas.</p>
+
+          <!-- Add webhook form -->
+          <div x-show="showAddWebhook" class="mb-3 p-3 bg-gray-800/60 border border-gray-700/50 rounded-lg space-y-2">
+            <input x-model="newWebhookUrl" type="url" placeholder="https://hooks.slack.com/..." autocomplete="off"
+              class="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-violet-500 transition-colors">
+            <input x-model="newWebhookLabel" type="text" placeholder="Etiqueta (opcional)"
+              class="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-violet-500 transition-colors">
+            <div class="flex gap-2">
+              <button @click="addWebhook()"
+                :disabled="!newWebhookUrl"
+                class="px-3 py-1 bg-violet-700 hover:bg-violet-600 disabled:opacity-40 text-white text-xs rounded transition-colors">Guardar</button>
+              <button @click="showAddWebhook=false" class="px-3 py-1 text-gray-600 hover:text-white text-xs rounded transition-colors">Cancelar</button>
+            </div>
+          </div>
+
+          <!-- Webhook list -->
+          <div class="space-y-1.5">
+            <template x-if="webhooks.length === 0 && !showAddWebhook">
+              <p class="text-xs text-gray-800 italic">Sin webhooks configurados.</p>
+            </template>
+            <template x-for="wh in webhooks" :key="wh.id">
+              <div class="flex items-center gap-2 p-2 bg-gray-800/40 border border-gray-800 rounded-lg">
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-mono text-gray-300 truncate" x-text="wh.url"></p>
+                  <p x-show="wh.label" class="text-xs text-gray-700 truncate" x-text="wh.label"></p>
+                </div>
+                <span :class="wh.enabled ? 'bg-emerald-900/60 text-emerald-400' : 'bg-gray-800 text-gray-600'"
+                  class="text-xs px-1.5 py-0.5 rounded" x-text="wh.enabled ? 'activo' : 'inactivo'"></span>
+                <button @click="deleteWebhook(wh.id)" title="Eliminar"
+                  class="text-gray-700 hover:text-red-400 transition-colors p-1">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Keys list -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm text-gray-400" data-i18n="llm.title">BYOK keys configured</p>
+            <button @click="showAddKey=true; addKeyForm={provider:'anthropic',api_key:'',base_url:'',confirm_overwrite:false}; llmError=''"
+              class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-md transition-colors">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              <span data-i18n="llm.add">Add key</span>
+            </button>
+          </div>
+
+          <div x-show="llmKeys.length === 0"
+            class="border border-dashed border-gray-800 rounded-lg py-8 text-center text-gray-700 text-sm" data-i18n="llm.none">
+            No BYOK keys. Workspace uses platform keys.
+          </div>
+
+          <div x-show="llmKeys.length > 0" class="rounded-lg border border-gray-800 overflow-hidden">
+            <template x-for="k in llmKeys" :key="k.provider">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800/40 last:border-0 hover:bg-gray-900/40 transition-colors">
+                <div class="flex items-center gap-3">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span class="font-mono text-sm" x-text="k.provider"></span>
+                  <span class="text-gray-600 text-xs" x-text="`configurada ${fmtDate(k.created_at)}`"></span>
+                </div>
+                <button @click="deleteLlmKey(k.provider)" x-text="$t('llm.delete')"
+                  class="text-xs text-gray-700 hover:text-red-400 px-2.5 py-1 rounded hover:bg-gray-800 transition-colors">
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- ── Modelo por defecto ─────────────────────────────────────────── -->
+        <div class="border-t border-gray-800 pt-5">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-sm font-medium text-gray-300">Modelo por defecto</h3>
+              <p class="text-xs text-gray-600 mt-0.5">Modelo que usan los pipelines de este workspace cuando no se especifica otro en el run.</p>
+            </div>
+            <button @click="saveAgentModels()"
+              class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-md transition-colors">
+              Guardar
+            </button>
+          </div>
+
+          <!-- Platform default row (read-only reference) -->
+          <div class="flex items-center gap-3 p-3 bg-gray-950/60 rounded-lg border border-gray-800/40 mb-2">
+            <span class="font-mono text-xs text-gray-600 w-36 shrink-0">plataforma</span>
+            <span class="flex-1 font-mono text-xs text-gray-600 px-3 py-1.5" x-text="platformDefaultModel || 'claude'"></span>
+            <span class="text-xs text-gray-700 italic shrink-0">sólo lectura</span>
+          </div>
+
+          <!-- Default model row -->
+          <div class="flex items-center gap-3 p-3 bg-gray-900/40 rounded-lg border border-gray-800 mb-3">
+            <span class="font-mono text-xs text-gray-500 w-36 shrink-0">default (todos)</span>
+            <select x-model="agentModelsDefault"
+              class="flex-1 bg-gray-900 border border-gray-800 rounded-md px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-indigo-500">
+              <template x-for="opt in modelOptions" :key="opt.value">
+                <option :value="opt.value" x-text="opt.label"></option>
+              </template>
+            </select>
+          </div>
+
+          <!-- Per-agent overrides -->
+          <div x-show="agentModelRows.length > 0" class="rounded-lg border border-gray-800 overflow-hidden mb-3">
+            <template x-for="(row, idx) in agentModelRows" :key="idx">
+              <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-800/40 last:border-0">
+                <input x-model="row.agent" placeholder="BackendDevAgent"
+                  class="font-mono text-xs bg-gray-900 border border-gray-800 rounded px-2 py-1.5 text-gray-300 w-44 focus:outline-none focus:border-indigo-500" />
+                <span class="text-gray-700 shrink-0">→</span>
+                <select x-model="row.model"
+                  class="flex-1 bg-gray-900 border border-gray-800 rounded px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-indigo-500">
+                  <template x-for="opt in modelOptions.filter(o => o.value)" :key="opt.value">
+                    <option :value="opt.value" x-text="opt.label"></option>
+                  </template>
+                </select>
+                <button @click="agentModelRows.splice(idx,1)"
+                  class="text-gray-700 hover:text-red-400 px-2 py-1 rounded hover:bg-gray-800 transition-colors shrink-0 text-sm">✕</button>
+              </div>
+            </template>
+          </div>
+
+          <button @click="agentModelRows.push({agent:'',model:'deepseek:deepseek-chat'})"
+            class="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-400 transition-colors mb-2">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Añadir override por agente
+          </button>
+
+          <p x-show="agentModelsDefault || agentModelRows.length" class="text-xs text-gray-700 mt-1">
+            Precedencia: <span class="text-indigo-400 font-mono">run.model</span> &gt;
+            <span class="text-indigo-400 font-mono">run.model_overrides[agente]</span> &gt;
+            <span class="text-indigo-400 font-mono">workspace[agente]</span> &gt;
+            <span class="text-indigo-400 font-mono">workspace[default]</span> &gt;
+            <span class="text-indigo-400 font-mono">plataforma[default]</span> &gt; claude
+          </p>
+          <p x-show="agentModelsMsg" class="text-xs mt-2"
+            :class="agentModelsMsg.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'"
+            x-text="agentModelsMsg"></p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SCHEDULES ── -->
+  <div x-show="tab==='schedules'">
+    <div class="flex items-center justify-between mb-4">
+      <span class="text-sm text-gray-400">Recurring engine runs triggered by a cron expression</span>
+      <button @click="openCreateSchedule()"
+        class="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-md transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        New schedule
+      </button>
+    </div>
+
+    <p x-show="schedulesError" class="text-red-400 text-sm mb-3" x-text="schedulesError"></p>
+    <div x-show="schedulesLoading" class="text-gray-600 text-sm py-8 text-center">Loading…</div>
+
+    <div x-show="!schedulesLoading && schedules.length === 0 && !schedulesError"
+      class="border border-dashed border-gray-800 rounded-lg py-12 text-center text-gray-600 text-sm">
+      No schedules yet.
+    </div>
+
+    <!-- Schedule list -->
+    <div x-show="!schedulesLoading && schedules.length > 0" class="flex flex-col gap-2">
+      <template x-for="s in schedules" :key="s.id">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="text-sm font-medium text-white truncate" x-text="s.name"></span>
+                <span class="text-xs font-mono px-1.5 py-0.5 rounded"
+                  :class="s.enabled ? 'bg-teal-900/50 text-teal-300' : 'bg-gray-800 text-gray-500'"
+                  x-text="s.enabled ? 'active' : 'paused'"></span>
+              </div>
+              <p class="text-xs text-gray-500 truncate" x-text="s.goal"></p>
+              <div class="flex items-center gap-3 mt-2 text-xs text-gray-600" style="font-variant-numeric:tabular-nums">
+                <span class="font-mono" x-text="s.cron_expr"></span>
+                <span>·</span>
+                <span x-text="s.model"></span>
+                <template x-if="s.max_cost_usd != null">
+                  <span>· max $<span x-text="s.max_cost_usd.toFixed(2)"></span></span>
+                </template>
+                <span>·</span>
+                <span>next <span x-text="fmtDateShort(s.next_run_at)"></span></span>
+              </div>
+              <div x-show="s.last_run_id" class="mt-1">
+                <a :href="'/run/' + s.last_run_id" class="text-xs text-indigo-400 hover:text-indigo-300">
+                  last run ↗
+                </a>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button @click="toggleSchedule(s)"
+                class="px-2.5 py-1 text-xs rounded-md border transition-colors"
+                :class="s.enabled
+                  ? 'border-gray-700 text-gray-400 hover:border-amber-600 hover:text-amber-400'
+                  : 'border-gray-700 text-gray-400 hover:border-teal-600 hover:text-teal-400'"
+                x-text="s.enabled ? 'Pause' : 'Resume'">
+              </button>
+              <button @click="deleteSchedule(s)"
+                class="px-2.5 py-1 text-xs rounded-md border border-gray-700 text-gray-500 hover:border-red-700 hover:text-red-400 transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Create schedule inline form -->
+    <div x-show="showCreateSchedule" class="mt-4 bg-gray-900 border border-gray-700 rounded-xl p-5">
+      <h3 class="text-sm font-semibold mb-4">New schedule</h3>
+      <div class="flex flex-col gap-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Name</label>
+            <input x-model="createScheduleForm.name" type="text" placeholder="nightly audit"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Model</label>
+            <input x-model="createScheduleForm.model" type="text" placeholder="claude"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Goal</label>
+          <textarea x-model="createScheduleForm.goal" rows="2" placeholder="Audit security vulnerabilities in the codebase"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors resize-none"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Cron expression</label>
+            <input x-model="createScheduleForm.cron_expr" type="text" placeholder="0 2 * * *"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+            <p class="text-xs text-gray-700 mt-0.5">UTC — <a href="https://crontab.guru" target="_blank" class="text-indigo-500 hover:underline">crontab.guru</a></p>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Max cost (USD, optional)</label>
+            <input x-model="createScheduleForm.max_cost_usd" type="number" step="0.01" min="0" placeholder="—"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+        </div>
+        <p x-show="schedFormError" class="text-red-400 text-xs" x-text="schedFormError"></p>
+        <div class="flex gap-2 justify-end">
+          <button @click="showCreateSchedule=false"
+            class="px-3 py-1.5 text-sm text-gray-500 hover:text-white transition-colors">Cancel</button>
+          <button @click="createSchedule()"
+            :disabled="!createScheduleForm.name.trim() || !createScheduleForm.goal.trim() || !createScheduleForm.cron_expr.trim()"
+            class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-md transition-colors">
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SECURITY ── -->
+  <div x-show="tab==='security'" class="max-w-xl">
+    <div class="mb-5">
+      <h2 class="text-base font-semibold mb-1">Quick Security Audit</h2>
+      <p class="text-sm text-gray-400">Run a one-click security audit on any GitHub repository. No prior configuration required.</p>
+    </div>
+
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">GitHub Repository</label>
+        <input x-model="auditForm.github_repo" type="text" placeholder="owner/repo"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 font-mono" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">GitHub Token (PAT)</label>
+        <input x-model="auditForm.github_token" type="password" placeholder="ghp_…"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 font-mono" />
+        <p class="text-xs text-gray-600 mt-1">Needs <code class="text-gray-500">repo:read</code> scope. Never stored.</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">Branch</label>
+          <input x-model="auditForm.github_branch" type="text" placeholder="main"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-1.5">Max Cost (USD)</label>
+          <input x-model="auditForm.max_cost_usd" type="number" step="0.5" placeholder="5.00"
+            class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500" />
+        </div>
+      </div>
+
+      <div x-show="auditError" x-cloak
+        class="bg-red-950 border border-red-800 rounded-lg px-4 py-2 text-red-300 text-sm" x-text="auditError"></div>
+
+      <template x-if="auditResult">
+        <div class="bg-indigo-950/50 border border-indigo-800/60 rounded-lg px-4 py-3 space-y-1">
+          <p class="text-sm text-indigo-300 font-medium">Audit started</p>
+          <p class="text-xs text-gray-400">Run ID:
+            <a :href="'/run/' + auditResult.run_id" class="text-indigo-400 underline font-mono" x-text="auditResult.run_id.slice(0,8)"></a>
+          </p>
+          <p class="text-xs text-gray-400">Repo: <span class="text-gray-300" x-text="auditResult.github_repo"></span></p>
+          <p class="text-xs text-gray-500" x-text="auditResult.message"></p>
+        </div>
+      </template>
+
+      <button @click="runQuickAudit()"
+        :disabled="auditLoading || !auditForm.github_repo.trim() || !auditForm.github_token.trim()"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2.5 rounded-lg transition">
+        <span x-show="!auditLoading">Run Quick Audit</span>
+        <span x-show="auditLoading" x-cloak>Launching audit…</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── GITHUB APP ── -->
+  <div x-show="tab==='github'" class="max-w-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-base font-semibold">GitHub App</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Conecta repositorios de GitHub a tus workspaces para habilitar write-back automático mediante tokens de instalación.</p>
+      </div>
+    </div>
+
+    <!-- Workspace selector -->
+    <div class="mb-5">
+      <label class="block text-xs text-gray-500 mb-1.5">Workspace</label>
+      <select x-model="ghWsId" @change="loadGhInstallations()"
+        class="bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 w-72">
+        <option value="">— selecciona un workspace —</option>
+        <template x-for="ws in workspaces" :key="ws.id">
+          <option :value="ws.id" x-text="`${ws.name} (${ws.slug})`"></option>
+        </template>
+      </select>
+    </div>
+
+    <div x-show="!ghWsId" class="text-gray-700 text-sm">Selecciona un workspace para gestionar su integración con GitHub.</div>
+
+    <div x-show="!!ghWsId">
+      <p x-show="ghError" class="text-red-400 text-sm mb-3" x-text="ghError"></p>
+      <div x-show="ghLoading" class="text-gray-600 text-sm py-4">Cargando…</div>
+
+      <div x-show="!ghLoading">
+        <!-- No installation -->
+        <div x-show="ghInstallationsForWs.length === 0"
+          class="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col items-start gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+              <h3 class="text-sm font-semibold text-gray-100">Conectar GitHub App</h3>
+            </div>
+            <p class="text-xs text-gray-500 leading-relaxed">
+              Instala la antcrew GitHub App en tu cuenta u organización para que los runners puedan crear branches, commits y pull requests usando tokens de instalación — sin necesidad de PATs de usuario.
+            </p>
+          </div>
+          <a :href="`https://github.com/apps/antcrew/installations/new?state=${ghWsId}`"
+            target="_blank" rel="noopener"
+            class="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-white text-gray-900 text-sm font-medium rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            Instalar en GitHub
+          </a>
+        </div>
+
+        <!-- Has installations -->
+        <div x-show="ghInstallationsForWs.length > 0" class="flex flex-col gap-3">
+          <template x-for="inst in ghInstallationsForWs" :key="inst.installation_id">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <!-- Header row -->
+              <div class="px-5 py-4 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4 text-gray-300" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium text-sm text-white truncate" x-text="inst.account_login"></span>
+                      <span class="text-xs px-1.5 py-0.5 rounded font-mono"
+                        :class="inst.account_type === 'Organization' ? 'bg-indigo-900/50 text-indigo-300' : 'bg-gray-800 text-gray-400'"
+                        x-text="inst.account_type === 'Organization' ? 'org' : 'user'"></span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-0.5">
+                      Installation ID: <span class="font-mono" x-text="inst.installation_id"></span>
+                      · conectado <span x-text="fmtDate(inst.created_at)"></span>
+                    </p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="flex items-center gap-1 text-xs text-teal-400">
+                    <span class="w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0"></span>
+                    Activo
+                  </span>
+                  <button @click="disconnectGh(inst)"
+                    class="px-2.5 py-1 text-xs text-gray-600 hover:text-red-400 rounded hover:bg-gray-800 transition-colors">
+                    Desconectar
+                  </button>
+                </div>
+              </div>
+              <!-- Push trigger config -->
+              <div class="border-t border-gray-800 px-5 py-4 bg-gray-950/40">
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-xs text-gray-500 font-medium">Push trigger</p>
+                  <span x-show="inst.push_goal" class="text-xs text-green-400">activo</span>
+                  <span x-show="!inst.push_goal" class="text-xs text-gray-700">inactivo</span>
+                </div>
+                <div class="space-y-2">
+                  <div>
+                    <label class="block text-xs text-gray-600 mb-1">Goal (vacío = desactivado)</label>
+                    <textarea x-model="inst.push_goal" rows="2" placeholder="Revisa el código, actualiza los tests y corrige errores."
+                      class="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-xs text-gray-300 focus:outline-none focus:border-indigo-500 resize-none transition"></textarea>
+                  </div>
+                  <div class="flex gap-3">
+                    <div class="flex-1">
+                      <label class="block text-xs text-gray-600 mb-1">Modelo</label>
+                      <input x-model="inst.push_model" placeholder="claude"
+                        class="w-full bg-gray-900 border border-gray-700 rounded-md px-2 py-1.5 text-xs font-mono text-gray-300 focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                    <div class="flex-1">
+                      <label class="block text-xs text-gray-600 mb-1">Rama (* = todas)</label>
+                      <input x-model="inst.push_branch_filter" placeholder="*"
+                        class="w-full bg-gray-900 border border-gray-700 rounded-md px-2 py-1.5 text-xs font-mono text-gray-300 focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                  </div>
+                  <button @click="savePushTrigger(inst)"
+                    class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md transition">
+                    Guardar trigger
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Add another installation -->
+          <a :href="`https://github.com/apps/antcrew/installations/new?state=${ghWsId}`"
+            target="_blank" rel="noopener"
+            class="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Conectar otra cuenta/organización
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PERFIL ── -->
+  <div x-show="tab==='profile'" class="max-w-md">
+    <p x-show="profileMsg" class="mb-4 text-sm px-3 py-2 rounded-lg"
+      :class="profileError ? 'bg-red-950/50 text-red-300 border border-red-800/50' : 'bg-green-950/50 text-green-300 border border-green-800/50'"
+      x-text="profileMsg"></p>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+      <h3 class="text-sm font-medium mb-4" data-i18n="prof.personal">Personal information</h3>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5" data-i18n="prof.name">Full name</label>
+          <input x-model="profileForm.display_name" type="text" placeholder="Tu nombre completo"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5" data-i18n="prof.email">Email</label>
+          <input :value="profileForm.email" type="email" disabled
+            class="w-full bg-gray-900 border border-gray-800 rounded-md px-3 py-2 text-sm text-gray-500 cursor-not-allowed">
+        </div>
+        <div class="flex justify-end">
+          <button @click="saveProfile()"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-md transition-colors" data-i18n="prof.save">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <h3 class="text-sm font-medium mb-4" data-i18n="prof.changePw">Change password</h3>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5" data-i18n="prof.current">Current password</label>
+          <input x-model="pwForm.current" type="password" placeholder="••••••••"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5" data-i18n="prof.new">New password</label>
+          <input x-model="pwForm.newPw" type="password" placeholder="Mínimo 8 caracteres"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <div class="flex justify-end">
+          <button @click="savePassword()" :disabled="!pwForm.current || !pwForm.newPw"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-md transition-colors" data-i18n="prof.change">
+            Change password
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MFA section -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between mb-1">
+        <h3 class="text-sm font-medium">Two-factor authentication (TOTP)</h3>
+        <span class="text-xs font-medium px-2 py-0.5 rounded-full"
+          :class="mfaEnabled ? 'bg-teal-900/60 text-teal-300' : 'bg-gray-800 text-gray-500'"
+          x-text="mfaEnabled ? 'Enabled' : 'Disabled'"></span>
+      </div>
+      <p class="text-xs text-gray-600 mb-4">Require a 6-digit code from your authenticator app on every login.</p>
+
+      <!-- Setup flow: show secret + provisioning URI -->
+      <div x-show="mfaSetup && !mfaEnabled" class="mb-4 p-4 bg-gray-800/60 border border-gray-700 rounded-lg">
+        <p class="text-xs text-gray-400 mb-3">Escanea el código QR con tu app de autenticación, o copia el código manualmente.</p>
+        <template x-if="mfaSetup && mfaSetup.qr_svg_b64">
+          <div class="flex justify-center mb-3">
+            <img :src="'data:image/svg+xml;base64,' + mfaSetup.qr_svg_b64"
+              class="w-40 h-40 bg-white rounded-xl p-1.5" alt="QR código MFA">
+          </div>
+        </template>
+        <div class="mb-3">
+          <a :href="mfaSetup && mfaSetup.provisioning_uri"
+            class="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
+            Open in authenticator app
+          </a>
+        </div>
+        <div class="mb-3">
+          <p class="text-xs text-gray-500 mb-1">Or enter manually:</p>
+          <code class="block bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs font-mono text-gray-200 tracking-widest select-all" x-text="mfaSetup.secret"></code>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Verify — enter the 6-digit code</label>
+          <div class="flex gap-2">
+            <input x-model="mfaCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+              @keydown.enter="enableMfa()"
+              class="w-32 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm font-mono text-center tracking-widest focus:outline-none focus:border-indigo-500 transition-colors">
+            <button @click="enableMfa()" :disabled="mfaCode.length !== 6 || mfaLoading"
+              class="px-3 py-1.5 bg-teal-700 hover:bg-teal-600 disabled:opacity-40 text-white text-xs rounded-md transition-colors">
+              Activate
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Disable flow -->
+      <div x-show="mfaEnabled && showDisableMfa" class="mb-4 p-4 bg-gray-800/60 border border-amber-800/40 rounded-lg">
+        <p class="text-xs text-amber-300/80 mb-3">Enter the current code from your authenticator app to disable MFA.</p>
+        <div class="flex gap-2">
+          <input x-model="mfaCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+            @keydown.enter="disableMfa()"
+            class="w-32 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm font-mono text-center tracking-widest focus:outline-none focus:border-amber-600 transition-colors">
+          <button @click="disableMfa()" :disabled="mfaCode.length !== 6 || mfaLoading"
+            class="px-3 py-1.5 bg-red-800 hover:bg-red-700 disabled:opacity-40 text-white text-xs rounded-md transition-colors">
+            Disable MFA
+          </button>
+          <button @click="showDisableMfa=false; mfaCode=''"
+            class="px-3 py-1.5 text-xs text-gray-500 hover:text-white transition-colors">Cancel</button>
+        </div>
+      </div>
+
+      <p x-show="mfaMsg" class="text-xs mb-3"
+        :class="mfaError ? 'text-red-400' : 'text-teal-400'"
+        x-text="mfaMsg"></p>
+
+      <div class="flex gap-2">
+        <button x-show="!mfaEnabled && !mfaSetup" @click="setupMfa()"
+          class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md transition-colors">
+          Set up MFA
+        </button>
+        <button x-show="!mfaEnabled && mfaSetup" @click="mfaSetup=null; mfaCode=''; mfaMsg=''"
+          class="px-3 py-1.5 border border-gray-700 text-gray-400 hover:text-white text-xs rounded-md transition-colors">
+          Cancel setup
+        </button>
+        <button x-show="mfaEnabled && !showDisableMfa" @click="showDisableMfa=true; mfaCode=''; mfaMsg=''"
+          class="px-3 py-1.5 border border-red-800/60 text-red-400 hover:border-red-600 text-xs rounded-md transition-colors">
+          Disable MFA
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── FACTURACIÓN ── -->
+  <div x-show="tab==='billing'" class="max-w-lg">
+
+    <!-- Workspace selector (hidden when only one) -->
+    <template x-if="workspaces.length > 1">
+      <div class="mb-5">
+        <label class="block text-xs text-gray-500 mb-1.5">Workspace</label>
+        <select x-model="billingWsId" @change="loadBillingProfile()"
+          class="bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-indigo-500 w-full max-w-xs">
+          <template x-for="ws in workspaces" :key="ws.id">
+            <option :value="ws.id" x-text="ws.name"></option>
+          </template>
+        </select>
+      </div>
+    </template>
+
+    <template x-if="!billingWsId && workspaces.length === 0">
+      <p class="text-gray-600 text-sm">Crea un workspace primero para configurar el perfil de facturación.</p>
+    </template>
+
+    <template x-if="billingWsId">
+      <div>
+        <p x-show="billingMsg" class="mb-4 text-sm px-3 py-2 rounded-lg"
+          :class="billingError ? 'bg-red-950/50 text-red-300 border border-red-800/50' : 'bg-green-950/50 text-green-300 border border-green-800/50'"
+          x-text="billingMsg"></p>
+
+        <!-- Info note -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-5 text-xs text-gray-500 leading-relaxed">
+          Estos datos se usarán para emitir facturas de antcrew a tu workspace (cuando aplique).
+          No son datos de pago — no almacenamos tarjetas. Si facturas a tus propios clientes,
+          estos datos también se pueden pre-rellenar al crear facturas en el módulo de Contabilidad.
+        </div>
+
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+          <h3 class="text-sm font-medium text-gray-200">Datos fiscales</h3>
+
+          <!-- Tipo de entidad -->
+          <div>
+            <label class="block text-xs text-gray-500 mb-2">Tipo de entidad *</label>
+            <div class="flex gap-2">
+              <template x-for="opt in [{id:'empresa', label:'Empresa / S.L.'}, {id:'autonomo', label:'Autónomo'}, {id:'particular', label:'Particular'}]" :key="opt.id">
+                <label class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition text-sm"
+                  :class="billingForm.billing_entity_type === opt.id
+                    ? 'border-indigo-500 bg-indigo-950/40 text-white'
+                    : 'border-gray-700 bg-gray-800/40 text-gray-400 hover:border-gray-600'">
+                  <input type="radio" x-model="billingForm.billing_entity_type" :value="opt.id" class="accent-indigo-500 shrink-0">
+                  <span x-text="opt.label"></span>
+                </label>
+              </template>
+            </div>
+          </div>
+
+          <!-- Razón social -->
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5"
+              x-text="billingForm.billing_entity_type === 'empresa' ? 'Razón social *' : 'Nombre completo *'"></label>
+            <input x-model="billingForm.billing_razon_social" type="text"
+              :placeholder="billingForm.billing_entity_type === 'empresa' ? 'Acme Solutions S.L.' : 'Juan García López'"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+          </div>
+
+          <!-- NIF / CIF -->
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5"
+              x-text="billingForm.billing_entity_type === 'empresa' ? 'NIF / CIF *' : 'NIF / DNI / NIE *'"></label>
+            <input x-model="billingForm.billing_nif" type="text"
+              :placeholder="billingForm.billing_entity_type === 'empresa' ? 'B12345678' : '12345678Z'"
+              style="text-transform:uppercase; font-family:monospace"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+          </div>
+
+          <!-- Dirección -->
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5">Dirección fiscal</label>
+            <input x-model="billingForm.billing_address" type="text" placeholder="Calle Mayor 1, 2ºA"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+          </div>
+
+          <!-- CP + Ciudad + País -->
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">C.P.</label>
+              <input x-model="billingForm.billing_postal_code" type="text" placeholder="08001"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Ciudad</label>
+              <input x-model="billingForm.billing_city" type="text" placeholder="Barcelona"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">País</label>
+              <input x-model="billingForm.billing_country" type="text" placeholder="ES" maxlength="2"
+                style="text-transform:uppercase"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+            </div>
+          </div>
+
+          <!-- Email + Teléfono -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Email de facturación</label>
+              <input x-model="billingForm.billing_email" type="email" placeholder="facturacion@empresa.com"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Teléfono</label>
+              <input x-model="billingForm.billing_phone" type="tel" placeholder="+34 600 000 000"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-gray-100 placeholder-gray-600">
+            </div>
+          </div>
+
+          <!-- Status indicator -->
+          <div x-show="billingProfile.complete !== undefined" class="flex items-center gap-2 pt-1 border-t border-gray-800">
+            <template x-if="billingProfile.complete">
+              <span class="flex items-center gap-1.5 text-xs text-green-400">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                Perfil fiscal completo
+              </span>
+            </template>
+            <template x-if="!billingProfile.complete">
+              <span class="flex items-center gap-1.5 text-xs text-amber-400">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                Perfil incompleto — faltan datos obligatorios (*)
+              </span>
+            </template>
+          </div>
+
+          <div class="flex justify-end pt-1">
+            <button @click="saveBillingProfile()" :disabled="billingSaving"
+              class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm rounded-md transition-colors">
+              <span x-show="!billingSaving">Guardar datos fiscales</span>
+              <span x-show="billingSaving">Guardando…</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+
+  </div><!-- /billing -->
+
+  <!-- ── COMPLIANCE ── -->
+  <div x-show="tab==='compliance'" class="max-w-2xl">
+
+    <div class="mb-6">
+      <h2 class="text-base font-semibold text-gray-100 mb-1">Compliance &amp; Governance</h2>
+      <p class="text-sm text-gray-500">Estado de las capacidades de auditoría disponibles para tu workspace. Todas las funciones marcadas están operativas en producción.</p>
+    </div>
+
+    <!-- Regulatory mapping -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+      <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Cobertura regulatoria</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs" style="font-variant-numeric:tabular-nums">
+          <thead>
+            <tr class="border-b border-gray-800">
+              <th class="text-left py-2 pr-4 text-gray-600 font-medium">Regulación</th>
+              <th class="text-left py-2 pr-4 text-gray-600 font-medium">Artículo / Requisito</th>
+              <th class="text-left py-2 text-gray-600 font-medium">Capacidad antcrew</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-800/60">
+            <tr>
+              <td class="py-2.5 pr-4 text-indigo-400 font-mono font-medium whitespace-nowrap">HIPAA</td>
+              <td class="py-2.5 pr-4 text-gray-400">§164.312(b) — Audit Controls</td>
+              <td class="py-2.5 text-gray-300">TraceLog NDJSON · Attestation con HMAC-SHA256</td>
+            </tr>
+            <tr>
+              <td class="py-2.5 pr-4 text-green-400 font-mono font-medium whitespace-nowrap">GDPR</td>
+              <td class="py-2.5 pr-4 text-gray-400">Art. 12 — Transparencia</td>
+              <td class="py-2.5 text-gray-300">governance_hash · EncryptedJSON para datos sensibles</td>
+            </tr>
+            <tr>
+              <td class="py-2.5 pr-4 text-green-400 font-mono font-medium whitespace-nowrap">GDPR</td>
+              <td class="py-2.5 pr-4 text-gray-400">Art. 22 — Decisiones automatizadas</td>
+              <td class="py-2.5 text-gray-300">HITL structured feedback · TraceLog por decisión</td>
+            </tr>
+            <tr>
+              <td class="py-2.5 pr-4 text-amber-400 font-mono font-medium whitespace-nowrap">SOC 2</td>
+              <td class="py-2.5 pr-4 text-gray-400">CC7 — System Operations</td>
+              <td class="py-2.5 text-gray-300">Attestation endpoint · Run hash verificable offline</td>
+            </tr>
+            <tr>
+              <td class="py-2.5 pr-4 text-violet-400 font-mono font-medium whitespace-nowrap">EU AI Act</td>
+              <td class="py-2.5 pr-4 text-gray-400">Art. 13 — Transparencia</td>
+              <td class="py-2.5 text-gray-300">governance_hash determinístico · HITL audit trail</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Feature checklist -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+      <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Capacidades activas</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <template x-for="item in [
+          { ok: true,  label: 'governance_hash',        desc: 'SHA-256 determinístico de la config del agente' },
+          { ok: true,  label: 'compute_team_hash()',     desc: 'Hash del equipo completo verificable offline' },
+          { ok: true,  label: 'Attestation HMAC-SHA256', desc: 'Firma criptográfica por run exportable' },
+          { ok: true,  label: 'TraceLog NDJSON',         desc: 'Traza completa exportable a SIEM' },
+          { ok: true,  label: 'EncryptedJSON',           desc: 'Datos sensibles cifrados en trazas' },
+          { ok: true,  label: 'HITL audit trail',        desc: 'Registro de cada decisión humana' },
+          { ok: true,  label: 'replay_with_mutation()',  desc: 'Reproduce runs históricos con nuevo prompt' },
+          { ok: true,  label: 'SSE event stream',        desc: 'Stream de eventos por run en tiempo real' },
+          { ok: true,  label: 'Outbound webhooks',       desc: 'Eventos a sistemas externos (fintech/SIEM)' },
+          { ok: true,  label: 'Per-run cost tracking',   desc: 'Atribución de coste por agente y workspace' }
+        ]" :key="item.label">
+          <div class="flex items-start gap-2.5 p-2.5 rounded-lg bg-gray-800/40">
+            <span class="text-green-400 text-sm mt-0.5 shrink-0">✓</span>
+            <div class="min-w-0">
+              <div class="text-xs font-mono text-gray-200 truncate" x-text="item.label"></div>
+              <div class="text-xs text-gray-600 mt-0.5" x-text="item.desc"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Workspace attestation -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+      <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Descargar attestation</h3>
+      <p class="text-xs text-gray-500 mb-4">El attestation incluye el governance_hash, timestamp, modelo usado y firma HMAC-SHA256 verificable offline para cada run.</p>
+
+      <div x-show="workspaces.length === 0" class="text-xs text-gray-600">Crea un workspace primero.</div>
+
+      <template x-if="workspaces.length > 0">
+        <div class="flex flex-col gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5">Workspace</label>
+            <select x-model="complianceWsId" @change="loadComplianceRuns()"
+              class="bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-indigo-500 w-full max-w-xs">
+              <template x-for="ws in workspaces" :key="ws.id">
+                <option :value="ws.id" x-text="ws.name"></option>
+              </template>
+            </select>
+          </div>
+
+          <div x-show="complianceLoading" class="text-xs text-gray-600">Cargando runs…</div>
+
+          <div x-show="!complianceLoading && complianceRuns.length === 0 && complianceWsId"
+            class="text-xs text-gray-600">Sin runs registrados en este workspace todavía.</div>
+
+          <div x-show="!complianceLoading && complianceRuns.length > 0" class="overflow-x-auto rounded-lg border border-gray-800">
+            <table class="w-full text-xs" style="font-variant-numeric:tabular-nums">
+              <thead>
+                <tr class="border-b border-gray-800">
+                  <th class="text-left py-2 px-3 text-gray-600 font-medium">Run ID</th>
+                  <th class="text-left py-2 px-3 text-gray-600 font-medium">Team</th>
+                  <th class="text-left py-2 px-3 text-gray-600 font-medium">Fecha</th>
+                  <th class="py-2 px-3 text-gray-600 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-800/60">
+                <template x-for="run in complianceRuns.slice(0,8)" :key="run.id">
+                  <tr class="hover:bg-gray-800/30 transition-colors">
+                    <td class="py-2 px-3 font-mono text-indigo-400" x-text="run.id.slice(0,12) + '…'"></td>
+                    <td class="py-2 px-3 text-gray-300" x-text="run.team_name || '—'"></td>
+                    <td class="py-2 px-3 text-gray-500" x-text="run.created_at ? new Date(run.created_at).toLocaleDateString() : '—'"></td>
+                    <td class="py-2 px-3 text-right">
+                      <a :href="`/runs/${run.id}/attestation`" target="_blank"
+                        class="text-indigo-400 hover:text-indigo-300 transition-colors text-xs font-medium">
+                        Descargar ↓
+                      </a>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="text-xs text-gray-700">
+            Endpoint directo:
+            <code class="text-indigo-400 font-mono" x-text="`GET /runs/{run_id}/attestation`"></code>
+            · también disponible como NDJSON en
+            <code class="text-indigo-400 font-mono">GET /runs/{run_id}/trace.ndjson</code>
+          </p>
+        </div>
+      </template>
+    </div>
+
+    <!-- Compliance Pack status card -->
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Compliance Pack</h3>
+        <span x-show="complianceStatus !== null"
+          :class="complianceStatus?.enabled ? 'bg-emerald-900/40 text-emerald-400' : 'bg-gray-800 text-gray-500'"
+          class="text-xs px-2 py-0.5 rounded-full"
+          x-text="complianceStatus?.enabled ? 'Activo' : 'Inactivo'"></span>
+        <span x-show="complianceStatus === null" class="text-xs text-gray-600">Cargando…</span>
+      </div>
+
+      <!-- Pack activo -->
+      <template x-if="complianceStatus?.enabled">
+        <div>
+          <p class="text-xs text-gray-400 mb-3">El Compliance Pack está activo. Accede al portal para compliance officers o crea claves de auditoría.</p>
+          <div class="flex flex-wrap gap-2">
+            <a href="/compliance/dashboard" target="_blank"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-md transition-colors">
+              Abrir portal de auditoría ↗
+            </a>
+            <button @click="showCreateKey=true; createKeyForm.role='compliance_viewer'"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-medium rounded-md border border-gray-700 transition-colors">
+              + Crear clave compliance_viewer
+            </button>
+          </div>
+        </div>
+      </template>
+
+      <!-- Pack inactivo -->
+      <template x-if="complianceStatus !== null && !complianceStatus.enabled">
+        <div>
+          <p class="text-xs text-gray-400 mb-3">
+            Incluye portal de auditoría, export ZIP firmado por HMAC, claves <code class="text-indigo-400">compliance_viewer</code> y digest diario por email. Ideal para SOC 2, HIPAA y GDPR.
+          </p>
+          <div class="flex items-center gap-2 mb-3">
+            <select x-model="complianceBillingCycle"
+              class="bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-indigo-500">
+              <option value="monthly">Mensual — $<span x-text="complianceStatus.platform_price_monthly ?? 49"></span>/mes</option>
+              <option value="annual">Anual — $<span x-text="complianceStatus.platform_price_annual ?? 490"></span>/año</option>
+            </select>
+            <button @click="startComplianceCheckout()"
+              :disabled="complianceCheckoutLoading"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium rounded-md transition-colors">
+              <span x-text="complianceCheckoutLoading ? 'Procesando…' : 'Activar Pack'"></span>
+            </button>
+          </div>
+          <p x-show="complianceCheckoutMsg" x-text="complianceCheckoutMsg" class="text-xs text-red-400 mb-2"></p>
+          <a href="/docs/platform/compliance" target="_blank"
+            class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+            Documentación →
+          </a>
+        </div>
+      </template>
+
+      <!-- Sin API key -->
+      <template x-if="complianceStatus === null && !apiKey">
+        <p class="text-xs text-gray-600">Introduce una API key para ver el estado del pack.</p>
+      </template>
+    </div>
+
+  </div><!-- /compliance -->
+
+  <!-- ── DOCS ── -->
+  <div x-show="tab==='docs'" class="max-w-2xl">
+
+    <div class="mb-6">
+      <h2 class="text-base font-semibold text-gray-100 mb-1">Documentation</h2>
+      <p class="text-sm text-gray-500">Conecta un bucket S3 con la documentación de tu proyecto. Los agentes inyectarán contexto relevante automáticamente en cada run.</p>
+    </div>
+
+    <!-- Workspace selector -->
+    <div class="mb-5">
+      <label class="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">Workspace</label>
+      <select x-model="docsWsId" @change="docsOnWsChange()"
+        class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-indigo-500 min-w-48">
+        <option value="" disabled>Selecciona un workspace</option>
+        <template x-for="ws in workspaces" :key="ws.id">
+          <option :value="ws.id" x-text="ws.name"></option>
+        </template>
+      </select>
+    </div>
+
+    <div x-show="docsWsId">
+
+      <!-- ─ S3 config ─ -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">S3 Connection</h3>
+          <span x-show="docsConfigConnected"
+            class="inline-flex items-center gap-1.5 text-xs text-teal-400 font-medium">
+            <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
+            Connected
+          </span>
+          <span x-show="!docsConfigConnected && !docsConfigLoading"
+            class="inline-flex items-center gap-1.5 text-xs text-gray-600 font-medium">
+            <span class="w-1.5 h-1.5 rounded-full bg-gray-700"></span>
+            Not configured
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div class="col-span-2 sm:col-span-1">
+            <label class="block text-xs text-gray-500 mb-1.5">Bucket <span class="text-gray-700">*</span></label>
+            <input x-model="docsForm.bucket" type="text" placeholder="my-company-docs"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5">Prefix <span class="text-gray-700">(opcional)</span></label>
+            <input x-model="docsForm.prefix" type="text" placeholder="docs/project-a/"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5">Region</label>
+            <input x-model="docsForm.region" type="text" placeholder="us-east-1"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5">Access Key ID</label>
+            <input x-model="docsForm.access_key" type="password" placeholder="AKIA…"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1.5">Secret Access Key</label>
+            <input x-model="docsForm.secret_key" type="password" placeholder="••••••••"
+              class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          </div>
+        </div>
+        <p class="text-xs text-gray-600 mb-3">Las credenciales se cifran con Fernet antes de almacenarse. Deja Access Key vacía para usar el IAM role del servidor.</p>
+
+        <div x-show="docsConfigMsg" :class="docsConfigError ? 'text-red-400' : 'text-teal-400'" class="text-xs mb-3" x-text="docsConfigMsg"></div>
+
+        <div class="flex gap-2">
+          <button @click="saveDocsConfig()" :disabled="docsConfigSaving || !docsForm.bucket.trim()"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-md transition-colors">
+            <span x-show="!docsConfigSaving">Guardar</span>
+            <span x-show="docsConfigSaving" x-cloak>Guardando…</span>
+          </button>
+          <button x-show="docsConfigConnected" @click="clearDocsConfig()"
+            class="px-4 py-2 text-gray-500 hover:text-red-400 text-sm transition-colors">
+            Desconectar
+          </button>
+        </div>
+      </div>
+
+      <!-- ─ Schema YAML ─ -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Schema YAML</h3>
+          <button @click="docsSchemaExpanded = !docsSchemaExpanded"
+            class="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+            x-text="docsSchemaExpanded ? 'Contraer' : 'Expandir'"></button>
+        </div>
+        <p class="text-xs text-gray-600 mb-3">Define los tipos de documento, los agentes que los usan y las reglas de clasificación automática (query_hints, path_rules).</p>
+
+        <div x-show="!docsSchemaYaml && !docsSchemaExpanded" class="mb-3">
+          <button @click="docsSchemaExpanded = true; docsSchemaYaml = docsSchemaExample"
+            class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">+ Usar schema de ejemplo</button>
+        </div>
+
+        <div x-show="docsSchemaExpanded || docsSchemaYaml">
+          <textarea x-model="docsSchemaYaml" rows="14" spellcheck="false"
+            placeholder="documentation_schema:&#10;  document_types:&#10;    - id: spec&#10;      ..."
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-xs font-mono leading-relaxed focus:outline-none focus:border-indigo-500 transition-colors resize-y"></textarea>
+        </div>
+
+        <div x-show="docsSchemaSaving || docsSchemaMsg" class="mt-2">
+          <span x-show="docsSchemaMsg" :class="docsSchemaError ? 'text-red-400' : 'text-teal-400'" class="text-xs" x-text="docsSchemaMsg"></span>
+        </div>
+
+        <button x-show="docsSchemaExpanded || docsSchemaYaml" @click="saveDocsSchema()"
+          :disabled="docsSchemaSaving || !docsSchemaYaml.trim()"
+          class="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-md transition-colors">
+          <span x-show="!docsSchemaSaving">Guardar schema</span>
+          <span x-show="docsSchemaSaving" x-cloak>Validando…</span>
+        </button>
+      </div>
+
+      <!-- ─ Documents ─ -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Documents</h3>
+          <div class="flex items-center gap-2">
+            <button @click="docsReindex()" :disabled="docsIndexing || !docsConfigConnected"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-300 text-xs rounded-md border border-gray-700 transition-colors">
+              <i class="ti ti-refresh text-sm" :class="docsIndexing && 'animate-spin'"></i>
+              <span x-show="!docsIndexing">Re-index S3</span>
+              <span x-show="docsIndexing" x-cloak>Indexando…</span>
+            </button>
+            <label x-show="docsConfigConnected"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md cursor-pointer transition-colors">
+              <i class="ti ti-upload text-sm"></i>
+              Upload
+              <input type="file" class="hidden" accept=".md,.txt,.docx,.pdf,.json" @change="docsFileSelected($event)">
+            </label>
+          </div>
+        </div>
+
+        <!-- Upload form -->
+        <div x-show="docsUploadFile" x-cloak class="bg-gray-800 rounded-lg p-3 mb-4 flex items-center gap-3">
+          <i class="ti ti-file text-gray-500 shrink-0"></i>
+          <span class="text-sm text-gray-300 flex-1 truncate" x-text="docsUploadFile?.name"></span>
+          <select x-model="docsUploadDocType"
+            class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-indigo-500">
+            <option value="" disabled>Tipo de doc</option>
+            <template x-for="t in docsSchemaTypes" :key="t">
+              <option :value="t" x-text="t"></option>
+            </template>
+            <option value="generic">generic</option>
+          </select>
+          <button @click="docsUpload()" :disabled="docsUploading || !docsUploadDocType"
+            class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs rounded transition-colors">
+            <span x-show="!docsUploading">Subir</span>
+            <span x-show="docsUploading" x-cloak>…</span>
+          </button>
+          <button @click="docsUploadFile=null; docsUploadMsg=''" class="text-gray-700 hover:text-gray-400 text-xs">✕</button>
+        </div>
+
+        <p x-show="docsUploadMsg" :class="docsUploadError ? 'text-red-400' : 'text-teal-400'" class="text-xs mb-3" x-text="docsUploadMsg"></p>
+
+        <div x-show="docsIndexMsg" :class="docsIndexError ? 'text-red-400' : 'text-teal-400'" class="text-xs mb-3" x-text="docsIndexMsg"></div>
+
+        <!-- List -->
+        <div x-show="docsListLoading" class="py-6 text-center text-gray-600 text-xs">Cargando documentos…</div>
+        <div x-show="!docsListLoading && docsList.length === 0 && docsConfigConnected"
+          class="py-8 text-center text-gray-700 text-xs border border-dashed border-gray-800 rounded-lg">
+          No hay documentos en el bucket. Sube un archivo o pulsa Re-index si el bucket ya tiene contenido.
+        </div>
+        <div x-show="!docsListLoading && !docsConfigConnected && docsList.length === 0"
+          class="py-8 text-center text-gray-700 text-xs">
+          Configura la conexión S3 primero.
+        </div>
+
+        <div x-show="docsList.length > 0" class="rounded-lg border border-gray-800 overflow-hidden">
+          <table class="w-full text-xs" style="font-variant-numeric:tabular-nums">
+            <thead>
+              <tr class="border-b border-gray-800 text-gray-600 uppercase tracking-wide">
+                <th class="px-3 py-2 text-left font-medium">Doc ID</th>
+                <th class="px-3 py-2 text-right font-medium w-16"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/60">
+              <template x-for="doc in docsList" :key="doc">
+                <tr class="hover:bg-gray-800/30 transition-colors">
+                  <td class="px-3 py-2 font-mono text-gray-300 truncate max-w-xs" x-text="doc"></td>
+                  <td class="px-3 py-2 text-right">
+                    <button @click="docsDelete(doc)"
+                      class="text-gray-700 hover:text-red-400 transition-colors text-xs px-1">
+                      <i class="ti ti-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /docsWsId -->
+
+  </div><!-- /docs -->
+
+</div><!-- /content -->
+
+
+<!-- ══ MODALS ══ -->
+
+<!-- Shared backdrop -->
+<template x-teleport="body">
+  <div x-show="showCreateWs || !!editingWs || showCreateKey || !!editingKey || showAddKey"
+    x-transition:enter="transition duration-150" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+    x-transition:leave="transition duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+    class="fixed inset-0 bg-black/60 z-40"
+    @click="showCreateWs=false; editingWs=null; showCreateKey=false; editingKey=null; showAddKey=false">
+  </div>
+</template>
+
+<!-- Create Workspace -->
+<template x-teleport="body">
+  <div x-show="showCreateWs" class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 pointer-events-auto shadow-2xl"
+      @keydown.escape.window="showCreateWs=false" @click.stop>
+      <h3 class="text-base font-semibold mb-5" data-i18n="ws.newTitle">New workspace</h3>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Nombre</label>
+          <input x-model="createWsForm.name" @input="autoSlug()" type="text" placeholder="Mi proyecto"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <div>
+          <label class="flex items-center gap-1 text-xs text-gray-500 mb-1.5">
+            Slug
+            <span class="relative inline-flex items-center">
+              <span class="peer/tip inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 text-[9px] font-bold cursor-help hover:text-gray-300 hover:border-gray-500 transition-colors select-none leading-none">i</span>
+              <span class="pointer-events-none absolute bottom-full left-0 mb-2 w-64 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-xs text-gray-300 leading-relaxed shadow-xl opacity-0 peer-hover/tip:opacity-100 transition-opacity duration-150 z-50">
+                Identificador URL-friendly de este workspace. Se usa en la API y como referencia interna. Se genera automáticamente desde el nombre — puedes editarlo. Solo letras minúsculas, números y guiones (ej: <span class="font-mono text-indigo-300">mi-proyecto</span>).
+              </span>
+            </span>
+          </label>
+          <input x-model="createWsForm.slug" type="text" placeholder="mi-proyecto"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          <p class="text-xs text-gray-600 mt-1">Solo minúsculas, números y guiones</p>
+        </div>
+        <div>
+          <label class="flex items-center gap-1 text-xs text-gray-500 mb-1.5">
+            Presupuesto máximo en USD
+            <span class="text-gray-700">— opcional</span>
+            <span class="relative inline-flex items-center">
+              <span class="peer/tip inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 text-[9px] font-bold cursor-help hover:text-gray-300 hover:border-gray-500 transition-colors select-none leading-none">i</span>
+              <span class="pointer-events-none absolute bottom-full left-0 mb-2 w-64 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-xs text-gray-300 leading-relaxed shadow-xl opacity-0 peer-hover/tip:opacity-100 transition-opacity duration-150 z-50">
+                Límite de gasto acumulado en llamadas LLM. Cuando se alcanza, los nuevos runs de este workspace son rechazados automáticamente. Déjalo vacío para no tener límite.
+              </span>
+            </span>
+          </label>
+          <input x-model="createWsForm.max_cost_usd" type="number" step="0.01" min="0" placeholder="Sin límite"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <label class="flex items-center gap-2.5 text-sm cursor-pointer">
+          <input type="checkbox" x-model="createWsForm.hitl_default"
+            class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-indigo-500">
+          <span class="text-gray-300 flex items-center gap-1">
+            Activar revisión humana (HITL) por defecto
+            <span class="relative inline-flex items-center">
+              <span class="peer/tip inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 text-[9px] font-bold cursor-help hover:text-gray-300 hover:border-gray-500 transition-colors select-none leading-none">i</span>
+              <span class="pointer-events-none absolute bottom-full left-0 mb-2 w-64 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-xs text-gray-300 leading-relaxed shadow-xl opacity-0 peer-hover/tip:opacity-100 transition-opacity duration-150 z-50">
+                Human-in-the-Loop. Con esta opción activa, los pipelines pausarán en cada checkpoint para que un revisor humano apruebe o corrija el trabajo de los agentes antes de continuar.
+              </span>
+            </span>
+          </span>
+        </label>
+        <p x-show="wsFormError" class="text-red-400 text-xs" x-text="wsFormError"></p>
+        <div class="flex gap-2 justify-end pt-1">
+          <button @click="showCreateWs=false"
+            class="px-4 py-2 text-sm text-gray-500 hover:text-white transition-colors" data-i18n="ws.cancel">Cancel</button>
+          <button @click="createWorkspace()" :disabled="!createWsForm.name.trim() || !createWsForm.slug.trim()"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-md transition-colors" data-i18n="ws.create">
+            Create workspace
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- Edit Workspace -->
+<template x-teleport="body">
+  <div x-show="!!editingWs" class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 pointer-events-auto shadow-2xl"
+      @keydown.escape.window="editingWs=null" @click.stop>
+      <h3 class="text-base font-semibold" x-text="editingWs?.name"></h3>
+      <p class="font-mono text-xs text-gray-600 mb-5" x-text="editingWs?.slug"></p>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Presupuesto máximo en USD <span class="text-gray-700">— vacío = sin límite</span></label>
+          <input x-model="editWsForm.max_cost_usd" type="number" step="0.01" min="0" placeholder="Sin límite"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Repositorio por defecto <span class="text-gray-700">— opcional</span></label>
+          <input x-model="editWsForm.default_repo_url" type="url" placeholder="https://github.com/org/repo"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+          <template x-if="editWsForm.default_repo_url && workspaces.filter(w => w.id !== editingWs?.id && w.default_repo_url === editWsForm.default_repo_url).length">
+            <p class="text-xs text-yellow-500 mt-1.5">
+              <i class="ti ti-alert-triangle mr-1"></i>
+              Este repo ya está en uso en:
+              <span x-text="workspaces.filter(w => w.id !== editingWs?.id && w.default_repo_url === editWsForm.default_repo_url).map(w => w.name).join(', ')"></span>
+            </p>
+          </template>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Prefijo de tickets <span class="text-gray-700">— 1–8 letras/dígitos</span></label>
+          <div class="flex items-center gap-2">
+            <input x-model="editWsForm.ticket_prefix" type="text" placeholder="TKT" maxlength="8"
+              class="w-32 bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:border-indigo-500 transition-colors"
+              @input="editWsForm.ticket_prefix = editWsForm.ticket_prefix.toUpperCase().replace(/[^A-Z0-9]/g,'')">
+            <span class="text-gray-600 text-xs font-mono" x-text="(editWsForm.ticket_prefix||'TKT')+'-00001'"></span>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Equipo por defecto <span class="text-gray-700">— pre-seleccionado en el modal de run</span></label>
+          <select x-model="editWsForm.default_team"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            <option value="">— sin preferencia —</option>
+            <template x-for="t in (availableTeams || [])" :key="t">
+              <option :value="t" x-text="t"></option>
+            </template>
+          </select>
+        </div>
+        <label class="flex items-center gap-2.5 text-sm cursor-pointer">
+          <input type="checkbox" x-model="editWsForm.hitl_default"
+            class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-indigo-500">
+          <span class="text-gray-300">Revisión humana (HITL) por defecto</span>
+        </label>
+        <template x-if="editingWs?.is_trial">
+          <div class="border-t border-gray-800 pt-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-amber-400 font-mono uppercase tracking-wide">Trial activo</span>
+              <span class="text-xs text-gray-400 font-mono"
+                x-text="`$${Math.max(0, (editingWs.max_cost_usd ?? 0) - (editingWs.total_cost_usd ?? 0)).toFixed(2)} restantes`"></span>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Añadir crédito (USD)</label>
+              <input x-model="editWsForm.add_credit" type="number" step="0.01" min="0" placeholder="0.00"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            </div>
+            <label class="flex items-center gap-2.5 text-sm cursor-pointer">
+              <input type="checkbox" x-model="editWsForm.exit_trial"
+                class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-indigo-500">
+              <span class="text-gray-300">Salir del modo trial <span class="text-gray-600 text-xs">(activa facturación normal)</span></span>
+            </label>
+          </div>
+        </template>
+        <p x-show="wsFormError" class="text-red-400 text-xs" x-text="wsFormError"></p>
+        <div class="flex gap-2 justify-end pt-1">
+          <button @click="editingWs=null"
+            class="px-4 py-2 text-sm text-gray-500 hover:text-white transition-colors">Cancelar</button>
+          <button @click="saveWs()"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-md transition-colors">
+            Guardar cambios
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- Create Key -->
+<template x-teleport="body">
+  <div x-show="showCreateKey" class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 pointer-events-auto shadow-2xl"
+      @keydown.escape.window="showCreateKey=false" @click.stop>
+      <h3 class="text-base font-semibold mb-5">Nueva API key</h3>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Label <span class="text-gray-700">— identificador único</span></label>
+          <input x-model="createKeyForm.label" type="text" placeholder="revisor-maria"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Rol</label>
+          <select x-model="createKeyForm.role"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            <option value="reviewer">reviewer — solo resolver reviews HITL</option>
+            <option value="read">read — solo lectura</option>
+            <option value="write">write — lanzar runs y leer</option>
+            <option value="admin">admin — acceso total</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Workspace <span class="text-gray-700">— opcional</span></label>
+          <select x-model="createKeyForm.workspace_id"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            <option value="">Todos los workspaces</option>
+            <template x-for="ws in workspaces" :key="ws.id">
+              <option :value="ws.id" x-text="`${ws.name} (${ws.slug})`"></option>
+            </template>
+          </select>
+        </div>
+        <div class="border-t border-gray-800/60 pt-4">
+          <p class="text-xs text-gray-600 uppercase tracking-wider mb-3">Notificaciones HITL <span class="normal-case text-gray-700 font-normal">— configura uno o más canales</span></p>
+          <div class="flex flex-col gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Email</label>
+              <input x-model="createKeyForm.email" type="email" placeholder="revisor@empresa.com"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Slack User ID <span class="text-gray-700">— ej. U0123ABCDEF</span></label>
+              <input x-model="createKeyForm.slack_user_id" type="text" placeholder="U0123ABCDEF"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+              <p class="text-xs text-gray-700 mt-1">En Slack: perfil → ⋯ → Copy member ID</p>
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Telegram Chat ID <span class="text-gray-700">— ej. 123456789</span></label>
+              <input x-model="createKeyForm.telegram_chat_id" type="text" placeholder="123456789"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+              <p class="text-xs text-gray-700 mt-1">Habla con @userinfobot en Telegram para obtener tu ID</p>
+            </div>
+          </div>
+        </div>
+        <p x-show="keyFormError" class="text-red-400 text-xs" x-text="keyFormError"></p>
+        <div class="flex gap-2 justify-end pt-1">
+          <button @click="showCreateKey=false"
+            class="px-4 py-2 text-sm text-gray-500 hover:text-white transition-colors">Cancelar</button>
+          <button @click="createKey()" :disabled="!createKeyForm.label.trim()"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-md transition-colors">
+            Crear key
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- Edit Key -->
+<template x-teleport="body">
+  <div x-show="!!editingKey" class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 pointer-events-auto shadow-2xl"
+      @keydown.escape.window="editingKey=null" @click.stop>
+      <h3 class="text-base font-semibold font-mono" x-text="editingKey?.label"></h3>
+      <p class="text-xs text-gray-600 mb-5">Editar rol y canales de notificación</p>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Rol</label>
+          <select x-model="editKeyForm.role"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            <option value="reviewer">reviewer</option>
+            <option value="read">read</option>
+            <option value="write">write</option>
+            <option value="admin">admin</option>
+          </select>
+        </div>
+        <div class="border-t border-gray-800/60 pt-3">
+          <p class="text-xs text-gray-600 uppercase tracking-wider mb-3">Notificaciones HITL</p>
+          <div class="flex flex-col gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Email</label>
+              <input x-model="editKeyForm.email" type="email" placeholder="—"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Slack User ID</label>
+              <input x-model="editKeyForm.slack_user_id" type="text" placeholder="U0123ABCDEF"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1.5">Telegram Chat ID</label>
+              <input x-model="editKeyForm.telegram_chat_id" type="text" placeholder="123456789"
+                class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+            </div>
+          </div>
+        </div>
+        <p x-show="keyFormError" class="text-red-400 text-xs" x-text="keyFormError"></p>
+        <div class="flex gap-2 justify-end pt-1">
+          <button @click="editingKey=null"
+            class="px-4 py-2 text-sm text-gray-500 hover:text-white transition-colors">Cancelar</button>
+          <button @click="saveKey()"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-md transition-colors">
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- Add LLM Key -->
+<template x-teleport="body">
+  <div x-show="showAddKey" class="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+    <div class="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md p-6 pointer-events-auto shadow-2xl"
+      @keydown.escape.window="showAddKey=false" @click.stop>
+      <h3 class="text-base font-semibold mb-5">Añadir clave BYOK</h3>
+      <div class="flex flex-col gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1.5">Proveedor</label>
+          <select x-model="addKeyForm.provider" @change="onProviderChange()"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="mistral">Mistral AI</option>
+            <option value="xai">xAI (Grok)</option>
+            <option value="cerebras">Cerebras</option>
+            <option value="together">Together AI</option>
+            <option value="fireworks">Fireworks AI</option>
+            <option value="openai">OpenAI (GPT / o-series)</option>
+            <option value="groq">Groq</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="moonshot">Moonshot AI (Kimi)</option>
+            <option value="ollama">Ollama (local)</option>
+            <option value="lmstudio">LM Studio (local)</option>
+            <option value="vllm">vLLM (self-hosted)</option>
+          </select>
+        </div>
+        <div x-show="!['ollama','lmstudio','vllm'].includes(addKeyForm.provider)">
+          <label class="block text-xs text-gray-500 mb-1.5">API key</label>
+          <input x-model="addKeyForm.api_key" type="password"
+            :placeholder="apiKeyPlaceholder(addKeyForm.provider)"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+        </div>
+        <div x-show="true">
+          <label class="block text-xs text-gray-500 mb-1.5">
+            Base URL
+            <span x-show="addKeyForm.provider === 'ollama'" class="text-gray-600"> (URL de tu servidor Ollama)</span>
+            <span x-show="addKeyForm.provider === 'lmstudio'" class="text-gray-600"> (LM Studio local)</span>
+            <span x-show="addKeyForm.provider === 'vllm'" class="text-gray-600"> (endpoint de vLLM)</span>
+            <span x-show="addKeyForm.provider === 'openai'" class="text-gray-600"> (opcional, para endpoints compatibles)</span>
+            <span x-show="addKeyForm.provider === 'moonshot'" class="text-gray-600"> (API de Moonshot AI)</span>
+            <span x-show="!['ollama','lmstudio','vllm','openai','moonshot'].includes(addKeyForm.provider)" class="text-gray-600"> (opcional)</span>
+          </label>
+          <input x-model="addKeyForm.base_url" type="text"
+            :placeholder="addKeyForm.provider === 'ollama' ? 'http://localhost:11434' : addKeyForm.provider === 'moonshot' ? 'https://api.moonshot.cn/v1' : 'https://api.openai.com/v1'"
+            class="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 transition-colors">
+          <p x-show="addKeyForm.provider === 'ollama'" class="mt-1.5 text-xs text-gray-500">
+            Plataforma en la nube con Ollama local: ejecuta el proxy en tu máquina y usa
+            <code class="bg-gray-700 px-1 rounded">https://tu-proxy.com/ollama</code> como URL.
+          </p>
+        </div>
+        <label x-show="llmProviderConfigured(addKeyForm.provider)" class="flex items-center gap-2.5 text-sm cursor-pointer">
+          <input type="checkbox" x-model="addKeyForm.confirm_overwrite"
+            class="w-4 h-4 rounded bg-gray-800 border-gray-600 text-amber-500">
+          <span class="text-amber-300">Sobrescribir la clave existente</span>
+        </label>
+        <p x-show="llmError" class="text-red-400 text-xs" x-text="llmError"></p>
+        <div class="flex gap-2 justify-end pt-1">
+          <button @click="showAddKey=false"
+            class="px-4 py-2 text-sm text-gray-500 hover:text-white transition-colors">Cancelar</button>
+          <button @click="addLlmKey()"
+            :disabled="!['ollama','lmstudio','vllm'].includes(addKeyForm.provider) && !addKeyForm.api_key.trim()"
+            class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm rounded-md transition-colors">
+            Guardar clave
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+
+<script>
+function settings() {
+  return {
+    tab: new URLSearchParams(location.search).get('tab') || (new URLSearchParams(location.search).get('github') ? 'github' : 'workspaces'),
+    apiKey: localStorage.getItem('antcrew_api_key') || '',
+    keyInput: '',
+    profileForm: { display_name: '', email: '' },
+    pwForm: { current: '', newPw: '' },
+    profileMsg: '', profileError: false,
+
+    workspaces: [], wsLoading: false, wsError: '',
+    showCreateWs: false, editingWs: null,
+    createWsForm: { name: '', slug: '', max_cost_usd: '', hitl_default: false },
+    editWsForm: { max_cost_usd: '', hitl_default: false, default_repo_url: '', ticket_prefix: 'TKT', add_credit: '', exit_trial: false, default_team: '' },
+    wsFormError: '',
+
+    me: null,
+    keys: [], keysLoading: false, keysError: '',
+    showCreateKey: false, editingKey: null,
+    createKeyForm: { label: '', role: 'reviewer', workspace_id: '', email: '', slack_user_id: '', telegram_chat_id: '' },
+    editKeyForm: { role: 'reviewer', email: '', slack_user_id: '', telegram_chat_id: '' },
+    newKeyValue: '', keyFormError: '',
+
+    llmWsId: '', llmMode: 'managed', llmKeys: [], byokManagedFallback: false,
+    llmLoading: false, llmError: '',
+    llmView: 'detail',
+    routingPolicy: 'none', routingMsg: '',
+    showAddKey: false,
+    proxyConfigured: false, proxyUrl: '', proxyUrlInput: '', proxyToken: '', proxyDockerCmd: '', failoverChain: '',
+    webhooks: [], showAddWebhook: false, newWebhookUrl: '', newWebhookLabel: '',
+    addKeyForm: { provider: 'anthropic', api_key: '', base_url: '', confirm_overwrite: false },
+    matrixData: [], matrixRows: [], matrixLoading: false,
+    agentModelsDefault: '', agentModelRows: [], agentModelsMsg: '',
+    platformDefaultModel: 'claude',
+    modelOptions: [
+      { value: '', label: '— default de plataforma (claude) —' },
+      { value: 'claude:claude-sonnet-5', label: 'Claude Sonnet 5' },
+      { value: 'claude:claude-opus-5', label: 'Claude Opus 5' },
+      { value: 'claude:claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+      { value: 'gpt-4o', label: 'OpenAI GPT-4o' },
+      { value: 'o3-mini', label: 'OpenAI o3-mini' },
+      { value: 'deepseek:deepseek-chat', label: 'DeepSeek Chat' },
+      { value: 'deepseek:deepseek-reasoner', label: 'DeepSeek Reasoner' },
+      { value: 'groq:llama-3.3-70b-versatile', label: 'Groq Llama 3.3 70B' },
+      { value: 'groq:mixtral-8x7b-32768', label: 'Groq Mixtral 8x7B' },
+      { value: 'gemini:gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+      { value: 'mistral:mistral-large-latest', label: 'Mistral Large' },
+      { value: 'xai:grok-2', label: 'xAI Grok-2' },
+      { value: 'simulated', label: 'Simulated (testing)' },
+    ],
+
+    // Schedules
+    schedules: [], schedulesLoading: false, schedulesError: '',
+    showCreateSchedule: false, schedFormError: '',
+    createScheduleForm: { name: '', goal: '', model: 'claude', cron_expr: '', max_cost_usd: '' },
+
+    // MFA
+    mfaEnabled: false, mfaSetup: null, mfaCode: '', mfaMsg: '', mfaError: false,
+    mfaLoading: false, showDisableMfa: false,
+
+    // Security / Quick Audit
+    auditForm: { github_repo: '', github_token: '', github_branch: 'main', max_cost_usd: '5' },
+    auditLoading: false, auditError: '', auditResult: null,
+
+    // GitHub App
+    ghWsId: '', ghInstallations: [], ghInstallationsForWs: [],
+    ghLoading: false, ghError: '',
+
+    // Billing profile
+    billingWsId: '',
+    billingProfile: {},
+    billingForm: {
+      billing_entity_type: '', billing_razon_social: '', billing_nif: '',
+      billing_address: '', billing_postal_code: '', billing_city: '',
+      billing_country: 'ES', billing_email: '', billing_phone: '',
+    },
+    billingLoading: false, billingSaving: false, billingMsg: '', billingError: false,
+
+    complianceWsId: '',
+    complianceRuns: [],
+    complianceLoading: false,
+    complianceStatus: null,
+    complianceBillingCycle: 'monthly',
+    complianceCheckoutLoading: false,
+    complianceCheckoutMsg: '',
+
+    // Documentation
+    docsWsId: '',
+    docsConfigConnected: false,
+    docsConfigLoading: false, docsConfigSaving: false, docsConfigMsg: '', docsConfigError: false,
+    docsForm: { bucket: '', prefix: '', region: 'us-east-1', access_key: '', secret_key: '' },
+    docsSchemaYaml: '', docsSchemaSaving: false, docsSchemaMsg: '', docsSchemaError: false, docsSchemaExpanded: false,
+    docsList: [], docsListLoading: false,
+    docsUploadFile: null, docsUploadDocType: '', docsUploading: false, docsUploadMsg: '', docsUploadError: false,
+    docsIndexing: false, docsIndexMsg: '', docsIndexError: false,
+    docsSchemaTypes: [],
+    docsSchemaExample: `documentation_schema:
+  org_name: My Project
+
+  document_types:
+    - id: functional_spec
+      name: Functional Specification
+      category: functional
+      parser: markdown
+    - id: procedure
+      name: Procedure
+      category: procedural
+      parser: markdown
+    - id: technical_design
+      name: Technical Design
+      category: technical
+      parser: markdown
+
+  query_hints:
+    - pattern: "crear tabla|create table|nueva tabla"
+      doc_types: [procedure]
+    - pattern: "componente|component|implement"
+      doc_types: [functional_spec, technical_design]
+
+  path_rules:
+    - prefix: "procedures/"
+      doc_type: procedure
+    - prefix: "specs/"
+      doc_type: functional_spec
+
+  agent_hints:
+    CodeGenerator:
+      - "For requirements: search Functional Specification (functional_spec)"
+`,
+
+    getCsrfToken() {
+      return document.cookie.split(';').map(c => c.trim())
+        .find(c => c.startsWith('csrf_token='))?.split('=')[1] || '';
+    },
+
+    apiHeaders() {
+      const h = { 'Content-Type': 'application/json' };
+      if (this.apiKey) h['X-Api-Key'] = this.apiKey;
+      return h;
+    },
+
+    saveApiKey() {
+      const k = this.keyInput.trim();
+      if (!k) return;
+      this.apiKey = k;
+      localStorage.setItem('antcrew_api_key', k);
+      this.keyInput = '';
+      this.init();
+    },
+
+    clearApiKey() {
+      this.apiKey = '';
+      localStorage.removeItem('antcrew_api_key');
+    },
+
+    async init() {
+      const meR = await fetch('/auth/me', { credentials: 'same-origin' }).catch(() => null);
+      if (meR && meR.ok) {
+        this.me = await meR.json();
+        this.profileForm.display_name = this.me.display_name || '';
+        this.profileForm.email = this.me.email || '';
+        this.mfaEnabled = this.me.mfa_enabled || false;
+      }
+      await Promise.all([this.loadWorkspaces(), this.loadKeys(), this.loadSchedules(), this.loadPlatformDefaults()]);
+      if (this.tab === 'billing' && this.workspaces.length > 0) {
+        this.billingWsId = this.billingWsId || this.workspaces[0].id;
+        await this.loadBillingProfile();
+      }
+      if (this.tab === 'compliance' && this.workspaces.length > 0) {
+        this.complianceWsId = this.complianceWsId || this.workspaces[0].id;
+        await Promise.all([this.loadComplianceRuns(), this.loadComplianceStatus()]);
+      }
+      if (this.tab === 'docs' && this.workspaces.length > 0) {
+        this.docsWsId = this.docsWsId || this.workspaces[0].id;
+        await this.loadDocsConfig();
+        await Promise.all([this.loadDocsSchema(), this.loadDocsList()]);
+      }
+    },
+
+    async loadPlatformDefaults() {
+      try {
+        const r = await fetch('/engine/platform-defaults', { headers: this.apiHeaders() });
+        if (!r.ok) return;
+        const d = await r.json();
+        const m = (d.default_agent_models || {}).default || 'claude';
+        this.platformDefaultModel = m;
+        if (this.modelOptions.length > 0) {
+          this.modelOptions[0].label = `— default de plataforma (${m}) —`;
+        }
+      } catch {}
+    },
+
+    async saveProfile() {
+      this.profileMsg = ''; this.profileError = false;
+      try {
+        const r = await fetch('/auth/profile', {
+          method: 'PATCH', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.getCsrfToken() },
+          body: JSON.stringify({ display_name: this.profileForm.display_name }),
+        });
+        if (!r.ok) { const e = await r.json(); this.profileError = true; this.profileMsg = e.detail || 'Error al guardar'; return; }
+        const d = await r.json();
+        if (this.me) this.me.display_name = d.display_name;
+        this.profileMsg = 'Nombre guardado';
+      } catch(e) { this.profileError = true; this.profileMsg = e.message; }
+    },
+
+    async savePassword() {
+      this.profileMsg = ''; this.profileError = false;
+      try {
+        const r = await fetch('/auth/profile', {
+          method: 'PATCH', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.getCsrfToken() },
+          body: JSON.stringify({ current_password: this.pwForm.current, new_password: this.pwForm.newPw }),
+        });
+        if (!r.ok) { const e = await r.json(); this.profileError = true; this.profileMsg = e.detail || 'Error al cambiar contraseña'; return; }
+        this.pwForm = { current: '', newPw: '' };
+        this.profileMsg = 'Contraseña actualizada';
+      } catch(e) { this.profileError = true; this.profileMsg = e.message; }
+    },
+
+    isMyKey(key) {
+      if (!this.me) return false;
+      return key.email && key.email === this.me.email;
+    },
+
+    async loadComplianceRuns() {
+      if (!this.complianceWsId) return;
+      this.complianceLoading = true;
+      this.complianceRuns = [];
+      try {
+        const r = await fetch(`/runs?workspace_id=${this.complianceWsId}&limit=8`, {
+          headers: this.apiHeaders(),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          this.complianceRuns = Array.isArray(d) ? d : (d.items || d.runs || []);
+        }
+      } catch {} finally {
+        this.complianceLoading = false;
+      }
+    },
+
+    async loadComplianceStatus() {
+      if (!this.apiKey) return;
+      try {
+        const r = await fetch('/compliance/status', { headers: this.apiHeaders() });
+        if (r.ok) this.complianceStatus = await r.json();
+      } catch {}
+    },
+
+    async startComplianceCheckout() {
+      if (!this.apiKey) return;
+      this.complianceCheckoutLoading = true;
+      this.complianceCheckoutMsg = '';
+      try {
+        const r = await fetch('/compliance/checkout', {
+          method: 'POST',
+          headers: { ...this.apiHeaders(), 'X-CSRF-Token': this.getCsrfToken() },
+          body: JSON.stringify({ billing_cycle: this.complianceBillingCycle }),
+        });
+        if (r.status === 409) { this.complianceCheckoutMsg = 'El pack ya está activo.'; return; }
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          this.complianceCheckoutMsg = e.detail || 'Error al iniciar el pago.';
+          return;
+        }
+        const d = await r.json();
+        window.location.href = d.checkout_url;
+      } catch(e) {
+        this.complianceCheckoutMsg = e.message;
+      } finally {
+        this.complianceCheckoutLoading = false;
+      }
+    },
+
+    async loadBillingProfile() {
+      if (!this.billingWsId || !this.apiKey) return;
+      this.billingLoading = true;
+      try {
+        const r = await fetch(`/workspaces/${this.billingWsId}/billing-profile`, {
+          headers: this.apiHeaders(),
+        });
+        if (r.ok) {
+          this.billingProfile = await r.json();
+          // Populate form with current values
+          this.billingForm = {
+            billing_entity_type: this.billingProfile.billing_entity_type || '',
+            billing_razon_social: this.billingProfile.billing_razon_social || '',
+            billing_nif: this.billingProfile.billing_nif || '',
+            billing_address: this.billingProfile.billing_address || '',
+            billing_postal_code: this.billingProfile.billing_postal_code || '',
+            billing_city: this.billingProfile.billing_city || '',
+            billing_country: this.billingProfile.billing_country || 'ES',
+            billing_email: this.billingProfile.billing_email || '',
+            billing_phone: this.billingProfile.billing_phone || '',
+          };
+        }
+      } catch {} finally {
+        this.billingLoading = false;
+      }
+    },
+
+    async saveBillingProfile() {
+      if (!this.billingWsId) return;
+      this.billingSaving = true;
+      this.billingMsg = ''; this.billingError = false;
+      try {
+        const body = {};
+        for (const [k, v] of Object.entries(this.billingForm)) {
+          body[k] = v === '' ? null : v;
+        }
+        const r = await fetch(`/workspaces/${this.billingWsId}/billing-profile`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (r.ok) {
+          this.billingProfile = await r.json();
+          this.billingMsg = 'Datos fiscales guardados correctamente.';
+        } else {
+          const d = await r.json().catch(() => ({}));
+          this.billingError = true;
+          this.billingMsg = d.detail || `HTTP ${r.status}`;
+        }
+      } catch (e) {
+        this.billingError = true;
+        this.billingMsg = e.message;
+      } finally {
+        this.billingSaving = false;
+        setTimeout(() => { if (!this.billingError) this.billingMsg = ''; }, 3000);
+      }
+    },
+
+    async switchTab(id) {
+      this.tab = id;
+      history.replaceState({}, '', '/settings?tab=' + id);
+      if (id === 'billing' && this.workspaces.length > 0) {
+        if (!this.billingWsId) this.billingWsId = this.workspaces[0].id;
+        if (this.billingProfile.complete !== undefined) return; // already loaded
+        this.loadBillingProfile();
+      }
+      if (id === 'compliance' && this.workspaces.length > 0) {
+        if (!this.complianceWsId) this.complianceWsId = this.workspaces[0].id;
+        this.loadComplianceRuns();
+        this.loadComplianceStatus();
+      }
+      if (id === 'docs' && this.workspaces.length > 0) {
+        if (!this.docsWsId) this.docsWsId = this.workspaces[0].id;
+        await this.loadDocsConfig();
+        await Promise.all([this.loadDocsSchema(), this.loadDocsList()]);
+      }
+    },
+
+    openCreateWs() {
+      this.wsFormError = '';
+      const first = this.workspaces[0];
+      this.createWsForm = {
+        name: '',
+        slug: '',
+        max_cost_usd: first?.max_cost_usd != null ? String(first.max_cost_usd) : '',
+        hitl_default: first?.hitl_default ?? false,
+      };
+      this.showCreateWs = true;
+    },
+
+    onProviderChange() {
+      const defaults = {
+        moonshot:  'https://api.moonshot.cn/v1',
+        deepseek:  'https://api.deepseek.com/v1',
+        mistral:   'https://api.mistral.ai/v1',
+        xai:       'https://api.x.ai/v1',
+        together:  'https://api.together.xyz/v1',
+        fireworks: 'https://api.fireworks.ai/inference/v1',
+        cerebras:  'https://api.cerebras.ai/v1',
+        ollama:    'http://localhost:11434',
+        lmstudio:  'http://localhost:1234/v1',
+        vllm:      'http://localhost:8000/v1',
+      };
+      this.addKeyForm.base_url = defaults[this.addKeyForm.provider] || '';
+    },
+
+    async loadMatrix() {
+      if (!this.workspaces.length) return;
+      this.matrixLoading = true;
+      try {
+        const results = await Promise.all(
+          this.workspaces.map(ws =>
+            fetch(`/workspaces/${ws.id}/llm-keys`, { headers: this.apiHeaders() })
+              .then(r => r.ok ? r.json() : [])
+              .then(keys => ({ ws, keys }))
+          )
+        );
+        this.matrixData = results;
+        const providers = ['anthropic', 'openai', 'groq', 'gemini', 'moonshot', 'deepseek', 'mistral', 'xai', 'cerebras', 'together', 'fireworks', 'ollama', 'lmstudio', 'vllm'];
+        const rows = [];
+        for (const { ws, keys } of results) {
+          const keyMap = Object.fromEntries(keys.map(k => [k.provider, k]));
+          for (let i = 0; i < providers.length; i++) {
+            const provider = providers[i];
+            const hasKey = !!keyMap[provider];
+            let mode;
+            if (ws.llm_key_mode === 'proxy') mode = 'proxy';
+            else if (ws.llm_key_mode === 'byok' && hasKey) mode = 'byok';
+            else if (ws.llm_key_mode === 'managed') mode = 'managed';
+            else mode = ws.byok_managed_fallback ? 'managed*' : '—';
+            rows.push({
+              wsId: ws.id, wsName: ws.name, wsMode: ws.llm_key_mode,
+              provider, isFirst: i === 0, isLast: i === providers.length - 1,
+              mode, hasKey,
+            });
+          }
+        }
+        this.matrixRows = rows;
+      } catch(e) {}
+      this.matrixLoading = false;
+    },
+
+    copyDockerCmd() {
+      if (this.proxyDockerCmd) navigator.clipboard.writeText(this.proxyDockerCmd).catch(() => {});
+    },
+
+    downloadEnv() {
+      const content = [
+        '# antcrew-proxy configuration',
+        `PROXY_TOKEN=${this.proxyToken}`,
+        '# Replace with your actual Anthropic API key:',
+        'ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE',
+      ].join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+      a.download = 'antcrew-proxy.env';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    },
+
+    /* ── Workspaces ── */
+    async loadWorkspaces() {
+      this.wsLoading = true; this.wsError = '';
+      try {
+        const r = await fetch('/workspaces/', { headers: this.apiHeaders() });
+        if (!r.ok) throw new Error(await r.text());
+        this.workspaces = await r.json();
+        if (!this.billingWsId && this.workspaces.length > 0) {
+          this.billingWsId = this.workspaces[0].id;
+        }
+      } catch(e) { this.wsError = e.message; }
+      this.wsLoading = false;
+    },
+
+    autoSlug() {
+      this.createWsForm.slug = this.createWsForm.name
+        .toLowerCase().trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    },
+
+    async createWorkspace() {
+      this.wsFormError = '';
+      const body = { name: this.createWsForm.name.trim(), slug: this.createWsForm.slug.trim(), hitl_default: this.createWsForm.hitl_default };
+      if (this.createWsForm.max_cost_usd) body.max_cost_usd = parseFloat(this.createWsForm.max_cost_usd);
+      try {
+        const r = await fetch('/workspaces/', { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify(body) });
+        if (!r.ok) { const e = await r.json(); this.wsFormError = e.detail || JSON.stringify(e); return; }
+        this.showCreateWs = false;
+        this.createWsForm = { name: '', slug: '', max_cost_usd: '', hitl_default: false };
+        await this.loadWorkspaces();
+      } catch(e) { this.wsFormError = e.message; }
+    },
+
+    startEditWs(ws) {
+      this.editingWs = ws; this.wsFormError = '';
+      this.editWsForm = {
+        max_cost_usd: ws.max_cost_usd != null ? String(ws.max_cost_usd) : '',
+        hitl_default: ws.hitl_default,
+        default_repo_url: ws.default_repo_url || '',
+        ticket_prefix: ws.ticket_prefix || 'TKT',
+        add_credit: '',
+        exit_trial: false,
+        default_team: ws.default_team || '',
+      };
+    },
+
+    async saveWs() {
+      this.wsFormError = '';
+      const id = this.editingWs.id;
+      const budget = this.editWsForm.max_cost_usd === '' ? null : parseFloat(this.editWsForm.max_cost_usd);
+      try {
+        const reqs = [
+          fetch(`/workspaces/${id}/budget`, { method: 'PATCH', headers: this.apiHeaders(), body: JSON.stringify({ max_cost_usd: budget }) }),
+          fetch(`/workspaces/${id}/hitl`, { method: 'PATCH', headers: this.apiHeaders(), body: JSON.stringify({ hitl_default: this.editWsForm.hitl_default }) }),
+          fetch(`/workspaces/${id}/repo`, { method: 'PATCH', headers: this.apiHeaders(), body: JSON.stringify({ default_repo_url: this.editWsForm.default_repo_url || null }) }),
+          fetch(`/workspaces/${id}/ticket-config`, { method: 'PATCH', headers: this.apiHeaders(), body: JSON.stringify({ ticket_prefix: this.editWsForm.ticket_prefix || 'TKT' }) }),
+          fetch(`/workspaces/${id}/default-team`, { method: 'PATCH', headers: this.apiHeaders(), body: JSON.stringify({ default_team: this.editWsForm.default_team || null }) }),
+        ];
+        const addCredit = parseFloat(this.editWsForm.add_credit || '0');
+        if (this.editingWs.is_trial && (this.editWsForm.exit_trial || addCredit > 0)) {
+          reqs.push(fetch(`/workspaces/${id}/trial`, {
+            method: 'PATCH', headers: this.apiHeaders(),
+            body: JSON.stringify({
+              is_trial: !this.editWsForm.exit_trial,
+              additional_credit_usd: addCredit > 0 ? addCredit : null,
+            }),
+          }));
+        }
+        const rs = await Promise.all(reqs);
+        for (const r of rs) {
+          if (!r.ok) { const e = await r.json(); this.wsFormError = e.detail || 'Error al guardar'; return; }
+        }
+        this.editingWs = null;
+        await this.loadWorkspaces();
+      } catch(e) { this.wsFormError = e.message; }
+    },
+
+    async deleteWs(ws) {
+      if (!confirm(`¿Eliminar "${ws.name}"? Esta acción no se puede deshacer.`)) return;
+      try {
+        const r = await fetch(`/workspaces/${ws.id}`, { method: 'DELETE', headers: this.apiHeaders() });
+        if (r.status !== 204 && !r.ok) { this.wsError = 'Error al eliminar el workspace'; return; }
+        await this.loadWorkspaces();
+      } catch(e) { this.wsError = e.message; }
+    },
+
+    /* ── Revisores ── */
+    async loadKeys() {
+      this.keysLoading = true; this.keysError = '';
+      try {
+        const r = await fetch('/api-keys/', { headers: this.apiHeaders() });
+        if (!r.ok) throw new Error(await r.text());
+        this.keys = await r.json();
+      } catch(e) { this.keysError = e.message; }
+      this.keysLoading = false;
+    },
+
+    async createKey() {
+      this.keyFormError = '';
+      const body = { label: this.createKeyForm.label.trim(), role: this.createKeyForm.role };
+      if (this.createKeyForm.workspace_id) body.workspace_id = parseInt(this.createKeyForm.workspace_id);
+      if (this.createKeyForm.email.trim()) body.email = this.createKeyForm.email.trim();
+      if (this.createKeyForm.slack_user_id.trim()) body.slack_user_id = this.createKeyForm.slack_user_id.trim();
+      if (this.createKeyForm.telegram_chat_id.trim()) body.telegram_chat_id = this.createKeyForm.telegram_chat_id.trim();
+      try {
+        const r = await fetch('/api-keys/', { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify(body) });
+        if (!r.ok) { const e = await r.json(); this.keyFormError = e.detail || JSON.stringify(e); return; }
+        const data = await r.json();
+        this.newKeyValue = data.key;
+        this.showCreateKey = false;
+        this.createKeyForm = { label: '', role: 'reviewer', workspace_id: '', email: '', slack_user_id: '', telegram_chat_id: '' };
+        this.tab = 'reviewers';
+        await this.loadKeys();
+      } catch(e) { this.keyFormError = e.message; }
+    },
+
+    startEditKey(key) {
+      this.editingKey = { ...key }; this.keyFormError = '';
+      this.editKeyForm = {
+        role: key.role,
+        email: key.email || '',
+        slack_user_id: key.slack_user_id || '',
+        telegram_chat_id: key.telegram_chat_id || '',
+      };
+    },
+
+    async saveKey() {
+      this.keyFormError = '';
+      try {
+        const r = await fetch(`/api-keys/${this.editingKey.label}`, {
+          method: 'PATCH', headers: this.apiHeaders(),
+          body: JSON.stringify({
+            role: this.editKeyForm.role,
+            email: this.editKeyForm.email || null,
+            slack_user_id: this.editKeyForm.slack_user_id || null,
+            telegram_chat_id: this.editKeyForm.telegram_chat_id || null,
+          }),
+        });
+        if (!r.ok) { const e = await r.json(); this.keyFormError = e.detail || 'Error al guardar'; return; }
+        this.editingKey = null;
+        await this.loadKeys();
+      } catch(e) { this.keyFormError = e.message; }
+    },
+
+    async revokeKey(key) {
+      if (!confirm(`¿Revocar "${key.label}"? La clave dejará de funcionar inmediatamente.`)) return;
+      try {
+        await fetch(`/api-keys/${key.label}`, { method: 'DELETE', headers: this.apiHeaders() });
+        await this.loadKeys();
+      } catch(e) { this.keysError = e.message; }
+    },
+
+    roleBadgeClass(role) {
+      return {
+        admin:    'bg-red-900/50 text-red-300',
+        write:    'bg-blue-900/50 text-blue-300',
+        read:     'bg-gray-700 text-gray-400',
+        reviewer: 'bg-amber-900/50 text-amber-300',
+      }[role] || 'bg-gray-700 text-gray-400';
+    },
+
+    wsName(id) {
+      if (!id) return '—';
+      return this.workspaces.find(w => w.id === id)?.name || `#${id}`;
+    },
+
+    async copyKey() {
+      try { await navigator.clipboard.writeText(this.newKeyValue); } catch(e) {}
+    },
+
+    /* ── LLM Mode ── */
+    async selectLlmWs() {
+      if (this.llmWsId) await this.loadLlmData();
+    },
+
+    async loadLlmData() {
+      if (!this.llmWsId) return;
+      this.llmLoading = true; this.llmError = '';
+      try {
+        const ws = this.workspaces.find(w => w.id == this.llmWsId);
+        this.llmMode = ws?.llm_key_mode || 'managed';
+        this.byokManagedFallback = ws?.byok_managed_fallback || false;
+        const agentModels = ws?.agent_models || {};
+        this.agentModelsDefault = agentModels['default'] || '';
+        this.agentModelRows = Object.entries(agentModels)
+          .filter(([k]) => k !== 'default')
+          .map(([agent, model]) => ({ agent, model }));
+        const r = await fetch(`/workspaces/${this.llmWsId}/llm-keys`, { headers: this.apiHeaders() });
+        if (!r.ok) throw new Error(await r.text());
+        this.llmKeys = await r.json();
+        this.proxyToken = ''; this.proxyDockerCmd = '';
+        await this.loadProxyStatus();
+        await this.loadWebhooks();
+        await this.loadRoutingPolicy();
+      } catch(e) { this.llmError = e.message; }
+      this.llmLoading = false;
+    },
+
+    async loadRoutingPolicy() {
+      if (!this.llmWsId) return;
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/routing`, { headers: this.apiHeaders() });
+        if (r.ok) { const d = await r.json(); this.routingPolicy = d.cost_routing_policy || 'none'; }
+      } catch(e) {}
+    },
+
+    async setRoutingPolicy(policy) {
+      this.routingMsg = '';
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/routing`, {
+          method: 'PATCH', headers: this.apiHeaders(), body: JSON.stringify({ cost_routing_policy: policy }),
+        });
+        if (!r.ok) { const e = await r.json(); this.llmError = e.detail || 'Error al cambiar routing'; return; }
+        this.routingPolicy = policy;
+        this.routingMsg = 'Guardado';
+        setTimeout(() => { this.routingMsg = ''; }, 2000);
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    async setLlmMode(mode) {
+      this.llmError = '';
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/llm-mode`, {
+          method: 'PATCH', headers: this.apiHeaders(), body: JSON.stringify({ mode }),
+        });
+        if (!r.ok) { const e = await r.json(); this.llmError = e.detail || 'Error al cambiar modo'; return; }
+        this.llmMode = mode;
+        await this.loadWorkspaces();
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    async saveByokFallback() {
+      this.llmError = '';
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/llm-mode`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ mode: this.llmMode, byok_managed_fallback: this.byokManagedFallback }),
+        });
+        if (!r.ok) { const e = await r.json(); this.llmError = e.detail || 'Error al guardar'; }
+        else await this.loadWorkspaces();
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    async saveAgentModels() {
+      this.agentModelsMsg = '';
+      const map = {};
+      if (this.agentModelsDefault) map['default'] = this.agentModelsDefault;
+      for (const row of this.agentModelRows) {
+        if (row.agent.trim() && row.model.trim()) map[row.agent.trim()] = row.model.trim();
+      }
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/agent-models`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ agent_models: Object.keys(map).length ? map : null }),
+        });
+        if (!r.ok) { const e = await r.json(); this.agentModelsMsg = `Error: ${e.detail || r.statusText}`; return; }
+        await this.loadWorkspaces();
+        this.agentModelsMsg = 'Guardado';
+        setTimeout(() => { this.agentModelsMsg = ''; }, 3000);
+      } catch(e) { this.agentModelsMsg = `Error: ${e.message}`; }
+    },
+
+    /* ── Proxy mode ── */
+    async loadWebhooks() {
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/webhooks`, { headers: this.apiHeaders() });
+        if (r.ok) this.webhooks = await r.json();
+      } catch(e) { /* silent */ }
+    },
+    async addWebhook() {
+      const url = this.newWebhookUrl.trim();
+      if (!url) return;
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/webhooks`, {
+          method: 'POST', headers: this.apiHeaders(),
+          body: JSON.stringify({ url, label: this.newWebhookLabel.trim() || null, events: ['*'] }),
+        });
+        if (!r.ok) { const e = await r.json(); alert(e.detail || 'Error añadiendo webhook'); return; }
+        this.showAddWebhook = false; this.newWebhookUrl = ''; this.newWebhookLabel = '';
+        await this.loadWebhooks();
+      } catch(e) { alert(e.message); }
+    },
+    async deleteWebhook(id) {
+      if (!confirm('¿Eliminar este webhook?')) return;
+      try {
+        await fetch(`/workspaces/${this.llmWsId}/webhooks/${id}`, {
+          method: 'DELETE', headers: this.apiHeaders(),
+        });
+        await this.loadWebhooks();
+      } catch(e) { /* silent */ }
+    },
+
+    async loadProxyStatus() {
+      if (!this.llmWsId) return;
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/proxy`, { headers: this.apiHeaders() });
+        if (r.ok) {
+          const d = await r.json();
+          this.proxyConfigured = d.configured;
+          this.proxyUrl = d.proxy_url || '';
+          if (!this.proxyUrlInput) this.proxyUrlInput = d.proxy_url || '';
+        }
+      } catch(e) {}
+    },
+
+    async generateProxyToken() {
+      this.llmError = '';
+      this.proxyToken = '';
+      if (!this.proxyUrlInput) return;
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/proxy/generate`, {
+          method: 'POST', headers: this.apiHeaders(),
+          body: JSON.stringify({ proxy_url: this.proxyUrlInput, failover_chain: this.failoverChain }),
+        });
+        if (!r.ok) { const e = await r.json(); this.llmError = e.detail || 'Error al generar token'; return; }
+        const d = await r.json();
+        this.proxyToken = d.token;
+        this.proxyDockerCmd = d.docker_command;
+        await this.loadProxyStatus();
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    async activateProxy() {
+      this.llmError = '';
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/proxy/activate`, {
+          method: 'POST', headers: this.apiHeaders(),
+        });
+        if (!r.ok) { const e = await r.json(); this.llmError = e.detail || 'Error al activar proxy'; return; }
+        this.llmMode = 'proxy';
+        await this.loadWorkspaces();
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    async revokeProxy() {
+      if (!confirm('¿Revocar el token proxy? El proxy dejará de aceptar peticiones de la plataforma.')) return;
+      this.llmError = '';
+      try {
+        const r = await fetch(`/workspaces/${this.llmWsId}/proxy`, {
+          method: 'DELETE', headers: this.apiHeaders(),
+        });
+        if (!r.ok) { const e = await r.json(); this.llmError = e.detail || 'Error al revocar'; return; }
+        this.proxyToken = ''; this.proxyDockerCmd = '';
+        await this.loadProxyStatus();
+        await this.loadLlmData();
+        await this.loadWorkspaces();
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    copyProxyToken() {
+      if (this.proxyToken) navigator.clipboard.writeText(this.proxyToken).catch(() => {});
+    },
+
+    llmProviderConfigured(provider) {
+      return this.llmKeys.some(k => k.provider === provider);
+    },
+
+    apiKeyPlaceholder(provider) {
+      const map = { anthropic: 'sk-ant-api03-…', openai: 'sk-proj-…', groq: 'gsk_…', gemini: 'AIza…', moonshot: 'sk-…' };
+      return map[provider] || 'api-key…';
+    },
+
+    async addLlmKey() {
+      this.llmError = '';
+      try {
+        const payload = {
+          provider: this.addKeyForm.provider,
+          api_key: this.addKeyForm.api_key,
+          confirm_overwrite: this.addKeyForm.confirm_overwrite,
+        };
+        if (this.addKeyForm.base_url && this.addKeyForm.base_url.trim()) {
+          payload.base_url = this.addKeyForm.base_url.trim();
+        }
+        const r = await fetch(`/workspaces/${this.llmWsId}/llm-keys`, {
+          method: 'POST', headers: this.apiHeaders(),
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) { const e = await r.json(); this.llmError = e.detail || 'Error al guardar'; return; }
+        this.showAddKey = false;
+        this.addKeyForm = { provider: 'anthropic', api_key: '', base_url: '', confirm_overwrite: false };
+        await this.loadLlmData();
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    async deleteLlmKey(provider) {
+      if (!confirm(`¿Eliminar la clave de ${provider}? Si es la última, el workspace volverá a modo managed.`)) return;
+      try {
+        await fetch(`/workspaces/${this.llmWsId}/llm-keys/${provider}`, { method: 'DELETE', headers: this.apiHeaders() });
+        await this.loadLlmData();
+        await this.loadWorkspaces();
+      } catch(e) { this.llmError = e.message; }
+    },
+
+    fmtDate(d) {
+      if (!d) return '—';
+      return new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+    },
+
+    fmtDateShort(d) {
+      if (!d) return '—';
+      const dt = new Date(d + (d.endsWith('Z') ? '' : 'Z'));
+      return dt.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
+    },
+
+    /* ── Schedules ── */
+    async loadSchedules() {
+      this.schedulesLoading = true; this.schedulesError = '';
+      try {
+        const r = await fetch('/run-schedules/', { headers: this.apiHeaders() });
+        if (!r.ok) throw new Error(await r.text());
+        this.schedules = await r.json();
+      } catch(e) { this.schedulesError = e.message; }
+      this.schedulesLoading = false;
+    },
+
+    openCreateSchedule() {
+      this.schedFormError = '';
+      this.createScheduleForm = { name: '', goal: '', model: 'claude', cron_expr: '', max_cost_usd: '' };
+      this.showCreateSchedule = true;
+    },
+
+    async createSchedule() {
+      this.schedFormError = '';
+      const f = this.createScheduleForm;
+      const body = {
+        name: f.name.trim(),
+        goal: f.goal.trim(),
+        model: f.model.trim() || 'claude',
+        cron_expr: f.cron_expr.trim(),
+      };
+      if (f.max_cost_usd) body.max_cost_usd = parseFloat(f.max_cost_usd);
+      try {
+        const r = await fetch('/run-schedules/', { method: 'POST', headers: this.apiHeaders(), body: JSON.stringify(body) });
+        if (!r.ok) {
+          const e = await r.json();
+          this.schedFormError = e.detail || JSON.stringify(e);
+          return;
+        }
+        this.showCreateSchedule = false;
+        await this.loadSchedules();
+      } catch(e) { this.schedFormError = e.message; }
+    },
+
+    async toggleSchedule(s) {
+      try {
+        const r = await fetch(`/run-schedules/${s.id}`, {
+          method: 'PATCH', headers: this.apiHeaders(),
+          body: JSON.stringify({ enabled: !s.enabled }),
+        });
+        if (r.ok) await this.loadSchedules();
+      } catch(e) { this.schedulesError = e.message; }
+    },
+
+    async deleteSchedule(s) {
+      if (!confirm(`Delete schedule "${s.name}"? This cannot be undone.`)) return;
+      try {
+        const r = await fetch(`/run-schedules/${s.id}`, { method: 'DELETE', headers: this.apiHeaders() });
+        if (r.status === 204 || r.ok) await this.loadSchedules();
+      } catch(e) { this.schedulesError = e.message; }
+    },
+
+    /* ── MFA ── */
+    async setupMfa() {
+      this.mfaMsg = ''; this.mfaError = false; this.mfaSetup = null; this.mfaCode = '';
+      try {
+        const r = await fetch('/auth/mfa/setup', { credentials: 'same-origin' });
+        if (!r.ok) { const e = await r.json(); this.mfaMsg = e.detail || 'Error loading setup'; this.mfaError = true; return; }
+        this.mfaSetup = await r.json();
+        this.mfaEnabled = this.mfaSetup.mfa_enabled;
+      } catch(e) { this.mfaMsg = e.message; this.mfaError = true; }
+    },
+
+    async enableMfa() {
+      if (!this.mfaSetup) return;
+      this.mfaMsg = ''; this.mfaError = false; this.mfaLoading = true;
+      try {
+        const r = await fetch('/auth/mfa/enable', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.getCsrfToken() },
+          body: JSON.stringify({ secret: this.mfaSetup.secret, code: this.mfaCode }),
+        });
+        if (!r.ok) { const e = await r.json(); this.mfaMsg = e.detail || 'Invalid code'; this.mfaError = true; }
+        else { this.mfaEnabled = true; this.mfaSetup = null; this.mfaCode = ''; this.mfaMsg = 'MFA activado. Se pedirá código en el próximo login.'; }
+      } catch(e) { this.mfaMsg = e.message; this.mfaError = true; }
+      this.mfaLoading = false;
+    },
+
+    async disableMfa() {
+      this.mfaMsg = ''; this.mfaError = false; this.mfaLoading = true;
+      try {
+        const r = await fetch('/auth/mfa/disable', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': this.getCsrfToken() },
+          body: JSON.stringify({ code: this.mfaCode }),
+        });
+        if (!r.ok) { const e = await r.json(); this.mfaMsg = e.detail || 'Invalid code'; this.mfaError = true; }
+        else { this.mfaEnabled = false; this.showDisableMfa = false; this.mfaCode = ''; this.mfaMsg = 'MFA desactivado.'; }
+      } catch(e) { this.mfaMsg = e.message; this.mfaError = true; }
+      this.mfaLoading = false;
+    },
+
+    /* ── GitHub App ── */
+    async loadGhInstallations() {
+      if (!this.ghWsId) return;
+      this.ghLoading = true; this.ghError = '';
+      try {
+        const r = await fetch(`/github/installations?workspace_id=${this.ghWsId}`, { headers: this.apiHeaders() });
+        if (!r.ok) throw new Error(await r.text());
+        const all = await r.json();
+        this.ghInstallationsForWs = all;
+        // Merge into global list for badge count
+        const existing = this.ghInstallations.filter(i => i.workspace_id !== parseInt(this.ghWsId));
+        this.ghInstallations = [...existing, ...all];
+      } catch(e) { this.ghError = e.message; }
+      this.ghLoading = false;
+    },
+
+    async disconnectGh(inst) {
+      if (!confirm(`¿Desconectar la instalación de "${inst.account_login}"? Los runners dejarán de poder usar tokens de instalación para este workspace.`)) return;
+      this.ghError = '';
+      try {
+        const r = await fetch(`/github/installations/${inst.installation_id}`, { method: 'DELETE', headers: this.apiHeaders() });
+        if (r.status !== 204 && !r.ok) { this.ghError = 'Error al desconectar la instalación'; return; }
+        await this.loadGhInstallations();
+      } catch(e) { this.ghError = e.message; }
+    },
+
+    async savePushTrigger(inst) {
+      this.ghError = '';
+      try {
+        const r = await fetch(`/github/installations/${inst.installation_id}/push-trigger`, {
+          method: 'PATCH',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({
+            push_goal: inst.push_goal || null,
+            push_model: inst.push_model || 'claude',
+            push_branch_filter: inst.push_branch_filter || '*',
+          }),
+        });
+        if (!r.ok) { const e = await r.json(); this.ghError = e.detail || r.statusText; }
+      } catch(e) { this.ghError = e.message; }
+    },
+
+    /* ── Security ── */
+    async runQuickAudit() {
+      this.auditLoading = true; this.auditError = ''; this.auditResult = null;
+      try {
+        const body = {
+          github_repo: this.auditForm.github_repo.trim(),
+          github_token: this.auditForm.github_token.trim(),
+          github_branch: this.auditForm.github_branch.trim() || 'main',
+        };
+        if (this.auditForm.max_cost_usd) body.max_cost_usd = parseFloat(this.auditForm.max_cost_usd);
+        const r = await fetch('/security/quick-audit', {
+          method: 'POST', headers: this.apiHeaders(), body: JSON.stringify(body),
+        });
+        if (!r.ok) { const e = await r.json().catch(() => ({})); this.auditError = e.detail || `HTTP ${r.status}`; }
+        else { this.auditResult = await r.json(); }
+      } catch(e) { this.auditError = e.message; }
+      this.auditLoading = false;
+    },
+
+    /* ── Documentation ── */
+    async docsOnWsChange() {
+      this.docsList = []; this.docsSchemaYaml = '';
+      this.docsForm = { bucket: '', prefix: '', region: 'us-east-1', access_key: '', secret_key: '' };
+      this.docsConfigConnected = false;
+      await this.loadDocsConfig();
+      await Promise.all([this.loadDocsSchema(), this.loadDocsList()]);
+    },
+
+    _docsHeaders() {
+      const h = this.apiHeaders();
+      h['X-CSRF-Token'] = this.getCsrfToken();
+      return h;
+    },
+
+    async loadDocsConfig() {
+      if (!this.docsWsId) return;
+      this.docsConfigLoading = true;
+      try {
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs/config`, { headers: this.apiHeaders() });
+        if (!r.ok) return;
+        const d = await r.json();
+        this.docsForm.bucket = d.bucket || '';
+        this.docsForm.prefix = d.prefix || '';
+        this.docsForm.region = d.region || 'us-east-1';
+        this.docsConfigConnected = d.access_key_configured || !!d.bucket;
+      } catch {}
+      this.docsConfigLoading = false;
+    },
+
+    async saveDocsConfig() {
+      this.docsConfigMsg = ''; this.docsConfigError = false; this.docsConfigSaving = true;
+      try {
+        const body = {
+          bucket: this.docsForm.bucket.trim() || null,
+          prefix: this.docsForm.prefix.trim() || null,
+          region: this.docsForm.region.trim() || 'us-east-1',
+        };
+        if (this.docsForm.access_key.trim()) body.access_key = this.docsForm.access_key.trim();
+        if (this.docsForm.secret_key.trim()) body.secret_key = this.docsForm.secret_key.trim();
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs/config`, {
+          method: 'PUT', headers: this._docsHeaders(), body: JSON.stringify(body),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) {
+          this.docsConfigConnected = d.access_key_configured || !!d.bucket;
+          this.docsForm.access_key = ''; this.docsForm.secret_key = '';
+          this.docsConfigMsg = 'Guardado';
+          setTimeout(() => this.docsConfigMsg = '', 3000);
+          await this.loadDocsList();
+        } else {
+          this.docsConfigError = true;
+          this.docsConfigMsg = d.detail || `HTTP ${r.status}`;
+        }
+      } catch(e) { this.docsConfigError = true; this.docsConfigMsg = e.message; }
+      this.docsConfigSaving = false;
+    },
+
+    async clearDocsConfig() {
+      if (!confirm('¿Desconectar S3? Se eliminarán las credenciales almacenadas.')) return;
+      try {
+        await fetch(`/workspaces/${this.docsWsId}/docs/config`, { method: 'DELETE', headers: this._docsHeaders() });
+        this.docsConfigConnected = false;
+        this.docsForm = { bucket: '', prefix: '', region: 'us-east-1', access_key: '', secret_key: '' };
+        this.docsList = [];
+      } catch(e) { this.docsConfigMsg = e.message; this.docsConfigError = true; }
+    },
+
+    async loadDocsSchema() {
+      if (!this.docsWsId) return;
+      try {
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs/schema`, { headers: this.apiHeaders() });
+        if (!r.ok) return;
+        const d = await r.json();
+        this.docsSchemaYaml = d.schema_yaml || '';
+        this._parseSchemaTypes();
+      } catch {}
+    },
+
+    async saveDocsSchema() {
+      this.docsSchemaMsg = ''; this.docsSchemaError = false; this.docsSchemaSaving = true;
+      try {
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs/schema`, {
+          method: 'PUT', headers: this._docsHeaders(),
+          body: JSON.stringify({ schema_yaml: this.docsSchemaYaml }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) {
+          this.docsSchemaMsg = 'Schema guardado';
+          this._parseSchemaTypes();
+          setTimeout(() => this.docsSchemaMsg = '', 3000);
+        } else {
+          this.docsSchemaError = true;
+          this.docsSchemaMsg = d.detail || `HTTP ${r.status}`;
+        }
+      } catch(e) { this.docsSchemaError = true; this.docsSchemaMsg = e.message; }
+      this.docsSchemaSaving = false;
+    },
+
+    _parseSchemaTypes() {
+      // Extract doc type ids from YAML without a full YAML parser
+      const matches = this.docsSchemaYaml.matchAll(/^\s*-\s*id:\s*(\S+)/gm);
+      this.docsSchemaTypes = [...matches].map(m => m[1]);
+    },
+
+    async loadDocsList() {
+      if (!this.docsWsId) return;
+      this.docsListLoading = true;
+      try {
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs`, { headers: this.apiHeaders() });
+        if (r.ok) this.docsList = await r.json();
+      } catch {}
+      this.docsListLoading = false;
+    },
+
+    docsFileSelected(e) {
+      this.docsUploadFile = e.target.files[0] || null;
+      this.docsUploadMsg = ''; this.docsUploadError = false;
+      e.target.value = '';
+    },
+
+    async docsUpload() {
+      if (!this.docsUploadFile || !this.docsUploadDocType) return;
+      this.docsUploading = true; this.docsUploadMsg = ''; this.docsUploadError = false;
+      try {
+        const fd = new FormData();
+        fd.append('file', this.docsUploadFile);
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs/upload?doc_type=${encodeURIComponent(this.docsUploadDocType)}`, {
+          method: 'POST',
+          headers: { ...(this.apiKey ? { 'X-Api-Key': this.apiKey } : {}), 'X-CSRF-Token': this.getCsrfToken() },
+          body: fd,
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) {
+          this.docsUploadMsg = `Subido: ${d.doc_id}`;
+          this.docsUploadFile = null; this.docsUploadDocType = '';
+          await this.loadDocsList();
+        } else {
+          this.docsUploadError = true;
+          this.docsUploadMsg = d.detail || `HTTP ${r.status}`;
+        }
+      } catch(e) { this.docsUploadError = true; this.docsUploadMsg = e.message; }
+      this.docsUploading = false;
+    },
+
+    async docsDelete(docId) {
+      if (!confirm(`¿Eliminar "${docId}"?`)) return;
+      try {
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs/${encodeURIComponent(docId)}`, {
+          method: 'DELETE', headers: this._docsHeaders(),
+        });
+        if (r.status === 204 || r.ok) this.docsList = this.docsList.filter(d => d !== docId);
+      } catch {}
+    },
+
+    async docsReindex() {
+      this.docsIndexing = true; this.docsIndexMsg = ''; this.docsIndexError = false;
+      try {
+        const r = await fetch(`/workspaces/${this.docsWsId}/docs/index`, {
+          method: 'POST', headers: this._docsHeaders(),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) {
+          this.docsIndexMsg = `Indexados ${d.indexed} documentos`;
+          await this.loadDocsList();
+          setTimeout(() => this.docsIndexMsg = '', 5000);
+        } else {
+          this.docsIndexError = true;
+          this.docsIndexMsg = d.detail || `HTTP ${r.status}`;
+        }
+      } catch(e) { this.docsIndexError = true; this.docsIndexMsg = e.message; }
+      this.docsIndexing = false;
+    },
+  };
+}
+</script>
+</body>
+</html>
+

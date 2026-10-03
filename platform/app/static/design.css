@@ -1,0 +1,191 @@
+/* antcrew design system — v2
+ * Loads after tailwind.css to override the palette and add Google Fonts.
+ * All pages share these tokens; sidebar.js carries its own equivalent overrides.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;0,700;1,600&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* ── CSS tokens (used by non-Tailwind components + style.css pages) ───────── */
+:root {
+  /* Background layers */
+  --ds-bg:        #080F1C;
+  --ds-surface:   #0F1929;
+  --ds-surface-2: #162235;
+  --ds-surface-3: #1D2D43;
+
+  /* Borders */
+  --ds-border:    #1E2D42;
+  --ds-border-2:  #253650;
+
+  /* Text */
+  --ds-text:      #E8EDF5;
+  --ds-muted:     #7A9AB5;
+  --ds-faint:     #4E6A85;
+
+  /* Accent: institutional navy */
+  --ds-accent:    #1E4D6B;
+  --ds-accent-h:  #235A7D;
+  --ds-accent-lt: #60A5FA;
+
+  /* Teal: trust/success accent */
+  --ds-teal:      #0D9488;
+  --ds-teal-lt:   #2DD4BF;
+
+  /* Semantic */
+  --ds-green:     #34D399;
+  --ds-amber:     #F59E0B;
+  --ds-red:       #F87171;
+  --ds-yellow:    #FCD34D;
+
+  /* Typography */
+  --ds-font:      'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --ds-mono:      'IBM Plex Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --ds-serif:     'Lora', Georgia, 'Times New Roman', serif;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+body {
+  font-family: var(--ds-font) !important;
+  background-color: var(--ds-bg) !important;
+  color: var(--ds-text) !important;
+}
+
+h1, h2, h3 {
+  font-family: var(--ds-serif) !important;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+code, pre, kbd, samp,
+.font-mono, [class*="font-mono"] {
+  font-family: var(--ds-mono) !important;
+}
+
+/* ── Tailwind gray overrides ──────────────────────────────────────────────── */
+.bg-gray-950 { background-color: #080F1C !important; }
+.bg-gray-900 { background-color: #0F1929 !important; }
+.bg-gray-800 { background-color: #162235 !important; }
+.bg-gray-700 { background-color: #1D2D43 !important; }
+.bg-gray-600 { background-color: #253650 !important; }
+
+.border-gray-800 { border-color: #1E2D42 !important; }
+.border-gray-700 { border-color: #253650 !important; }
+.border-gray-600 { border-color: #2D4060 !important; }
+.border-gray-500 { border-color: #3A526A !important; }
+
+.text-gray-100 { color: #E8EDF5 !important; }
+.text-gray-200 { color: #C8D8EE !important; }
+.text-gray-300 { color: #B8C8E0 !important; }
+.text-gray-400 { color: #7A9AB5 !important; }
+.text-gray-500 { color: #4E6A85 !important; }
+.text-gray-600 { color: #354E65 !important; }
+
+.hover\:bg-gray-800:hover { background-color: #162235 !important; }
+.hover\:bg-gray-700:hover { background-color: #1D2D43 !important; }
+.hover\:text-gray-100:hover { color: #E8EDF5 !important; }
+.hover\:text-gray-200:hover { color: #C8D8EE !important; }
+.hover\:text-gray-300:hover { color: #B8C8E0 !important; }
+
+/* ── Indigo → accent navy ─────────────────────────────────────────────────── */
+.bg-indigo-600  { background-color: #1E4D6B !important; }
+.bg-indigo-500  { background-color: #235A7D !important; }
+.bg-indigo-400  { background-color: #2B6CB0 !important; }
+.bg-indigo-950  { background-color: #0A1828 !important; }
+.bg-indigo-900  { background-color: #0D2035 !important; }
+.bg-indigo-800  { background-color: #102840 !important; }
+.bg-indigo-100  { background-color: #EBF4FA !important; }
+
+.hover\:bg-indigo-600:hover { background-color: #1E4D6B !important; }
+.hover\:bg-indigo-500:hover { background-color: #235A7D !important; }
+.hover\:bg-indigo-700:hover { background-color: #174060 !important; }
+
+.text-indigo-400 { color: #60A5FA !important; }
+.text-indigo-300 { color: #93C5FD !important; }
+.text-indigo-500 { color: #3B82F6 !important; }
+.text-indigo-200 { color: #BAE6FD !important; }
+.text-indigo-100 { color: #E0F2FE !important; }
+
+.border-indigo-500  { border-color: #1E4D6B !important; }
+.border-indigo-600  { border-color: #1E4D6B !important; }
+.border-indigo-700  { border-color: #174060 !important; }
+.border-indigo-800  { border-color: #0F2535 !important; }
+
+.ring-indigo-500 { --tw-ring-color: #1E4D6B !important; }
+.focus\:ring-indigo-500:focus { --tw-ring-color: #1E4D6B !important; }
+
+.hover\:text-indigo-300:hover { color: #93C5FD !important; }
+.hover\:text-indigo-400:hover { color: #60A5FA !important; }
+
+/* ── Violet / purple → teal ──────────────────────────────────────────────── */
+.bg-violet-600  { background-color: #0D9488 !important; }
+.text-violet-400 { color: #2DD4BF !important; }
+
+/* ── Semantic status — slightly desaturated but still readable ────────────── */
+.bg-green-900   { background-color: #052E1A !important; }
+.bg-green-950   { background-color: #031A10 !important; }
+.text-green-400 { color: #34D399 !important; }
+.text-green-300 { color: #6EE7B7 !important; }
+.border-green-700 { border-color: #065F46 !important; }
+.border-green-600 { border-color: #059669 !important; }
+
+.bg-red-900     { background-color: #1C0A0A !important; }
+.bg-red-950     { background-color: #130606 !important; }
+.text-red-400   { color: #F87171 !important; }
+.text-red-300   { color: #FCA5A5 !important; }
+.text-red-200   { color: #FECACA !important; }
+.border-red-700 { border-color: #B91C1C !important; }
+.border-red-800 { border-color: #991B1B !important; }
+.border-red-600 { border-color: #DC2626 !important; }
+
+.bg-amber-900   { background-color: #1C1000 !important; }
+.bg-amber-800   { background-color: #261500 !important; }
+.text-amber-300 { color: #FCD34D !important; }
+.text-amber-500 { color: #F59E0B !important; }
+.text-amber-400 { color: #FBBF24 !important; }
+.border-amber-700 { border-color: #B45309 !important; }
+
+.bg-yellow-900  { background-color: #1C1500 !important; }
+.text-yellow-300 { color: #FDE68A !important; }
+.text-yellow-400 { color: #FCD34D !important; }
+
+.bg-blue-900    { background-color: #0A1828 !important; }
+.text-blue-400  { color: #60A5FA !important; }
+.text-blue-300  { color: #93C5FD !important; }
+
+/* ── Border radius — sharp, institutional ─────────────────────────────────── */
+.rounded-2xl  { border-radius: 2px !important; }
+.rounded-xl   { border-radius: 2px !important; }
+.rounded-lg   { border-radius: 2px !important; }
+.rounded-md   { border-radius: 2px !important; }
+.rounded      { border-radius: 2px !important; }
+/* keep full circle for status dots and avatars */
+/* .rounded-full stays as-is */
+
+/* ── Inputs / textareas ───────────────────────────────────────────────────── */
+input, textarea, select {
+  font-family: var(--ds-font) !important;
+}
+.bg-gray-900 input,
+.bg-gray-800 input,
+input.bg-gray-900,
+input.bg-gray-800,
+input[class*="bg-gray"] {
+  background-color: var(--ds-surface) !important;
+  border-color: var(--ds-border) !important;
+  color: var(--ds-text) !important;
+}
+
+/* ── Dividers ─────────────────────────────────────────────────────────────── */
+.divide-gray-800 > * + * { border-color: #1E2D42 !important; }
+.divide-gray-700 > * + * { border-color: #253650 !important; }
+
+/* ── Shadow ───────────────────────────────────────────────────────────────── */
+.shadow-xl, .shadow-lg, .shadow-md, .shadow {
+  box-shadow: 0 1px 3px rgba(0,0,0,.4) !important;
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--ds-bg); }
+::-webkit-scrollbar-thumb { background: var(--ds-border-2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ds-faint); }

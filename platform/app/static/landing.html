@@ -1,0 +1,638 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="antcrew coordinates specialised AI agents alongside your dev team. Every agent decision is traced and replayable.">
+<title>antcrew — AI agents for dev teams, fully traceable</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;0,700;1,600&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --ground:      #080F1C;
+  --surface:     #0F1929;
+  --surface-2:   #162235;
+  --border:      #1E2D42;
+  --border-mid:  #253650;
+  --accent:      #1E4D6B;
+  --accent-dim:  #174060;
+  --accent-glow: #60A5FA;
+  --teal:        #0D9488;
+  --teal-lt:     #2DD4BF;
+  --amber:       #F59E0B;
+  --text:        #E8EDF5;
+  --text-dim:    #7A9AB5;
+  --text-bright: #F0F6FF;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  background: var(--ground);
+  color: var(--text);
+  line-height: 1.6;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* ── Nav ── */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  border-bottom: 1px solid var(--border);
+  background: rgba(8,15,28,0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.nav-inner {
+  display: flex; align-items: center; gap: 32px;
+  padding: 14px 32px; max-width: 1120px; margin: 0 auto;
+}
+.nav-logo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700; font-size: 0.9375rem;
+  color: var(--teal-lt); text-decoration: none;
+  letter-spacing: -0.01em; flex-shrink: 0;
+}
+.nav-links { display: flex; gap: 24px; list-style: none; }
+.nav-links a {
+  color: var(--text-dim); text-decoration: none;
+  font-size: 0.875rem; transition: color 0.15s;
+}
+.nav-links a:hover { color: var(--text-bright); }
+.nav-end { margin-left: auto; }
+.btn-ghost {
+  display: inline-flex; align-items: center;
+  padding: 8px 18px; border-radius: 2px;
+  font-size: 0.875rem; font-weight: 500;
+  text-decoration: none; cursor: pointer;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border-mid); transition: all 0.15s;
+}
+.btn-ghost:hover { color: var(--text-bright); border-color: var(--accent); }
+.btn-cta {
+  display: inline-flex; align-items: center;
+  padding: 8px 18px; border-radius: 2px;
+  font-size: 0.875rem; font-weight: 600;
+  text-decoration: none;
+  background: var(--teal-lt); color: #080F1C;
+  border: none; transition: opacity 0.15s;
+}
+.btn-cta:hover { opacity: 0.88; }
+
+/* ── Hero ── */
+.hero {
+  padding: 88px 32px 80px;
+  border-bottom: 1px solid var(--border);
+  position: relative; overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute; top: -120px; left: -80px;
+  width: 700px; height: 700px;
+  background: radial-gradient(ellipse at center, rgba(13,148,136,0.07) 0%, transparent 65%);
+  pointer-events: none;
+}
+.hero-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 72px; align-items: center;
+  max-width: 1120px; margin: 0 auto;
+  position: relative; z-index: 1;
+}
+.hero-eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6875rem; letter-spacing: 0.12em;
+  color: var(--teal-lt); text-transform: uppercase;
+  margin-bottom: 22px;
+  display: flex; align-items: center; gap: 10px;
+}
+.hero-eyebrow::before {
+  content: ''; display: inline-block;
+  width: 20px; height: 1px;
+  background: var(--teal-lt); flex-shrink: 0;
+}
+.hero-headline {
+  font-size: clamp(2.25rem, 3.75vw, 3.375rem);
+  font-family: "Lora", Georgia, serif; font-weight: 800; line-height: 1.06;
+  letter-spacing: -0.045em;
+  color: var(--text-bright);
+  text-wrap: balance; margin-bottom: 22px;
+}
+.hero-headline em { font-style: normal; color: var(--teal-lt); }
+.hero-sub {
+  font-size: 1rem; color: var(--text-dim);
+  line-height: 1.72; max-width: 46ch; margin-bottom: 36px;
+}
+.wl-form { display: flex; flex-direction: column; gap: 12px; }
+.wl-row { display: flex; gap: 8px; }
+.wl-email {
+  flex: 1; min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: 2px;
+  color: var(--text-bright);
+  font-size: 0.9375rem; font-family: inherit;
+  padding: 11px 16px; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.wl-email::placeholder { color: var(--text-dim); }
+.wl-email:focus {
+  border-color: var(--teal-lt);
+  box-shadow: 0 0 0 3px rgba(129,140,248,0.12);
+}
+.wl-submit {
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 2px;
+  padding: 11px 22px;
+  font-size: 0.9375rem; font-weight: 600; font-family: inherit;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.15s; flex-shrink: 0;
+}
+.wl-submit:hover:not(:disabled) { background: var(--teal-lt); }
+.wl-submit:disabled { opacity: 0.55; cursor: wait; }
+.wl-note { font-size: 0.8125rem; color: var(--text-dim); }
+.wl-success {
+  display: none;
+  background: rgba(52,211,153,0.07);
+  border: 1px solid rgba(52,211,153,0.22);
+  border-radius: 6px;
+  padding: 16px 20px;
+  color: var(--teal);
+  font-size: 0.9375rem; line-height: 1.5;
+}
+.wl-success.show { display: block; }
+.wl-error { font-size: 0.8125rem; color: #f87171; display: none; }
+.wl-error.show { display: block; }
+
+/* ── Trace window ── */
+.trace-window {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+  font-family: "IBM Plex Mono", "SF Mono", monospace;
+  font-size: 0.6875rem;
+  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 0 0 1px rgba(30,77,107,0.12);
+}
+.trace-bar {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.trace-dots { display: flex; gap: 5px; }
+.trace-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-mid); }
+.trace-title { flex: 1; color: var(--text-dim); font-size: 0.6875rem; }
+.trace-badge {
+  font-size: 0.6rem; letter-spacing: 0.1em; padding: 2px 8px;
+  border-radius: 3px; font-weight: 700; text-transform: uppercase;
+  transition: background 0.4s, color 0.4s;
+}
+.badge-live   { background: rgba(52,211,153,0.12); color: var(--teal); }
+.badge-replay { background: rgba(251,191,36,0.12);  color: var(--amber); }
+
+.trace-body {
+  padding: 10px 0;
+  min-height: 296px; max-height: 296px;
+  overflow-y: auto; overflow-x: hidden;
+}
+.trace-body::-webkit-scrollbar { width: 4px; }
+.trace-body::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 2px; }
+
+.tl {
+  display: flex; align-items: baseline;
+  padding: 2.5px 14px;
+  opacity: 0; animation: fadein 0.18s ease forwards;
+}
+@keyframes fadein { to { opacity: 1; } }
+.tl-ts   { color: var(--text-dim); flex-shrink: 0; width: 80px; }
+.tl-tag  { flex-shrink: 0; width: 108px; font-weight: 600; padding-left: 8px; }
+.tl-msg  { color: var(--text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 8px; }
+.tl-divider { padding: 6px 14px; opacity: 0.4; display: flex; align-items: center; gap: 8px; }
+.tl-divider-line { flex: 1; height: 1px; background: var(--border); }
+.tl-divider-label { font-size: 0.625rem; color: var(--amber); letter-spacing: 0.08em; }
+
+.tc-pipeline { color: var(--teal-lt); }
+.tc-agent    { color: var(--text); }
+.tc-artifact { color: var(--amber); }
+.tc-gate     { color: var(--teal); }
+
+/* ── Features ── */
+.features { padding: 88px 32px; border-bottom: 1px solid var(--border); }
+.section-header { max-width: 1120px; margin: 0 auto 52px; }
+.section-eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6875rem; letter-spacing: 0.12em;
+  color: var(--teal-lt); text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.section-eyebrow::before { content:''; display:inline-block; width:20px; height:1px; background:var(--teal-lt); }
+.section-title {
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
+  font-weight: 700; letter-spacing: -0.03em;
+  color: var(--text-bright); text-wrap: balance; margin-bottom: 10px;
+}
+.section-sub { font-size: 1rem; color: var(--text-dim); line-height: 1.65; max-width: 50ch; }
+
+.feats-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  max-width: 1120px; margin: 0 auto;
+}
+.feat { background: var(--surface); padding: 32px 28px; transition: background 0.2s; }
+.feat:hover { background: var(--surface-2); }
+.feat-icon { width: 30px; height: 30px; margin-bottom: 18px; color: var(--teal-lt); }
+.feat-title { font-size: 0.9375rem; font-weight: 600; color: var(--text-bright); margin-bottom: 8px; letter-spacing: -0.01em; }
+.feat-body  { font-size: 0.875rem; color: var(--text-dim); line-height: 1.65; }
+
+/* ── Compliance Pack ── */
+.compliance {
+  padding: 88px 32px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--teal) 5%, transparent) 0%, transparent 60%);
+}
+.compliance-inner {
+  max-width: 1120px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 72px; align-items: start;
+}
+.compliance-link {
+  display: inline-block; margin-top: 24px;
+  font-size: 0.875rem; font-weight: 600; color: var(--teal);
+  text-decoration: none; transition: color 0.15s;
+}
+.compliance-link:hover { color: var(--text-bright); }
+.compliance-items { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 28px; }
+.compliance-item { display: flex; gap: 16px; }
+.ci-icon { flex-shrink: 0; width: 22px; height: 22px; color: var(--teal); margin-top: 2px; }
+.ci-title { font-size: 0.9375rem; font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
+.ci-body  { font-size: 0.875rem; color: var(--text-dim); line-height: 1.6; }
+
+/* ── Footer ── */
+footer { border-top: 1px solid var(--border); padding: 28px 32px; }
+.foot-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 1120px; margin: 0 auto; flex-wrap: wrap; gap: 16px;
+}
+.foot-brand { font-family: "IBM Plex Mono", monospace; font-weight: 700; font-size: 0.875rem; color: var(--teal-lt); }
+.foot-links { display: flex; gap: 20px; }
+.foot-links a { font-size: 0.8125rem; color: var(--text-dim); text-decoration: none; transition: color 0.15s; }
+.foot-links a:hover { color: var(--text-bright); }
+
+/* ── Responsive ── */
+@media (max-width: 860px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+  .feats-grid { grid-template-columns: 1fr 1fr; }
+  .compliance-inner { grid-template-columns: 1fr; gap: 40px; }
+  .nav-links { display: none; }
+}
+@media (max-width: 520px) {
+  .hero { padding: 56px 20px 52px; }
+  .features { padding: 60px 20px; }
+  .compliance { padding: 60px 20px; }
+  .feats-grid { grid-template-columns: 1fr; }
+  .wl-row { flex-direction: column; }
+  .wl-submit { width: 100%; }
+  footer { padding: 24px 20px; }
+}
+</style>
+<script>
+(function () {
+  try {
+    var ref = document.referrer;
+    if (!ref || new URL(ref).hostname !== location.hostname) {
+      fetch('/auth/me', { credentials: 'same-origin' })
+        .then(function (r) { if (r.ok) window.location.replace('/dashboard'); })
+        .catch(function () {});
+    }
+  } catch (_) {}
+})();
+</script>
+</head>
+<body>
+
+<nav aria-label="main navigation">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo" aria-label="antcrew home">antcrew</a>
+    <ul class="nav-links" role="list">
+      <li><a href="https://docs.antcrew.org">Docs</a></li>
+      <li><a href="https://github.com/iagop03/antcrew" rel="noopener noreferrer">GitHub</a></li>
+    </ul>
+    <div class="nav-end" style="display:flex;align-items:center;gap:10px;">
+      <a href="/login" class="btn-ghost">Log in</a>
+      <a href="/onboard" class="btn-cta">Get started</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <section class="hero" aria-labelledby="hero-heading">
+    <div class="hero-grid">
+
+      <div class="hero-text">
+        <div class="hero-eyebrow" aria-hidden="true">Early access</div>
+        <h1 class="hero-headline" id="hero-heading">
+          Your dev team,<br>
+          extended by <em>AI agents</em>.<br>
+          Every step logged.
+        </h1>
+        <p class="hero-sub">
+          antcrew coordinates specialised agents — Product, Architect, Backend,
+          Frontend, QA — alongside your team. Every agent decision is traced.
+          Every run is replayable.
+        </p>
+
+        <form class="wl-form" id="wl-form" novalidate aria-label="Join waitlist">
+          <div class="wl-row">
+            <input
+              type="email"
+              id="wl-email"
+              class="wl-email"
+              placeholder="you@company.com"
+              autocomplete="email"
+              required
+              aria-label="Work email"
+              aria-describedby="wl-note"
+            >
+            <button type="submit" class="wl-submit" id="wl-btn">
+              Join waitlist
+            </button>
+          </div>
+          <p class="wl-note" id="wl-note">No spam. Early access notifications only.</p>
+          <p class="wl-error" id="wl-error" role="alert" aria-live="polite"></p>
+        </form>
+
+        <div class="wl-success" id="wl-success" role="status" aria-live="polite">
+          You're on the list — we'll reach out as soon as early access opens.
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="trace-window" role="img" aria-label="Live trace log animation">
+          <div class="trace-bar">
+            <div class="trace-dots">
+              <div class="trace-dot"></div>
+              <div class="trace-dot"></div>
+              <div class="trace-dot"></div>
+            </div>
+            <span class="trace-title">antcrew / tracelog</span>
+            <span class="trace-badge badge-live" id="trace-badge">● LIVE</span>
+          </div>
+          <div class="trace-body" id="trace-body"></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="features" aria-labelledby="features-heading">
+    <div class="section-header">
+      <div class="section-eyebrow" aria-hidden="true">Why antcrew</div>
+      <h2 class="section-title" id="features-heading">
+        Built for teams that need to trust what their agents do
+      </h2>
+      <p class="section-sub">
+        Not a chatbot wrapper. A typed, traceable pipeline of specialised agents
+        that integrates into your workflow without losing visibility or control.
+      </p>
+    </div>
+
+    <div class="feats-grid" role="list">
+      <article class="feat" role="listitem">
+        <svg class="feat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="feat-title">Typed agent contracts</div>
+        <div class="feat-body">Agents communicate through Pydantic-validated schemas. A malformed PRD is rejected at the gate — not at runtime, three agents later.</div>
+      </article>
+
+      <article class="feat" role="listitem">
+        <svg class="feat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="feat-title">TraceLog &amp; Replay</div>
+        <div class="feat-body">Every run writes a structured audit log. Replay any run exactly — same state, same inputs, same agent decisions — to debug a failure or demonstrate compliance.</div>
+      </article>
+
+      <article class="feat" role="listitem">
+        <svg class="feat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="feat-title">Your infra, your keys</div>
+        <div class="feat-body">BYOK with OpenAI, Anthropic, Azure, or Ollama. Or run fully self-hosted. Code and context never leave your environment — required for fintech, health, and European teams.</div>
+      </article>
+
+      <article class="feat" role="listitem">
+        <svg class="feat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="feat-title">Human in the loop</div>
+        <div class="feat-body">Define approval checkpoints at any stage. Agents pause and route for human review before committing changes. You keep the final word on what ships.</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="compliance" aria-labelledby="compliance-heading">
+    <div class="compliance-inner">
+      <div class="compliance-text">
+        <div class="section-eyebrow" aria-hidden="true">Compliance Pack</div>
+        <h2 class="section-title" id="compliance-heading">
+          Ready for regulated industries
+        </h2>
+        <p class="section-sub">
+          Healthcare, finance, and legal teams need more than logs. antcrew ships
+          with run attestation, governance hashes, HMAC signing, and BYOK data
+          residency out of the box.
+        </p>
+        <a href="/docs/platform/compliance" class="compliance-link">
+          Read the compliance guide →
+        </a>
+      </div>
+      <ul class="compliance-items" role="list">
+        <li class="compliance-item">
+          <svg class="ci-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.403 12.652a3 3 0 000-5.304 3 3 0 00-3.75-3.751 3 3 0 00-5.305 0 3 3 0 00-3.751 3.75 3 3 0 000 5.305 3 3 0 003.75 3.751 3 3 0 005.305 0 3 3 0 003.751-3.75zm-2.546-4.46a.75.75 0 00-1.214-.883l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/>
+          </svg>
+          <div>
+            <div class="ci-title">Run attestation</div>
+            <div class="ci-body">Cryptographically signed provenance for every run. SHA-256 + HMAC. Verifiable without platform access.</div>
+          </div>
+        </li>
+        <li class="compliance-item">
+          <svg class="ci-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.403 12.652a3 3 0 000-5.304 3 3 0 00-3.75-3.751 3 3 0 00-5.305 0 3 3 0 00-3.751 3.75 3 3 0 000 5.305 3 3 0 003.75 3.751 3 3 0 005.305 0 3 3 0 003.751-3.75zm-2.546-4.46a.75.75 0 00-1.214-.883l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/>
+          </svg>
+          <div>
+            <div class="ci-title">Governance hashes</div>
+            <div class="ci-body">Detect prompt drift across runs. Prove that the production agent is the reviewed, approved version.</div>
+          </div>
+        </li>
+        <li class="compliance-item">
+          <svg class="ci-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.403 12.652a3 3 0 000-5.304 3 3 0 00-3.75-3.751 3 3 0 00-5.305 0 3 3 0 00-3.751 3.75 3 3 0 000 5.305 3 3 0 003.75 3.751 3 3 0 005.305 0 3 3 0 003.751-3.75zm-2.546-4.46a.75.75 0 00-1.214-.883l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/>
+          </svg>
+          <div>
+            <div class="ci-title">BYOK &amp; data residency</div>
+            <div class="ci-body">Your keys, your region, your infra. Data never leaves your environment. Required for GDPR, HIPAA, SOC 2.</div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="foot-inner">
+    <span class="foot-brand">antcrew</span>
+    <nav class="foot-links" aria-label="footer navigation">
+      <a href="https://docs.antcrew.org">Docs</a>
+      <a href="https://github.com/iagop03/antcrew" rel="noopener noreferrer">GitHub</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/tos">Terms</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  var form      = document.getElementById('wl-form');
+  var emailEl   = document.getElementById('wl-email');
+  var btn       = document.getElementById('wl-btn');
+  var successEl = document.getElementById('wl-success');
+  var errorEl   = document.getElementById('wl-error');
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    errorEl.classList.remove('show');
+    var email = emailEl.value.trim();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) {
+      errorEl.textContent = 'Please enter a valid email address.';
+      errorEl.classList.add('show');
+      emailEl.focus();
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Joining…';
+    try {
+      var res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email }),
+      });
+      if (res.ok) {
+        showSuccess();
+      } else {
+        var data = await res.json().catch(function () { return {}; });
+        throw new Error(data.detail || 'Server error');
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Join waitlist';
+      errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+      errorEl.classList.add('show');
+    }
+  });
+
+  function showSuccess() {
+    form.style.display = 'none';
+    successEl.classList.add('show');
+  }
+
+  // ── Animated trace log ──
+  var RUNS = [
+    { type: 'pipeline', tag: 'pipeline.start', msg: 'request="Add JWT auth to REST API"' },
+    { type: 'agent',    tag: 'agent.start',    msg: 'agent="product_owner"' },
+    { type: 'artifact', tag: 'artifact.write', msg: 'kind=prd  bytes=1847  ✓ schema' },
+    { type: 'agent',    tag: 'agent.end',      msg: 'agent="product_owner"  dur=1.40s' },
+    { type: 'agent',    tag: 'agent.start',    msg: 'agent="architect"' },
+    { type: 'artifact', tag: 'artifact.write', msg: 'kind=tech_plan  bytes=3104  ✓ schema' },
+    { type: 'agent',    tag: 'agent.end',      msg: 'agent="architect"  dur=2.79s' },
+    { type: 'agent',    tag: 'agent.start',    msg: 'agent="backend_dev"' },
+    { type: 'artifact', tag: 'artifact.write', msg: 'kind=code  files=4  lines=287' },
+    { type: 'agent',    tag: 'agent.end',      msg: 'agent="backend_dev"  dur=6.84s' },
+    { type: 'agent',    tag: 'agent.start',    msg: 'agent="qa_engineer"' },
+    { type: 'artifact', tag: 'artifact.write', msg: 'kind=tests  suites=3  cases=14' },
+    { type: 'gate',     tag: 'gate.pass',      msg: 'gate=all_tests_green  ✓' },
+    { type: 'pipeline', tag: 'pipeline.end',   msg: 'status=success  total=11.64s' },
+  ];
+
+  var TS = [
+    '14:23:07.041','14:23:07.518','14:23:08.921','14:23:08.923',
+    '14:23:08.926','14:23:11.704','14:23:11.706','14:23:11.709',
+    '14:23:18.553','14:23:18.555','14:23:18.558','14:23:22.014',
+    '14:23:22.187','14:23:22.189',
+  ];
+
+  var DELAYS = [0, 300, 900, 1050, 1300, 2700, 2850, 3100, 6200, 6350, 6600, 7900, 8150, 8400];
+
+  var container = document.getElementById('trace-body');
+  var badge     = document.getElementById('trace-badge');
+  var timers    = [];
+
+  function clearTimers() {
+    timers.forEach(function (t) { clearTimeout(t); });
+    timers = [];
+  }
+
+  var TYPE_CLS = { pipeline: 'tc-pipeline', agent: 'tc-agent', artifact: 'tc-artifact', gate: 'tc-gate' };
+
+  function appendLine(ts, tag, msg, cls) {
+    var el = document.createElement('div');
+    el.className = 'tl';
+    el.innerHTML =
+      '<span class="tl-ts">' + ts + '</span>' +
+      '<span class="tl-tag ' + cls + '">' + tag + '</span>' +
+      '<span class="tl-msg">' + msg + '</span>';
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function appendDivider() {
+    var el = document.createElement('div');
+    el.className = 'tl-divider';
+    el.innerHTML =
+      '<div class="tl-divider-line"></div>' +
+      '<span class="tl-divider-label">replaying from checkpoint 0</span>' +
+      '<div class="tl-divider-line"></div>';
+    container.appendChild(el);
+  }
+
+  function runAnimation(isReplay) {
+    clearTimers();
+    container.innerHTML = '';
+
+    if (isReplay) {
+      badge.textContent = '▷ REPLAY';
+      badge.className = 'trace-badge badge-replay';
+      appendDivider();
+    } else {
+      badge.textContent = '● LIVE';
+      badge.className = 'trace-badge badge-live';
+    }
+
+    RUNS.forEach(function (line, i) {
+      var t = setTimeout(function () {
+        appendLine(TS[i], line.tag, line.msg, TYPE_CLS[line.type] || '');
+        if (i === RUNS.length - 1) {
+          var t2 = setTimeout(function () { runAnimation(!isReplay); }, 3000);
+          timers.push(t2);
+        }
+      }, DELAYS[i]);
+      timers.push(t);
+    });
+  }
+
+  var startT = setTimeout(function () { runAnimation(false); }, 700);
+  timers.push(startT);
+})();
+</script>
+
+</body>
+</html>
+

@@ -1,0 +1,307 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TÃ©rminos de uso â€” antcrew</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* FILL IN: replace [EMPRESA] con el nombre legal de tu empresa a lo largo de este documento */
+:root {
+  --bg:        #080F1C;
+  --surface:   #0F1929;
+  --border:    #1E2D42;
+  --text:      #E8EDF5;
+  --muted:     #7A9AB5;
+  --subtle:    #4E6A85;
+  --accent:    #1E4D6B;
+  --accent-h:  #2DD4BF;
+  --mono: 'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
+  --sans: 'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.75;min-height:100vh}
+a{color:var(--accent-h);text-decoration:none}
+a:hover{text-decoration:underline}
+
+nav{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1.25rem 2rem;border-bottom:1px solid var(--border);
+}
+.logo{font-family:var(--mono);font-weight:700;font-size:1.1rem;color:var(--accent-h)}
+.nav-back{font-size:.875rem;color:var(--muted);transition:color .15s}
+.nav-back:hover{color:var(--text);text-decoration:none}
+
+.doc{max-width:46rem;margin:0 auto;padding:4rem 1.5rem 6rem}
+.doc-meta{margin-bottom:3.5rem}
+.doc-label{font-family:var(--mono);font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;color:var(--subtle);margin-bottom:.75rem}
+h1{font-family:'Lora',Georgia,serif;font-size:1.875rem;font-weight:700;letter-spacing:-.025em;margin-bottom:.75rem;text-wrap:balance}
+.doc-date{font-size:.875rem;color:var(--subtle)}
+
+.doc-notice{
+  background:rgba(13,148,136,.08);border:1px solid rgba(13,148,136,.2);
+  border-radius:2px;padding:1rem 1.25rem;margin-bottom:2.5rem;
+  font-size:.875rem;color:var(--muted);line-height:1.6;
+}
+.doc-notice strong{color:var(--text)}
+
+h2{
+  font-family:'Lora',Georgia,serif;
+  font-size:1.125rem;font-weight:600;letter-spacing:-.015em;
+  margin-top:3rem;margin-bottom:.875rem;color:var(--text);
+}
+h2:first-of-type{margin-top:0}
+p{color:var(--muted);margin-bottom:1rem;font-size:.9375rem}
+ul,ol{color:var(--muted);padding-left:1.5rem;margin-bottom:1rem;font-size:.9375rem}
+li{margin-bottom:.375rem;line-height:1.65}
+li+li{margin-top:.25rem}
+strong{color:var(--text);font-weight:500}
+code{font-family:var(--mono);font-size:.825rem;background:rgba(22,34,53,.8);padding:.1rem .35rem;border-radius:2px;color:var(--accent-h)}
+
+.section-divider{border:none;border-top:1px solid var(--border);margin:2.5rem 0 0}
+
+footer{border-top:1px solid var(--border);padding:1.75rem 1.5rem}
+.footer-inner{max-width:46rem;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}
+.footer-brand{font-family:var(--mono);font-size:.85rem;color:var(--subtle)}
+.footer-links{display:flex;gap:1.25rem}
+.footer-link{font-size:.8125rem;color:var(--subtle)}
+.footer-link:hover{color:var(--muted);text-decoration:none}
+</style>
+    <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+  </head>
+<body>
+
+<nav>
+  <a href="/" class="logo">antcrew</a>
+  <a href="/static/pricing.html" class="nav-back">â† Volver</a>
+</nav>
+
+<div class="doc">
+  <div class="doc-meta">
+    <div class="doc-label">Legal</div>
+    <h1>TÃ©rminos de uso</h1>
+    <!-- FILL IN: update with the actual effective date -->
+    <p class="doc-date">Vigentes desde: [FECHA DE ENTRADA EN VIGOR]</p>
+  </div>
+
+  <div class="doc-notice">
+    <strong>Nota:</strong> Este documento es una plantilla de partida. Antes de publicarlo,
+    revÃ­salo con un profesional legal, especialmente las clÃ¡usulas relativas al tratamiento
+    de cÃ³digo fuente mediante IA y la limitaciÃ³n de responsabilidad.
+  </div>
+
+  <h2>1. Objeto y aceptaciÃ³n</h2>
+  <p>
+    <!-- FILL IN: replace [EMPRESA] with your legal company name -->
+    Los presentes TÃ©rminos de Uso (en adelante, Â«TÃ©rminosÂ») regulan el acceso y uso del
+    servicio <strong>antcrew</strong>, titularidad de <strong>[EMPRESA]</strong>
+    (en adelante, Â«antcrewÂ», Â«nosotrosÂ» o Â«el ProveedorÂ»).
+  </p>
+  <p>
+    Al registrar una cuenta, crear un workspace o utilizar cualquier funcionalidad de antcrew,
+    el usuario (en adelante, Â«el ClienteÂ») acepta Ã­ntegramente estos TÃ©rminos.
+    Si actÃºas en nombre de una empresa u organizaciÃ³n, declaras tener autorizaciÃ³n para vincularla.
+  </p>
+
+  <hr class="section-divider">
+  <h2>2. DescripciÃ³n del servicio</h2>
+  <p>
+    antcrew es una plataforma de revisiÃ³n de cÃ³digo automatizada mediante agentes de inteligencia
+    artificial con capacidad de supervisiÃ³n humana en el bucle (<em>human-in-the-loop</em>, HITL).
+    El servicio permite:
+  </p>
+  <ul>
+    <li>Enviar <em>runs</em> de revisiÃ³n de cÃ³digo a travÃ©s de la API REST.</li>
+    <li>Recibir anÃ¡lisis, detecciÃ³n de problemas y propuestas de cambio generadas por modelos de lenguaje.</li>
+    <li>Aprobar, rechazar o escalar decisiones de los agentes mediante Slack, Telegram o API.</li>
+    <li>Gestionar mÃºltiples workspaces con presupuestos y claves de API independientes.</li>
+    <li>Consultar el historial de runs y decisiones durante 30 dÃ­as desde su ejecuciÃ³n.</li>
+  </ul>
+  <p>antcrew puede aÃ±adir, modificar o retirar funcionalidades del servicio con aviso previo razonable.</p>
+
+  <hr class="section-divider">
+  <h2>3. Uso aceptable</h2>
+  <p>El Cliente se compromete a utilizar antcrew Ãºnicamente con fines legÃ­timos de desarrollo de software.
+  Queda expresamente prohibido:</p>
+  <ul>
+    <li>Enviar contenido que infrinja derechos de propiedad intelectual de terceros.</li>
+    <li>Utilizar el servicio para procesar datos personales de terceros sin el consentimiento legalmente requerido.</li>
+    <li>Intentar eludir los controles de seguridad, presupuesto o autenticaciÃ³n del servicio.</li>
+    <li>Usar el servicio para generar cÃ³digo malicioso, exploits u otro contenido daÃ±ino.</li>
+    <li>Realizar llamadas automatizadas de alta frecuencia con el propÃ³sito de degradar el servicio para otros clientes.</li>
+    <li>Revender o sublicenciar el acceso a antcrew sin autorizaciÃ³n expresa por escrito del Proveedor.</li>
+  </ul>
+
+  <hr class="section-divider">
+  <h2>4. Cuenta y credenciales</h2>
+  <p>
+    El Cliente es el Ãºnico responsable de la seguridad de sus claves de API (<code>X-Api-Key</code>)
+    y de las acciones realizadas con ellas. En caso de pÃ©rdida o compromiso de una clave,
+    el Cliente debe revocarla de inmediato desde el panel de control.
+  </p>
+  <p>
+    antcrew no puede recuperar el texto en claro de una clave de API una vez generada.
+    Cada workspace puede tener mÃºltiples claves con distintos roles (<code>admin</code>,
+    <code>write</code>, <code>reviewer</code>).
+  </p>
+
+  <hr class="section-divider">
+  <h2>5. FacturaciÃ³n y pago</h2>
+  <p>
+    antcrew funciona bajo un modelo de <strong>pago por uso</strong>. El Cliente paga el coste
+    real de los tokens LLM consumidos por sus runs mÃ¡s una tarifa de servicio aplicada por
+    el Proveedor. No existe cuota mensual fija, mÃ­nimo de gasto ni perÃ­odo mÃ­nimo de permanencia.
+  </p>
+  <p>
+    El perÃ­odo de prueba (<em>trial</em>) permite el uso completo del servicio durante el nÃºmero
+    de dÃ­as indicado en el momento del registro, sin cargo alguno y sin necesidad de introducir
+    un mÃ©todo de pago. Al finalizar el trial, el acceso queda suspendido hasta que el Cliente
+    aÃ±ada un mÃ©todo de pago vÃ¡lido.
+  </p>
+  <p>
+    El Proveedor utiliza <strong>Stripe</strong> como plataforma de gestiÃ³n de pagos.
+    Los datos de tarjeta son procesados Ã­ntegramente por Stripe y nunca son almacenados
+    por antcrew. El Cliente puede establecer un presupuesto mÃ¡ximo (<code>budget_usd</code>)
+    por workspace; al alcanzarlo, los nuevos runs quedan bloqueados automÃ¡ticamente.
+  </p>
+  <p>
+    Las facturas se emiten al cierre de cada ciclo de facturaciÃ³n.
+    El Proveedor se reserva el derecho a modificar las tarifas de servicio con un preaviso
+    de al menos 30 dÃ­as comunicado por email.
+  </p>
+
+  <hr class="section-divider">
+  <h2>6. Tratamiento de cÃ³digo fuente mediante IA</h2>
+  <p>
+    <strong>El Cliente es plenamente consciente y acepta expresamente que</strong> los contenidos
+    enviados como parte de los runs (cÃ³digo fuente, mensajes de commit, contexto de repositorio,
+    instrucciones de revisiÃ³n, etc.) son transmitidos a proveedores externos de modelos de
+    lenguaje (actualmente <strong>Anthropic, Inc.</strong> y/u <strong>OpenAI, LLC</strong>)
+    para su procesamiento.
+  </p>
+  <p>
+    El Cliente asume la responsabilidad exclusiva de asegurarse de que el contenido enviado
+    no incluya secretos, contraseÃ±as, tokens de acceso, datos personales sensibles ni
+    informaciÃ³n cuya transmisiÃ³n a terceros estÃ© prohibida por contrato o por ley.
+  </p>
+  <p>
+    antcrew no utiliza el contenido de los runs para entrenar sus propios modelos.
+    Tanto Anthropic como OpenAI declaran explÃ­citamente en sus condiciones de API que
+    <strong>no utilizan los datos enviados vÃ­a API para entrenar sus modelos</strong>
+    de forma predeterminada â€” a diferencia de sus productos de consumo. Esta garantÃ­a
+    es verificable en sus polÃ­ticas de uso de datos respectivas. En cualquier caso,
+    el tratamiento que cada proveedor realiza se rige por sus propios tÃ©rminos de
+    servicio y acuerdos de procesamiento de datos, sobre los que antcrew no tiene control.
+  </p>
+
+  <hr class="section-divider">
+  <h2>7. RetenciÃ³n y eliminaciÃ³n de datos</h2>
+  <p>
+    Los runs y sus resultados se conservan durante <strong>30 dÃ­as</strong> desde la fecha
+    de ejecuciÃ³n, tras lo cual se eliminan automÃ¡ticamente de los sistemas de antcrew.
+    El Cliente puede solicitar la eliminaciÃ³n anticipada de sus datos enviando una
+    <!-- FILL IN: your support email -->
+    solicitud a <a href="mailto:hola@antcrew.dev">hola@antcrew.dev</a>.
+  </p>
+  <p>
+    Los datos de facturaciÃ³n (importes, fechas, referencias de transacciÃ³n Stripe) se conservan
+    durante el perÃ­odo exigido por la normativa fiscal aplicable, con independencia de la baja del servicio.
+  </p>
+
+  <hr class="section-divider">
+  <h2>8. Disponibilidad y nivel de servicio</h2>
+  <p>
+    antcrew se presta en modo Â«tal cualÂ» (<em>as-is</em>), sin garantÃ­a de disponibilidad continua.
+    El Proveedor procurarÃ¡ mantener el servicio operativo, pero no garantiza un SLA especÃ­fico
+    durante el perÃ­odo de early access. Las interrupciones programadas se comunicarÃ¡n con
+    antelaciÃ³n razonable.
+  </p>
+
+  <hr class="section-divider">
+  <h2>9. LimitaciÃ³n de responsabilidad</h2>
+  <p>
+    En la mÃ¡xima medida permitida por la ley aplicable, antcrew no serÃ¡ responsable de:
+  </p>
+  <ul>
+    <li>Errores, omisiones o imprecisiones en los anÃ¡lisis generados por los agentes de IA.</li>
+    <li>PÃ©rdidas econÃ³micas derivadas de decisiones tomadas a partir de los resultados de antcrew.</li>
+    <li>Interrupciones del servicio causadas por terceros (proveedores LLM, infraestructura cloud, Stripe).</li>
+    <li>DaÃ±os indirectos, pÃ©rdida de beneficios o daÃ±os consecuentes de ningÃºn tipo.</li>
+  </ul>
+  <p>
+    La responsabilidad total del Proveedor frente al Cliente, por cualquier causa, estarÃ¡
+    limitada al importe abonado por el Cliente en los tres meses anteriores al hecho causante.
+  </p>
+  <p>
+    <strong>Los anÃ¡lisis generados por antcrew son orientativos.</strong> El Cliente es el
+    Ãºnico responsable de las decisiones de ingenierÃ­a adoptadas en su proyecto.
+  </p>
+
+  <hr class="section-divider">
+  <h2>10. Propiedad intelectual</h2>
+  <p>
+    El cÃ³digo fuente, los modelos, la plataforma y la documentaciÃ³n de antcrew son propiedad
+    del Proveedor o de sus licenciantes. El uso del servicio no otorga al Cliente ninguna
+    licencia sobre ellos mÃ¡s allÃ¡ del acceso operativo descrito en estos TÃ©rminos.
+  </p>
+  <p>
+    El Cliente conserva Ã­ntegramente la propiedad intelectual del cÃ³digo fuente y demÃ¡s
+    contenidos que envÃ­e a antcrew.
+  </p>
+
+  <hr class="section-divider">
+  <h2>11. Vigencia y cancelaciÃ³n</h2>
+  <p>
+    Estos TÃ©rminos entran en vigor en el momento de la creaciÃ³n de la cuenta y permanecen
+    vigentes hasta la cancelaciÃ³n por cualquiera de las partes.
+  </p>
+  <p>
+    El Cliente puede cancelar en cualquier momento desde el panel de control o contactando
+    con el soporte. La cancelaciÃ³n tiene efecto al final del ciclo de facturaciÃ³n en curso.
+    Los datos del Cliente se eliminan conforme al apartado 7.
+  </p>
+  <p>
+    El Proveedor puede cancelar o suspender el acceso del Cliente si detecta un incumplimiento
+    de estos TÃ©rminos, con o sin aviso previo dependiendo de la gravedad del incumplimiento.
+  </p>
+
+  <hr class="section-divider">
+  <h2>12. Modificaciones</h2>
+  <p>
+    El Proveedor puede actualizar estos TÃ©rminos. Los cambios materiales se comunicarÃ¡n
+    al Cliente por email con al menos 15 dÃ­as de antelaciÃ³n. El uso continuado del servicio
+    tras la fecha de entrada en vigor de los nuevos TÃ©rminos constituye aceptaciÃ³n de los mismos.
+  </p>
+
+  <hr class="section-divider">
+  <h2>13. Ley aplicable y jurisdicciÃ³n</h2>
+  <p>
+    <!-- FILL IN: confirm jurisdiction with your legal advisor -->
+    Estos TÃ©rminos se rigen por la ley espaÃ±ola. Las partes se someten, con renuncia expresa
+    a cualquier otro fuero, a los juzgados y tribunales de <strong>[CIUDAD]</strong>.
+  </p>
+  <p>
+    <!-- FILL IN: your contact/legal email -->
+    Para cualquier consulta legal: <a href="mailto:hola@antcrew.dev">hola@antcrew.dev</a>
+  </p>
+</div>
+
+<footer>
+  <div class="footer-inner">
+    <span class="footer-brand">antcrew</span>
+    <div class="footer-links">
+      <a href="/static/pricing.html" class="footer-link">Precios</a>
+      <a href="/static/privacy.html" class="footer-link">Privacidad</a>
+      <a href="https://docs.antcrew.org" target="_blank" rel="noopener" class="footer-link">Docs</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
+

@@ -1,0 +1,1623 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#1E4D6B">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Run detail — antcrew</title>
+<link rel="stylesheet" href="/static/tailwind.css">
+<link rel="stylesheet" href="/static/design.css">
+<script src="/static/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
+  <link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="runDetail()" x-init="init()">
+
+<script src="/static/sidebar.js"></script>
+
+<div class="px-6 py-5">
+  <!-- Breadcrumb -->
+  <div class="text-sm text-gray-500 mb-4">
+    <a href="/runs" class="hover:text-white">Runs</a>
+    <span class="mx-2">/</span>
+    <span class="font-mono" x-text="runId ? runId.slice(0,16) + '…' : '…'"></span>
+  </div>
+
+  <!-- Run header loading skeleton -->
+  <template x-if="loadingRun">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-6 animate-pulse">
+      <div class="h-5 bg-gray-800 rounded w-48 mb-3"></div>
+      <div class="h-4 bg-gray-800 rounded w-96"></div>
+    </div>
+  </template>
+
+  <!-- Run not found -->
+  <template x-if="!loadingRun && !run && runError">
+    <div class="bg-red-950 border border-red-800 rounded-xl p-5 mb-6 text-red-300 text-sm" x-text="runError"></div>
+  </template>
+
+  <!-- Run header -->
+  <template x-if="run">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-6">
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="flex items-center gap-3 mb-2">
+            <span class="font-mono text-sm text-gray-400" x-text="run.run_id"></span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-medium"
+              :class="{
+                'bg-yellow-900/50 text-yellow-300': run.status === 'running',
+                'bg-green-900/50 text-green-300': run.status === 'success',
+                'bg-red-900/50 text-red-300': run.status === 'error',
+                'bg-gray-800 text-gray-400': !['running','success','error'].includes(run.status)
+              }"
+              x-text="run.status"></span>
+            <template x-if="run.status === 'running'">
+              <button @click="cancelRun()"
+                class="text-xs px-2 py-0.5 rounded border border-red-800 text-red-400 hover:bg-red-950 transition">
+                Cancel
+              </button>
+            </template>
+            <template x-if="run.status === 'success'">
+              <a :href="`/runs/${run.run_id}/attestation`"
+                 class="text-xs px-2 py-0.5 rounded border border-emerald-800 text-emerald-400 hover:bg-emerald-950 transition">
+                Attestation ↓
+              </a>
+            </template>
+            <a :href="`/static/studio.html?run_id=${run.run_id}`" target="_blank"
+               class="text-xs px-2 py-0.5 rounded border border-violet-800 text-violet-400 hover:bg-violet-950 transition">
+              Studio ↗
+            </a>
+          </div>
+          <h1 class="text-lg font-semibold text-white" x-text="run.request"></h1>
+          <div class="flex items-center gap-2 mt-1">
+            <p class="text-sm text-indigo-300" x-text="run.team"></p>
+            <template x-if="run.team?.startsWith('pipeline:')">
+              <a :href="'/pipelines'" class="text-xs bg-indigo-950 border border-indigo-800 text-indigo-300 px-2 py-0.5 rounded-full font-mono hover:border-indigo-500 transition">
+                ↗ pipeline
+              </a>
+            </template>
+          </div>
+        </div>
+        <div class="text-right text-sm text-gray-400 space-y-1">
+          <div x-text="run.cost_usd ? '€' + run.cost_usd.toFixed(4) : '—'"></div>
+          <template x-if="budget && budget.budget_usd != null">
+            <div class="text-xs flex items-center justify-end gap-1">
+              <span :class="budget.exhausted ? 'text-red-400' : (budget.remaining_usd / budget.budget_usd < 0.15 ? 'text-yellow-400' : 'text-gray-500')">
+                <span x-show="budget.exhausted">Budget exhausted</span>
+                <span x-show="!budget.exhausted" x-text="'€' + budget.remaining_usd.toFixed(2) + ' left'"></span>
+              </span>
+              <span class="text-gray-700 font-mono" x-text="'/ $' + budget.budget_usd.toFixed(2)"></span>
+            </div>
+          </template>
+          <div class="text-xs" x-text="run.duration_s ? run.duration_s.toFixed(0) + 's' : ''"></div>
+          <template x-if="totalCacheRead + totalCacheWrite > 0">
+            <div class="text-xs text-blue-400"
+                 x-text="'↓' + totalCacheRead.toLocaleString() + 'r ↑' + totalCacheWrite.toLocaleString() + 'w cache'"></div>
+          </template>
+          <div class="text-xs" x-text="formatDate(run.created_at)"></div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <div class="grid grid-cols-3 gap-6">
+    <!-- Events / Activity tabbed panel -->
+    <div class="col-span-2">
+
+      <!-- Tab bar -->
+      <div class="flex items-center gap-0.5 mb-4 border-b border-gray-800">
+        <button @click="activeTab = 'events'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2"
+          :class="activeTab === 'events'
+            ? 'border-indigo-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Events
+          <span class="text-xs text-gray-600 ml-0.5" x-text="'(' + events.length + ')'"></span>
+        </button>
+        <button @click="if (!activity.length && !loadingActivity) loadActivity(); activeTab = 'activity'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2"
+          :class="activeTab === 'activity'
+            ? 'border-indigo-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Activity
+          <template x-if="activity.length > 0">
+            <span class="text-xs text-gray-600 ml-0.5" x-text="'(' + activity.length + ')'"></span>
+          </template>
+        </button>
+        <button @click="activeTab = 'trace'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2"
+          :class="activeTab === 'trace'
+            ? 'border-indigo-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Trace
+          <span class="text-xs text-gray-600 ml-0.5" x-text="capabilityRuns.length ? '(' + capabilityRuns.length + ')' : ''"></span>
+        </button>
+        <button @click="if (!agentEvents.length && !loadingAgentEvents) loadAgentEvents(); activeTab = 'agents'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2"
+          :class="activeTab === 'agents'
+            ? 'border-indigo-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Agents
+          <span class="text-xs text-gray-600 ml-0.5" x-text="agentEvents.length ? '(' + agentEvents.length + ')' : ''"></span>
+        </button>
+        <button @click="if (!parsedArtifacts) extractArtifacts(); activeTab = 'artifacts'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2"
+          :class="activeTab === 'artifacts'
+            ? 'border-indigo-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Artifacts
+          <span class="text-xs text-gray-600 ml-0.5" x-show="parsedArtifacts" x-text="parsedArtifacts ? '(' + Object.keys(parsedArtifacts).length + ')' : ''"></span>
+        </button>
+        <button @click="if (!governanceData && !loadingGovernance) loadGovernance(); activeTab = 'governance'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2"
+          :class="activeTab === 'governance'
+            ? 'border-indigo-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Governance
+        </button>
+        <button @click="if (!fallbackData && !loadingFallbacks) loadFallbacks(); activeTab = 'fallbacks'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2 flex items-center gap-1.5"
+          :class="activeTab === 'fallbacks'
+            ? 'border-yellow-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Failovers
+          <template x-if="fallbackData && fallbackData.count > 0">
+            <span class="text-xs bg-yellow-900/60 text-yellow-400 rounded-full px-1.5 py-0.5 leading-none"
+                  x-text="fallbackData.count"></span>
+          </template>
+        </button>
+        <button @click="if (!debugData.length && !debugLoading) loadDebugData(); activeTab = 'debug'"
+          class="px-3 py-2 text-sm font-medium transition -mb-px border-b-2"
+          :class="activeTab === 'debug'
+            ? 'border-teal-500 text-white'
+            : 'border-transparent text-gray-500 hover:text-gray-300'">
+          Debug
+        </button>
+      </div>
+
+      <!-- ── Events tab ── -->
+      <div x-show="activeTab === 'events'">
+        <!-- Loading -->
+        <template x-if="loadingEvents">
+          <div class="space-y-1">
+            <template x-for="i in [1,2,3,4]" :key="i">
+              <div class="h-10 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+            </template>
+          </div>
+        </template>
+
+        <div class="space-y-1" x-show="!loadingEvents">
+          <template x-if="events.length === 0 && !loadingEvents">
+            <p class="text-gray-500 text-sm py-4">No events yet.</p>
+          </template>
+          <template x-for="ev in events" :key="(ev.id || '') + '-' + ev.event_type + '-' + ev.timestamp">
+            <div class="flex gap-3 text-sm">
+              <div class="text-gray-600 font-mono text-xs w-24 pt-0.5 shrink-0"
+                   x-text="formatTime(ev.timestamp)"></div>
+              <div class="flex-1 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="font-mono text-xs px-1.5 py-0.5 rounded text-indigo-300 bg-indigo-950"
+                        x-text="ev.event_type"></span>
+                  <span class="text-xs text-gray-500"
+                        x-show="ev.payload && ev.payload.agent_name"
+                        x-text="ev.payload && ev.payload.agent_name"></span>
+                </div>
+                <div class="text-xs text-gray-400 font-mono"
+                     x-show="ev.payload && Object.keys(ev.payload).length > 0"
+                     x-text="payloadSummary(ev.payload)"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ── Activity tab ── -->
+      <div x-show="activeTab === 'activity'">
+        <!-- Loading skeleton -->
+        <template x-if="loadingActivity">
+          <div class="space-y-1">
+            <template x-for="i in [1,2,3]" :key="i">
+              <div class="h-10 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+            </template>
+          </div>
+        </template>
+
+        <div class="space-y-1" x-show="!loadingActivity">
+          <template x-if="activity.length === 0 && !loadingActivity">
+            <p class="text-gray-500 text-sm py-4">No activity yet.</p>
+          </template>
+          <template x-for="(item, idx) in activity" :key="idx">
+            <div class="flex gap-3 text-sm">
+              <div class="text-gray-600 font-mono text-xs w-24 pt-0.5 shrink-0"
+                   x-text="formatIso(item.ts)"></div>
+              <div class="flex-1 bg-gray-900 border border-gray-800 rounded-lg px-3 py-2">
+                <div class="flex items-center gap-2 mb-1">
+                  <!-- type badge -->
+                  <span class="font-mono text-xs px-1.5 py-0.5 rounded"
+                    :class="item.type === 'hitl'
+                      ? 'text-amber-300 bg-amber-950'
+                      : 'text-indigo-300 bg-indigo-950'"
+                    x-text="item.type"></span>
+                  <!-- kind -->
+                  <span class="font-mono text-xs text-gray-300" x-text="item.kind"></span>
+                  <!-- agent_name for HITL -->
+                  <span class="text-xs text-gray-500"
+                        x-show="item.payload && item.payload.agent_name"
+                        x-text="item.payload && item.payload.agent_name"></span>
+                </div>
+                <div class="text-xs text-gray-400 font-mono"
+                     x-show="item.payload && Object.keys(item.payload).length > 0"
+                     x-text="payloadSummary(item.payload)"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ── Trace tab ── -->
+      <div x-show="activeTab === 'trace'">
+        <template x-if="capabilityRuns.length === 0">
+          <p class="text-gray-500 text-sm py-4">No hay trazas aún — el run aún no ha iniciado agentes.</p>
+        </template>
+        <div class="space-y-2">
+          <template x-for="(cap, idx) in capabilityRuns" :key="cap.name + idx">
+            <div class="bg-gray-900 border rounded-lg overflow-hidden"
+                 :class="cap.done ? 'border-gray-800' : 'border-indigo-900/70'">
+              <div class="flex items-center gap-3 px-3 py-2.5"
+                   :class="cap.done && (cap.produced && cap.produced.length > 0) ? 'border-b border-gray-800/60' : ''">
+                <div class="w-2 h-2 rounded-full shrink-0"
+                     :class="!cap.done ? 'bg-yellow-400 animate-pulse' : 'bg-emerald-500'"></div>
+                <span class="font-mono text-sm text-white font-medium" x-text="cap.name"></span>
+                <div class="ml-auto flex items-center gap-3 text-xs">
+                  <template x-if="run && run.model_overrides && run.model_overrides[cap.name]">
+                    <span class="text-indigo-400 font-mono" x-text="run.model_overrides[cap.name]"></span>
+                  </template>
+                  <template x-if="cap.done">
+                    <span class="text-gray-500 tabular-nums" x-text="cap.duration + 's'"></span>
+                  </template>
+                  <template x-if="!cap.done">
+                    <span class="text-yellow-400">running…</span>
+                  </template>
+                </div>
+              </div>
+              <template x-if="cap.produced && cap.produced.length > 0">
+                <div class="px-3 py-2 text-xs flex items-center gap-1.5 flex-wrap">
+                  <span class="text-gray-600">produced:</span>
+                  <template x-for="key in cap.produced" :key="key">
+                    <span class="font-mono text-indigo-300 bg-indigo-950/50 border border-indigo-900/50 px-1.5 py-0.5 rounded"
+                          x-text="key"></span>
+                  </template>
+                </div>
+              </template>
+              <template x-if="!cap.done && liveTokens[cap.name]">
+                <pre class="px-3 py-2 text-xs font-mono text-green-400/80 bg-black/20 leading-tight
+                            max-h-36 overflow-auto whitespace-pre-wrap break-all border-t border-gray-800"
+                     x-text="liveTokens[cap.name]"></pre>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ── Agents tab — execution waterfall ── -->
+      <div x-show="activeTab === 'agents'">
+        <!-- Loading skeleton -->
+        <template x-if="loadingAgentEvents">
+          <div class="space-y-2">
+            <template x-for="i in [1,2,3,4]" :key="i">
+              <div class="h-10 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+            </template>
+          </div>
+        </template>
+
+        <template x-if="!loadingAgentEvents && agentEvents.length === 0">
+          <p class="text-gray-500 text-sm py-4">
+            No agent data yet — events are persisted after the run completes.
+          </p>
+        </template>
+
+        <template x-if="agentEvents.length > 0">
+          <div>
+            <!-- Waterfall bars -->
+            <div class="space-y-1.5 mb-4">
+              <template x-for="a in agentEvents" :key="a.agent_name">
+                <div class="flex items-center gap-3 text-sm">
+                  <!-- Agent name -->
+                  <div class="w-32 shrink-0 font-mono text-xs text-gray-400 truncate"
+                       x-text="a.agent_name"></div>
+                  <!-- Bar track -->
+                  <div class="flex-1 h-5 bg-gray-900 rounded overflow-hidden relative">
+                    <div class="h-full rounded transition-all"
+                         style="background: linear-gradient(90deg, #0D9488, #2DD4BF)"
+                         :style="'width: ' + agentBarWidth(a) + '%'">
+                    </div>
+                  </div>
+                  <!-- Stats -->
+                  <div class="shrink-0 flex items-center gap-4 text-xs tabular-nums text-gray-500">
+                    <span x-text="a.duration_s ? a.duration_s.toFixed(1) + 's' : '—'"></span>
+                    <span x-text="(a.tokens_in + a.tokens_out).toLocaleString() + ' tok'"
+                          class="text-gray-600"></span>
+                    <span x-text="a.cost_usd != null ? '$' + a.cost_usd.toFixed(4) : '—'"
+                          class="text-indigo-400 font-medium"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Totals row -->
+            <div class="flex items-center justify-between text-xs pt-3 border-t border-gray-800 text-gray-500">
+              <span>
+                <span class="text-gray-400 font-medium" x-text="agentEvents.length"></span> agents
+              </span>
+              <span class="flex items-center gap-4">
+                <span x-text="agentTotalDuration() + 's total'"></span>
+                <span x-text="agentTotalTokens().toLocaleString() + ' tokens'"></span>
+                <span class="text-indigo-400 font-medium" x-text="'$' + agentTotalCost()"></span>
+              </span>
+            </div>
+
+            <!-- Per-agent detail rows -->
+            <div class="mt-4 space-y-1">
+              <template x-for="a in agentEvents" :key="'d-' + a.agent_name">
+                <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="font-mono text-indigo-300" x-text="a.agent_name"></span>
+                    <span class="text-gray-600 font-mono"
+                          x-text="a.recorded_at ? formatIso(a.recorded_at) : ''"></span>
+                  </div>
+                  <div class="flex gap-5 text-gray-500">
+                    <span>
+                      <span class="text-gray-400">in</span>
+                      <span class="tabular-nums ml-1" x-text="(a.tokens_in || 0).toLocaleString()"></span>
+                    </span>
+                    <span>
+                      <span class="text-gray-400">out</span>
+                      <span class="tabular-nums ml-1" x-text="(a.tokens_out || 0).toLocaleString()"></span>
+                    </span>
+                    <span>
+                      <span class="text-gray-400">cost</span>
+                      <span class="tabular-nums ml-1 text-indigo-400"
+                            x-text="a.cost_usd != null ? '$' + a.cost_usd.toFixed(4) : '—'"></span>
+                    </span>
+                    <template x-if="a.produced_keys && a.produced_keys.length">
+                      <span class="flex gap-1 flex-wrap">
+                        <span class="text-gray-600">→</span>
+                        <template x-for="k in a.produced_keys" :key="k">
+                          <span class="font-mono text-green-400/80 bg-green-950/30 px-1 rounded"
+                                x-text="k"></span>
+                        </template>
+                      </span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      <!-- ── Artifacts tab ── -->
+      <div x-show="activeTab === 'artifacts'">
+        <template x-if="!parsedArtifacts">
+          <p class="text-gray-500 text-sm py-4">No state loaded yet — run must complete first.</p>
+        </template>
+        <template x-if="parsedArtifacts && Object.keys(parsedArtifacts).length === 0">
+          <p class="text-gray-500 text-sm py-4">No structured artifacts found in run state.</p>
+        </template>
+        <template x-if="parsedArtifacts && Object.keys(parsedArtifacts).length > 0">
+          <div class="space-y-3">
+            <template x-for="[key, val] in Object.entries(parsedArtifacts)" :key="key">
+              <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+                <!-- Header -->
+                <button class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-800/50 transition"
+                        @click="artifactExpanded[key] = !artifactExpanded[key]">
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs px-1.5 py-0.5 bg-indigo-950 text-indigo-300 rounded"
+                          x-text="key"></span>
+                    <span class="text-xs text-gray-500"
+                          x-text="artifactTypeLine(val)"></span>
+                  </div>
+                  <span class="text-gray-600 text-xs" x-text="artifactExpanded[key] ? '▲' : '▼'"></span>
+                </button>
+                <!-- Preview (always visible) -->
+                <div class="px-3 pb-2 text-xs text-gray-400 leading-relaxed border-t border-gray-800/60">
+                  <span x-html="artifactPreview(key, val)"></span>
+                </div>
+                <!-- Full JSON (expanded) -->
+                <template x-if="artifactExpanded[key]">
+                  <pre class="px-3 py-2 text-xs font-mono text-green-300 overflow-auto max-h-72 border-t border-gray-800 leading-tight whitespace-pre-wrap break-all"
+                       x-text="JSON.stringify(val, null, 2)"></pre>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── Governance tab ── -->
+      <div x-show="activeTab === 'governance'" x-cloak>
+        <template x-if="loadingGovernance">
+          <div class="space-y-2">
+            <template x-for="i in [1,2,3]" :key="i">
+              <div class="h-10 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+            </template>
+          </div>
+        </template>
+
+        <template x-if="!loadingGovernance && !governanceData">
+          <p class="text-gray-500 text-sm py-4">No governance data — run must complete first.</p>
+        </template>
+
+        <template x-if="governanceData">
+          <div>
+            <!-- Team hash card -->
+            <div class="bg-gray-900 border border-indigo-900/40 rounded-xl px-4 py-3 mb-4">
+              <div class="text-xs text-indigo-400 font-semibold uppercase tracking-wide mb-1.5">Team hash</div>
+              <div class="flex items-center gap-2">
+                <code class="font-mono text-sm text-emerald-300" x-text="governanceData.team_hash || '—'"></code>
+                <button @click="copyHash(governanceData.team_hash)"
+                  class="text-xs text-gray-600 hover:text-gray-300 border border-gray-700 hover:border-gray-500 rounded px-1.5 py-0.5 transition"
+                  x-text="copiedHash === governanceData.team_hash ? '✓ copied' : 'copy'">
+                </button>
+              </div>
+              <div class="text-xs text-gray-600 mt-1.5">
+                SHA-256 of all agent governance hashes — pin this value in your security review.
+              </div>
+            </div>
+
+            <!-- Per-agent hashes -->
+            <div class="space-y-1.5 mb-4">
+              <template x-for="a in governanceData.agents" :key="a.agent_name">
+                <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2.5">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="font-mono text-sm text-indigo-300" x-text="a.agent_name"></span>
+                    <span class="text-xs text-gray-600" x-text="a.stage"></span>
+                  </div>
+                  <template x-if="a.governance_hash">
+                    <div class="flex items-center gap-2">
+                      <code class="font-mono text-xs text-emerald-400/90" x-text="a.governance_hash"></code>
+                      <button @click="copyHash(a.governance_hash)"
+                        class="text-xs text-gray-600 hover:text-gray-300 border border-gray-700 hover:border-gray-500 rounded px-1.5 py-0.5 transition"
+                        x-text="copiedHash === a.governance_hash ? '✓ copied' : 'copy'">
+                      </button>
+                    </div>
+                  </template>
+                  <template x-if="!a.governance_hash">
+                    <span class="text-xs text-gray-700">no hash recorded</span>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- How to verify -->
+            <div class="bg-gray-900/50 border border-gray-800 rounded-lg px-3 py-2.5 text-xs text-gray-500 space-y-1">
+              <div class="font-medium text-gray-400">Verify configuration integrity</div>
+              <div>Compare the team hash above against the hash recorded during your security review.</div>
+              <div>Identical hashes prove agent configs were not modified since approval.</div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── Failovers tab ── -->
+      <div x-show="activeTab === 'fallbacks'" x-cloak>
+        <template x-if="loadingFallbacks">
+          <div class="space-y-2">
+            <template x-for="i in [1,2,3]" :key="i">
+              <div class="h-10 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+            </template>
+          </div>
+        </template>
+
+        <template x-if="!loadingFallbacks && fallbackData && fallbackData.count === 0">
+          <div class="flex items-center gap-2 py-6 text-sm text-gray-500">
+            <span class="text-green-500">✓</span>
+            No fallbacks — primary model succeeded on all calls.
+          </div>
+        </template>
+
+        <template x-if="fallbackData && fallbackData.count > 0">
+          <div>
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-yellow-500 text-sm">⚠</span>
+              <span class="text-sm text-yellow-400 font-medium"
+                    x-text="fallbackData.count + ' fallback' + (fallbackData.count !== 1 ? 's' : '') + ' occurred during this run'"></span>
+            </div>
+            <div class="space-y-2">
+              <template x-for="(ev, i) in fallbackData.fallbacks" :key="i">
+                <div class="bg-gray-900 border border-yellow-900/40 rounded-lg px-4 py-3">
+                  <div class="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs font-mono text-indigo-300" x-text="ev.agent_name || '—'"></span>
+                        <span class="text-gray-700 text-xs">agent</span>
+                      </div>
+                      <div class="flex items-center gap-2 text-sm">
+                        <code class="text-red-400 text-xs font-mono" x-text="ev.failed_model"></code>
+                        <span class="text-gray-600 text-xs">→</span>
+                        <code class="text-green-400 text-xs font-mono" x-text="ev.next_model"></code>
+                      </div>
+                    </div>
+                    <span class="text-xs text-gray-600 font-mono shrink-0"
+                          x-text="ev.ts ? new Date(ev.ts * 1000).toLocaleTimeString() : ''"></span>
+                  </div>
+                  <template x-if="ev.error">
+                    <div class="mt-2 text-xs text-gray-600 font-mono truncate" x-text="ev.error"></div>
+                  </template>
+                </div>
+              </template>
+            </div>
+            <p class="text-xs text-gray-700 mt-3">
+              Configure <code class="text-gray-500">FallbackLLM</code> in your team config to control the fallback chain.
+              Use <code class="text-gray-500">FAILOVER_CHAIN</code> on the proxy for provider-level routing.
+            </p>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── Debug tab ── -->
+      <div x-show="activeTab === 'debug'" x-cloak>
+        <template x-if="debugLoading">
+          <div class="space-y-1">
+            <template x-for="i in [1,2,3,4,5]" :key="i">
+              <div class="h-8 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+            </template>
+          </div>
+        </template>
+
+        <template x-if="!debugLoading && debugData.length === 0">
+          <p class="text-gray-600 text-sm py-6">No events to debug yet. Run must have at least one event.</p>
+        </template>
+
+        <template x-if="!debugLoading && debugData.length > 0">
+          <div>
+            <!-- Timeline scrubber -->
+            <div class="mb-4">
+              <div class="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
+                <template x-for="(ev, i) in debugData" :key="i">
+                  <button
+                    @click="debugSeek(i)"
+                    :title="ev.event_type"
+                    class="flex-shrink-0 w-3 h-3 rounded-full border transition-all"
+                    :class="{
+                      'scale-125 ring-1 ring-offset-1 ring-offset-gray-950': i === debugStep,
+                      'border-green-500 bg-green-500/30': ev.event_type === 'pipeline.start',
+                      'border-teal-500 bg-teal-500/30': ev.event_type === 'pipeline.end',
+                      'border-indigo-400 bg-indigo-400/30': ev.event_type.startsWith('agent.'),
+                      'border-yellow-500 bg-yellow-500/30': ev.event_type === 'llm.fallback',
+                      'border-gray-600 bg-gray-800': !['pipeline.start','pipeline.end','llm.fallback'].includes(ev.event_type) && !ev.event_type.startsWith('agent.'),
+                    }">
+                  </button>
+                </template>
+              </div>
+              <input type="range" min="0" :max="debugData.length - 1" x-model.number="debugStep"
+                class="w-full mt-2 accent-teal-500 cursor-pointer">
+            </div>
+
+            <!-- Playback controls -->
+            <div class="flex items-center gap-2 mb-4">
+              <button @click="debugPrev()" :disabled="debugStep === 0"
+                class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-xs rounded font-mono transition">‹ Prev</button>
+              <button @click="debugTogglePlay()"
+                class="px-4 py-1.5 text-xs rounded font-mono transition"
+                :class="debugPlaying ? 'bg-teal-800 text-teal-200 hover:bg-teal-700' : 'bg-gray-800 hover:bg-gray-700 text-gray-200'">
+                <span x-text="debugPlaying ? '⏸ Pause' : '▶ Play'"></span>
+              </button>
+              <button @click="debugNext()" :disabled="debugStep === debugData.length - 1"
+                class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-30 text-xs rounded font-mono transition">Next ›</button>
+              <span class="text-xs text-gray-600 font-mono ml-2"
+                x-text="(debugStep + 1) + ' / ' + debugData.length"></span>
+              <div class="ml-auto flex items-center gap-1.5">
+                <span class="text-xs text-gray-600">Speed</span>
+                <select x-model.number="debugSpeed"
+                  class="bg-gray-800 border border-gray-700 text-xs rounded px-1.5 py-1 font-mono focus:outline-none">
+                  <option value="800">0.5×</option>
+                  <option value="400">1×</option>
+                  <option value="200">2×</option>
+                  <option value="80">5×</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Running totals at this step -->
+            <div class="grid grid-cols-3 gap-3 mb-4">
+              <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-center">
+                <div class="text-xs text-gray-500 mb-0.5">Cost so far</div>
+                <div class="text-sm font-mono text-green-400"
+                  x-text="'$' + debugCostAt(debugStep).toFixed(5)"></div>
+              </div>
+              <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-center">
+                <div class="text-xs text-gray-500 mb-0.5">Tokens in</div>
+                <div class="text-sm font-mono text-blue-400"
+                  x-text="debugTokensAt(debugStep, 'tokens_in').toLocaleString()"></div>
+              </div>
+              <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-center">
+                <div class="text-xs text-gray-500 mb-0.5">Tokens out</div>
+                <div class="text-sm font-mono text-purple-400"
+                  x-text="debugTokensAt(debugStep, 'tokens_out').toLocaleString()"></div>
+              </div>
+            </div>
+
+            <!-- Current event detail -->
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4"
+              x-data="{ expanded: false }">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-xs font-mono px-2 py-0.5 rounded"
+                  :class="{
+                    'bg-green-950 text-green-400': debugData[debugStep]?.event_type === 'pipeline.start',
+                    'bg-teal-950 text-teal-400': debugData[debugStep]?.event_type === 'pipeline.end',
+                    'bg-indigo-950 text-indigo-300': debugData[debugStep]?.event_type.startsWith('agent.'),
+                    'bg-yellow-950 text-yellow-400': debugData[debugStep]?.event_type === 'llm.fallback',
+                    'bg-gray-800 text-gray-400': !['pipeline.start','pipeline.end','llm.fallback'].includes(debugData[debugStep]?.event_type) && !debugData[debugStep]?.event_type.startsWith('agent.'),
+                  }"
+                  x-text="debugData[debugStep]?.event_type"></span>
+                <span class="text-xs text-gray-500 font-mono"
+                  x-text="debugData[debugStep] ? formatTime(debugData[debugStep].timestamp) : ''"></span>
+                <span class="text-xs text-gray-500"
+                  x-show="debugData[debugStep]?.payload?.agent_name"
+                  x-text="debugData[debugStep]?.payload?.agent_name"></span>
+              </div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-gray-600">Payload</span>
+                <button @click="expanded = !expanded"
+                  class="text-xs text-gray-600 hover:text-gray-400 font-mono">
+                  <span x-text="expanded ? 'collapse' : 'expand'"></span>
+                </button>
+              </div>
+              <pre class="text-xs font-mono text-gray-300 bg-gray-950 rounded p-3 overflow-x-auto"
+                :class="expanded ? '' : 'max-h-36 overflow-y-hidden'"
+                x-text="debugData[debugStep] ? JSON.stringify(debugData[debugStep].payload, null, 2) : '{}'"></pre>
+            </div>
+
+            <!-- Legend -->
+            <div class="flex items-center gap-4 mt-3 flex-wrap">
+              <div class="flex items-center gap-1.5 text-xs text-gray-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-green-500/50 border border-green-500"></span>pipeline.start
+              </div>
+              <div class="flex items-center gap-1.5 text-xs text-gray-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-indigo-400/50 border border-indigo-400"></span>agent.*
+              </div>
+              <div class="flex items-center gap-1.5 text-xs text-gray-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-teal-500/50 border border-teal-500"></span>pipeline.end
+              </div>
+              <div class="flex items-center gap-1.5 text-xs text-gray-600">
+                <span class="w-2.5 h-2.5 rounded-full bg-yellow-500/50 border border-yellow-500"></span>llm.fallback
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+    </div>
+
+    <!-- Sidebar: engine or team view -->
+    <div class="space-y-5">
+
+      <!-- ── ENGINE SIDEBAR ── -->
+      <template x-if="run && run.team === 'engine'">
+        <div class="space-y-5">
+          <!-- Engine info card -->
+          <div class="bg-gray-900 border border-indigo-900/60 rounded-xl p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wide">Engine run</span>
+            </div>
+            <p class="text-sm text-white mb-3 leading-snug" x-text="engineGoal || run.request"></p>
+            <template x-if="engineOutputDir">
+              <div class="text-xs text-gray-500 font-mono truncate" x-text="engineOutputDir"></div>
+            </template>
+          </div>
+
+          <!-- Capabilities timeline -->
+          <div>
+            <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide mb-3">
+              Capabilities <span class="text-gray-600 normal-case" x-text="'(' + capabilityRuns.length + ')'"></span>
+            </h2>
+            <template x-if="capabilityRuns.length === 0">
+              <p class="text-gray-500 text-sm">Waiting for first capability…</p>
+            </template>
+            <div class="space-y-1.5">
+              <template x-for="cap in capabilityRuns" :key="cap.name + cap.startedAt">
+                <div class="bg-gray-900 border rounded-lg px-3 py-2 text-sm"
+                     :class="cap.done ? 'border-gray-800' : 'border-indigo-900/60'">
+                  <div class="flex items-center justify-between">
+                    <span class="font-medium text-white" x-text="cap.name"></span>
+                    <template x-if="!cap.done">
+                      <span class="text-xs text-yellow-400 animate-pulse">running</span>
+                    </template>
+                    <template x-if="cap.done">
+                      <span class="text-xs text-gray-500" x-text="cap.duration + 's'"></span>
+                    </template>
+                  </div>
+                  <template x-if="cap.produced && cap.produced.length > 0">
+                    <div class="text-xs text-indigo-400 mt-1 truncate" x-text="cap.produced.join(', ')"></div>
+                  </template>
+                  <template x-if="!cap.done && liveTokens[cap.name]">
+                    <pre class="mt-2 text-xs font-mono text-green-400/80 bg-black/30 rounded p-1.5
+                                leading-tight max-h-24 overflow-hidden whitespace-pre-wrap break-all"
+                         x-text="liveTokens[cap.name]"></pre>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Download engine artifacts -->
+          <template x-if="run.status === 'success' && engineOutputDir">
+            <a :href="'/runs/' + runId + '/artifacts.zip'"
+               class="flex items-center justify-center gap-2 w-full bg-gray-900 border border-gray-700 hover:border-indigo-500 rounded-lg px-3 py-2 text-sm text-gray-300 hover:text-indigo-300 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+              </svg>
+              Download artifacts (.zip)
+            </a>
+          </template>
+
+          <!-- Replay -->
+          <template x-if="run.status === 'success' || run.status === 'error'">
+            <div class="border border-gray-800 rounded-xl overflow-hidden">
+              <button @click="showReplay = !showReplay; replayError = ''; replayResult = null"
+                class="w-full flex items-center justify-between px-3 py-2.5 bg-gray-900 hover:bg-gray-800 transition text-sm text-gray-300">
+                <span class="flex items-center gap-2">
+                  <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                  </svg>
+                  Replay run
+                </span>
+                <span class="text-gray-600 text-xs" x-text="showReplay ? '▲' : '▼'"></span>
+              </button>
+              <div x-show="showReplay" x-cloak class="px-3 pb-3 pt-2 bg-gray-900/50 space-y-2.5 border-t border-gray-800">
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Override model (blank = original)</label>
+                  <input x-model="replayModel" type="text" placeholder="e.g. claude or gpt-4o"
+                    class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Override goal (blank = original)</label>
+                  <textarea x-model="replayGoal" rows="2" placeholder="Describe the new goal…"
+                    class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-100 focus:outline-none focus:border-indigo-500 resize-none"></textarea>
+                </div>
+                <div x-show="replayError" x-cloak class="text-xs text-red-400" x-text="replayError"></div>
+                <template x-if="replayResult">
+                  <div class="text-xs text-emerald-400">
+                    Replayed as <a :href="'/run/' + replayResult.run_id" class="underline" x-text="replayResult.run_id.slice(0,8)"></a>
+                  </div>
+                </template>
+                <button @click="triggerReplay()"
+                  :disabled="replayLoading"
+                  class="w-full bg-indigo-700 hover:bg-indigo-600 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded transition">
+                  <span x-show="!replayLoading">Launch replay</span>
+                  <span x-show="replayLoading" x-cloak>Launching…</span>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- ── PIPELINE SIDEBAR ── -->
+      <template x-if="run && run.team?.startsWith('pipeline:')">
+        <div class="space-y-5">
+          <!-- Agent flow mini-view -->
+          <div>
+            <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide mb-3">
+              Agentes
+              <span class="text-gray-600 normal-case font-normal" x-text="'(' + capabilityRuns.length + ')'"></span>
+            </h2>
+            <template x-if="capabilityRuns.length === 0">
+              <p class="text-gray-500 text-sm">Esperando primer agente…</p>
+            </template>
+            <div class="space-y-1.5">
+              <template x-for="cap in capabilityRuns" :key="cap.name">
+                <div class="bg-gray-900 border rounded-lg px-3 py-2.5"
+                     :class="!cap.done ? 'border-indigo-900/70' : 'border-gray-800'">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                      <div class="w-2 h-2 rounded-full shrink-0"
+                           :class="!cap.done ? 'bg-yellow-400 animate-pulse' : 'bg-emerald-500'"></div>
+                      <span class="font-mono text-xs text-gray-200" x-text="cap.name"></span>
+                    </div>
+                    <template x-if="cap.done">
+                      <span class="text-xs text-gray-500" x-text="cap.duration + 's'"></span>
+                    </template>
+                    <template x-if="!cap.done">
+                      <span class="text-xs text-yellow-500">running</span>
+                    </template>
+                  </div>
+                  <template x-if="!cap.done && liveTokens[cap.name]">
+                    <pre class="mt-1.5 text-xs font-mono text-green-400/80 bg-black/30 rounded p-1.5
+                                leading-tight max-h-20 overflow-hidden whitespace-pre-wrap break-all"
+                         x-text="liveTokens[cap.name]"></pre>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Cost summary -->
+          <template x-if="run.status !== 'running'">
+            <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3 space-y-1">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-gray-500">Coste total</span>
+                <span class="font-mono text-gray-200" x-text="run.cost_usd ? '€' + run.cost_usd.toFixed(4) : '—'"></span>
+              </div>
+              <div class="flex items-center justify-between text-xs" x-show="run.duration_s">
+                <span class="text-gray-500">Duración</span>
+                <span class="font-mono text-gray-200" x-text="run.duration_s ? run.duration_s.toFixed(0) + 's' : ''"></span>
+              </div>
+              <div class="flex items-center justify-between text-xs" x-show="totalCacheRead + totalCacheWrite > 0">
+                <span class="text-gray-500">Cache</span>
+                <span class="font-mono text-blue-400 text-xs"
+                      x-text="'↓' + totalCacheRead.toLocaleString() + ' ↑' + totalCacheWrite.toLocaleString()"></span>
+              </div>
+            </div>
+          </template>
+
+          <!-- Back to pipelines -->
+          <a href="/pipelines"
+             class="flex items-center justify-center gap-2 w-full bg-gray-900 border border-gray-800 hover:border-indigo-600 rounded-lg px-3 py-2 text-sm text-gray-400 hover:text-indigo-300 transition">
+            ← Volver a Pipelines
+          </a>
+
+          <!-- State JSON (collapsed) -->
+          <div x-show="stateJson">
+            <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide mb-2">Estado final</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+              <button @click="stateExpanded = !stateExpanded"
+                class="w-full px-3 py-2 text-xs text-gray-400 hover:text-white text-left transition flex justify-between">
+                <span>state JSON</span>
+                <span x-text="stateExpanded ? '▲' : '▼'"></span>
+              </button>
+              <pre x-show="stateExpanded"
+                   class="px-3 py-2 text-xs text-green-300 font-mono overflow-auto max-h-80 border-t border-gray-800"
+                   x-text="stateJson"></pre>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ── TEAM SIDEBAR ── -->
+      <template x-if="run && run.team !== 'engine' && !run.team?.startsWith('pipeline:')">
+        <div class="space-y-5">
+          <!-- Tickets -->
+          <div>
+            <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide mb-3">
+              Tickets <span class="text-gray-600 normal-case" x-text="'(' + tickets.length + ')'"></span>
+            </h2>
+            <template x-if="loadingTickets">
+              <div class="space-y-2">
+                <div class="h-16 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+                <div class="h-16 bg-gray-900 border border-gray-800 rounded-lg animate-pulse"></div>
+              </div>
+            </template>
+            <div class="space-y-2" x-show="!loadingTickets">
+              <template x-if="tickets.length === 0">
+                <p class="text-gray-500 text-sm">None produced yet.</p>
+              </template>
+              <template x-for="t in tickets" :key="t.ticket_id">
+                <a :href="`/tickets?run_id=${run.run_id}`" class="block bg-gray-900 border border-gray-800 rounded-lg p-3 hover:border-gray-600 transition">
+                  <div class="flex items-start justify-between gap-2">
+                    <div>
+                      <div class="font-mono text-xs text-gray-500 mb-0.5" x-text="t.ticket_id"></div>
+                      <div class="text-sm text-white" x-text="t.title"></div>
+                    </div>
+                    <span class="text-xs px-1.5 py-0.5 rounded shrink-0"
+                      :class="{
+                        'bg-red-900/50 text-red-300': t.priority === 'high' || t.priority === 'critical',
+                        'bg-yellow-900/50 text-yellow-300': t.priority === 'medium',
+                        'bg-gray-800 text-gray-400': t.priority === 'low',
+                      }"
+                      x-text="t.priority"></span>
+                  </div>
+                </a>
+              </template>
+            </div>
+          </div>
+
+          <!-- Cost projection (running runs only) -->
+          <template x-if="run.status === 'running' && agentEvents.length > 0">
+            <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-3 space-y-2">
+              <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Cost projection</div>
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-gray-500">Spent so far</span>
+                <span class="font-mono text-indigo-300" x-text="'$' + agentTotalCost()"></span>
+              </div>
+              <template x-if="costProjection() != null">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-gray-500">Projected total</span>
+                  <span class="font-mono text-yellow-400" x-text="'~$' + costProjection()"></span>
+                </div>
+              </template>
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-gray-500">Agents done</span>
+                <span class="font-mono text-gray-300"
+                      x-text="agentEvents.length + ' / ' + capabilityRuns.length"></span>
+              </div>
+            </div>
+          </template>
+
+          <!-- Re-run -->
+          <template x-if="run.status === 'success' || run.status === 'error'">
+            <div class="border border-gray-800 rounded-xl overflow-hidden">
+              <button @click="triggerRerun()"
+                :disabled="rerunLoading"
+                class="w-full flex items-center justify-between px-3 py-2.5 bg-gray-900 hover:bg-gray-800 transition text-sm text-gray-300 disabled:opacity-50">
+                <span class="flex items-center gap-2">
+                  <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                  </svg>
+                  Re-run
+                </span>
+                <span x-show="rerunLoading" class="text-xs text-gray-500">iniciando…</span>
+              </button>
+              <template x-if="rerunRunId">
+                <div class="px-3 py-2 bg-gray-900/50 border-t border-gray-800 text-xs text-emerald-400">
+                  Iniciado →
+                  <a :href="'/run/' + rerunRunId" class="underline font-mono" x-text="rerunRunId.slice(0,12)"></a>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- Download artifacts (team run) -->
+          <div x-show="run.status === 'success' && stateJson">
+            <a :href="'/runs/' + runId + '/artifacts.zip'"
+               class="flex items-center justify-center gap-2 w-full bg-gray-900 border border-gray-700 hover:border-indigo-500 rounded-lg px-3 py-2 text-sm text-gray-300 hover:text-indigo-300 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+              </svg>
+              Download artifacts (.zip)
+            </a>
+          </div>
+
+          <!-- Write-back result -->
+          <template x-if="writeBackResult">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2">
+              <div class="flex items-center gap-2 mb-1">
+                <svg class="w-4 h-4 text-indigo-400 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/>
+                </svg>
+                <h4 class="text-sm font-medium text-gray-300">Write-back</h4>
+                <span class="ml-auto text-xs px-1.5 py-0.5 rounded font-medium"
+                  :class="writeBackResult.pushed
+                    ? 'bg-green-900/50 text-green-300'
+                    : 'bg-red-900/50 text-red-300'"
+                  x-text="writeBackResult.pushed ? 'pushed' : 'push failed'"></span>
+              </div>
+              <div class="text-xs text-gray-400 space-y-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-gray-600 shrink-0">Branch</span>
+                  <code class="font-mono text-indigo-300 truncate" x-text="writeBackResult.branch"></code>
+                </div>
+                <div class="flex items-start gap-1.5">
+                  <span class="text-gray-600 shrink-0">Diff</span>
+                  <pre class="font-mono text-gray-300 whitespace-pre-wrap break-all leading-tight"
+                       x-text="writeBackResult.diff_summary"></pre>
+                </div>
+                <template x-if="!writeBackResult.pushed && writeBackResult.push_error">
+                  <div class="text-red-400 font-mono text-xs break-all" x-text="writeBackResult.push_error"></div>
+                </template>
+                <template x-if="writeBackResult.pr_url">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-gray-600 shrink-0">PR</span>
+                    <a :href="writeBackResult.pr_url" target="_blank" rel="noopener"
+                       class="text-indigo-300 hover:text-indigo-200 underline underline-offset-2 font-mono text-xs truncate"
+                       x-text="'#' + writeBackResult.pr_number + ' → GitHub'"></a>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- State JSON -->
+          <div x-show="stateJson">
+            <h2 class="text-sm font-medium text-gray-400 uppercase tracking-wide mb-3">State</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+              <button @click="stateExpanded = !stateExpanded"
+                class="w-full px-3 py-2 text-xs text-gray-400 hover:text-white text-left transition flex justify-between">
+                <span>RunResult.to_dict()</span>
+                <span x-text="stateExpanded ? '▲ collapse' : '▼ expand'"></span>
+              </button>
+              <pre x-show="stateExpanded"
+                   class="px-3 py-2 text-xs text-green-300 font-mono overflow-auto max-h-80 border-t border-gray-800"
+                   x-text="stateJson"></pre>
+            </div>
+          </div>
+        </div>
+      </template>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function runDetail() {
+  return {
+    runId: null,
+    run: null,
+    events: [],
+    tickets: [],
+    stateJson: '',
+    stateExpanded: false,
+    engineGoal: '',
+    engineOutputDir: '',
+    capabilityRuns: [],   // [{name, done, duration, produced}]
+    liveTokens: {},       // {capName: accumulated_text_tail}
+    totalCacheRead: 0,
+    totalCacheWrite: 0,
+    ws: null,
+    wsConnected: false,
+    _wsBackoff: 1000,
+    loadingRun: true,
+    loadingEvents: true,
+    loadingTickets: true,
+    runError: '',
+    _nextEventKey: 0,
+    hitlReview: null,
+    hitlFeedback: '',
+    hitlEditedJson: '',
+    hitlSubmitting: false,
+    budget: null,
+    showReplay: false,
+    replayModel: '',
+    replayGoal: '',
+    replayLoading: false,
+    replayError: '',
+    replayResult: null,
+    activeTab: 'events',
+    activity: [],
+    loadingActivity: false,
+    agentEvents: [],
+    loadingAgentEvents: false,
+    writeBackResult: null,
+    rerunLoading: false,
+    rerunRunId: null,
+    parsedArtifacts: null,
+    artifactExpanded: {},
+    governanceData: null,
+    loadingGovernance: false,
+    copiedHash: '',
+    fallbackData: null,
+    loadingFallbacks: false,
+    debugData: [],
+    debugStep: 0,
+    debugLoading: false,
+    debugPlaying: false,
+    debugPlayTimer: null,
+    debugSpeed: 400,
+
+    async init() {
+      const match = location.pathname.match(/^\/run\/(.+?)\/?$/);
+      this.runId = match ? match[1] : null;
+      if (!this.runId) { this.runError = 'Invalid URL — no run ID found.'; this.loadingRun = false; return; }
+
+      await Promise.all([this.loadRun(), this.loadEvents(), this.loadState()]);
+      if (this.run?.workspace_id) this.loadBudget();
+      if (this.run && this.run.team !== 'engine' && !this.run.team?.startsWith('pipeline:')) await this.loadTickets();
+      this._deriveCapabilities();
+      await this.loadPendingReview();
+      // Load agent events for completed runs (non-blocking — best-effort)
+      if (this.run && ['success', 'error', 'done'].includes(this.run.status)) {
+        this.loadAgentEvents();
+      }
+      this.connectWs();
+    },
+
+    _deriveCapabilities() {
+      // Build capability run list from agent.start / agent.end events.
+      const caps = {};
+      for (const ev of this.events) {
+        const name = ev.payload && ev.payload.agent_name;
+        if (!name) continue;
+        if (ev.event_type === 'agent.start') {
+          caps[name] = { name, done: false, startedAt: ev.timestamp, duration: null, produced: [] };
+        } else if (ev.event_type === 'agent.end' && caps[name]) {
+          caps[name].done = true;
+          caps[name].duration = (ev.payload.duration_s || 0).toFixed(1);
+          caps[name].produced = ev.payload.produced_keys || [];
+        }
+      }
+      this.capabilityRuns = Object.values(caps);
+    },
+
+    async loadAgentEvents() {
+      this.loadingAgentEvents = true;
+      try {
+        const r = await fetch(`/runs/${this.runId}/agents`, { headers: this.apiHeaders() });
+        if (r.ok) {
+          const data = await r.json();
+          this.agentEvents = data.agents || [];
+        }
+      } catch (_) { /* non-fatal */ } finally {
+        this.loadingAgentEvents = false;
+      }
+    },
+
+    agentBarWidth(agent) {
+      const maxDur = Math.max(...this.agentEvents.map(a => a.duration_s || 0), 0.001);
+      return Math.max(2, ((agent.duration_s || 0) / maxDur * 100)).toFixed(1);
+    },
+
+    agentTotalDuration() {
+      return this.agentEvents.reduce((s, a) => s + (a.duration_s || 0), 0).toFixed(1);
+    },
+
+    agentTotalTokens() {
+      return this.agentEvents.reduce((s, a) => s + (a.tokens_in || 0) + (a.tokens_out || 0), 0);
+    },
+
+    agentTotalCost() {
+      return this.agentEvents.reduce((s, a) => s + (a.cost_usd || 0), 0).toFixed(4);
+    },
+
+    costProjection() {
+      const done = this.agentEvents.length;
+      const total = this.capabilityRuns.length;
+      if (done === 0 || total === 0 || done >= total) return null;
+      const spentSoFar = this.agentEvents.reduce((s, a) => s + (a.cost_usd || 0), 0);
+      return ((spentSoFar / done) * total).toFixed(4);
+    },
+
+    extractArtifacts() {
+      if (!this.stateJson) { this.parsedArtifacts = {}; return; }
+      try {
+        const state = JSON.parse(this.stateJson);
+        const SKIP = new Set(['messages', 'current_agent', 'request', 'run_id', 'team', 'status',
+                              'model', 'workspace_id', 'cost_usd', 'duration_s', 'created_at']);
+        const result = {};
+        for (const [k, v] of Object.entries(state)) {
+          if (SKIP.has(k)) continue;
+          if (v === null || v === undefined) continue;
+          if (typeof v === 'string' && v.length === 0) continue;
+          if (Array.isArray(v) && v.length === 0) continue;
+          result[k] = v;
+        }
+        this.parsedArtifacts = result;
+      } catch {
+        this.parsedArtifacts = {};
+      }
+    },
+
+    artifactTypeLine(val) {
+      if (val === null || val === undefined) return '';
+      if (Array.isArray(val)) return `list[${val.length}]`;
+      if (typeof val === 'object') {
+        const keys = Object.keys(val);
+        return keys.slice(0, 4).join(', ') + (keys.length > 4 ? '…' : '');
+      }
+      return typeof val;
+    },
+
+    artifactPreview(key, val) {
+      if (val === null || val === undefined) return '<span class="text-gray-600">null</span>';
+      if (typeof val === 'string') return val.length > 120 ? val.slice(0, 120) + '…' : val;
+      if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+      if (Array.isArray(val)) {
+        if (val.length === 0) return '<span class="text-gray-600">[]</span>';
+        const first = val[0];
+        if (typeof first === 'string') return val.slice(0, 3).join(', ') + (val.length > 3 ? '…' : '');
+        if (typeof first === 'object' && first !== null) {
+          const label = first.title || first.name || first.subject || first.finding || '';
+          return label ? `${val.length} items — first: ${label}` : `${val.length} items`;
+        }
+        return String(val.length) + ' items';
+      }
+      if (typeof val === 'object') {
+        const fields = ['title', 'summary', 'subject', 'topic', 'body_text', 'description'];
+        for (const f of fields) {
+          if (val[f] && typeof val[f] === 'string') {
+            const s = val[f];
+            return s.length > 120 ? s.slice(0, 120) + '…' : s;
+          }
+        }
+        if (val.score !== undefined) return `Score: ${val.score}/100`;
+        return '';
+      }
+      return '';
+    },
+
+    async loadRun() {
+      this.loadingRun = true;
+      this.runError = '';
+      try {
+        const r = await fetch(`/runs/${this.runId}`, { headers: this.apiHeaders() });
+        if (!r.ok) throw new Error(r.status === 404 ? 'Run not found.' : `HTTP ${r.status}`);
+        this.run = await r.json();
+      } catch (err) {
+        this.runError = err.message;
+      } finally {
+        this.loadingRun = false;
+      }
+    },
+
+    async loadBudget() {
+      if (!this.run?.workspace_id) return;
+      try {
+        const r = await fetch(`/workspaces/${this.run.workspace_id}/spend`, { headers: this.apiHeaders() });
+        if (r.ok) this.budget = await r.json();
+      } catch {}
+    },
+
+    async loadEvents() {
+      this.loadingEvents = true;
+      try {
+        const r = await fetch(`/runs/${this.runId}/events`, { headers: this.apiHeaders() });
+        if (r.ok) this.events = await r.json();
+      } catch {} finally {
+        this.loadingEvents = false;
+      }
+    },
+
+    async loadTickets() {
+      this.loadingTickets = true;
+      try {
+        const r = await fetch(`/runs/${this.runId}/tickets`, { headers: this.apiHeaders() });
+        if (r.ok) this.tickets = await r.json();
+      } catch {} finally {
+        this.loadingTickets = false;
+      }
+    },
+
+    async loadState() {
+      try {
+        const r = await fetch(`/runs/${this.runId}/state`, { headers: this.apiHeaders() });
+        if (!r.ok) return;
+        const state = await r.json();
+        if (state && state.engine) {
+          this.engineGoal = state.goal || '';
+          this.engineOutputDir = state.output_dir || '';
+        } else {
+          this.stateJson = JSON.stringify(state, null, 2);
+        }
+        if (state && state.write_back_result) {
+          this.writeBackResult = state.write_back_result;
+        }
+        this.extractArtifacts();
+      } catch {}
+    },
+
+    apiHeaders(extra = {}) {
+      const k = localStorage.getItem('antcrew_api_key');
+      const h = { 'Content-Type': 'application/json', ...extra };
+      if (k) h['X-Api-Key'] = k;
+      return h;
+    },
+
+    async loadPendingReview() {
+      try {
+        const r = await fetch(`/reviews/?run_id=${this.runId}&status=pending&limit=1`, { headers: this.apiHeaders() });
+        if (r.ok) {
+          const reviews = await r.json();
+          if (reviews.length > 0) {
+            const rv = reviews[0];
+            this.hitlReview = {
+              review_id: rv.review_id,
+              agent_name: rv.agent_name,
+              artifact: rv.artifact,
+              options: rv.options || ['approve', 'reject'],
+            };
+          }
+        }
+      } catch {}
+    },
+
+    connectWs() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const k = localStorage.getItem('antcrew_api_key') || '';
+      // Use first-message auth so the API key never appears in server access logs.
+      // The server waits up to 10 s for {"auth": "<key>"} before closing the connection.
+      this.ws = new WebSocket(`${proto}://${location.host}/ws/events?run_id=${this.runId}`);
+      this.ws.onopen = () => {
+        this.wsConnected = true;
+        this._wsBackoff = 1000;
+        if (k) this.ws.send(JSON.stringify({ auth: k }));
+      };
+      this.ws.onmessage = (e) => {
+        const ev = JSON.parse(e.data);
+        if (ev.type === 'ping') return;
+        // Live token streaming — accumulate per capability, skip the timeline
+        if (ev.type === 'agent.token') {
+          const name = ev.payload && ev.payload.agent_name;
+          if (name) {
+            const chunk = (ev.payload.chunk || '');
+            const prev  = this.liveTokens[name] || '';
+            const next  = prev + chunk;
+            this.liveTokens[name] = next.length > 600 ? next.slice(-600) : next;
+          }
+          return;
+        }
+        // Clear live buffer when capability finishes; accumulate cache stats
+        if (ev.type === 'agent.end') {
+          const name = ev.payload && ev.payload.agent_name;
+          if (name) delete this.liveTokens[name];
+          this.totalCacheRead  += (ev.payload && ev.payload.cache_read_tokens)  || 0;
+          this.totalCacheWrite += (ev.payload && ev.payload.cache_write_tokens) || 0;
+        }
+        // Append event to timeline (avoid full reload on every event)
+        this.events.push({
+          _key: ++this._nextEventKey,
+          event_type: ev.type,
+          run_id: ev.run_id,
+          payload: ev.payload || {},
+          timestamp: ev.timestamp,
+        });
+        if (ev.type === 'agent.start' || ev.type === 'agent.end') {
+          this._deriveCapabilities();
+        }
+        if (ev.type === 'pipeline.end') {
+          const tasks = [this.loadRun(), this.loadState()];
+          const t = this.run && this.run.team;
+          if (t && t !== 'engine' && !t.startsWith('pipeline:')) tasks.push(this.loadTickets());
+          Promise.all(tasks);
+        }
+        if (ev.type === 'hitl.review_required' && ev.run_id === this.runId) {
+          this.hitlReview = ev.payload;
+          this.hitlFeedback = '';
+          this.hitlEditedJson = ev.payload.artifact ? JSON.stringify(ev.payload.artifact, null, 2) : '';
+        }
+      };
+      this.ws.onclose = () => {
+        this.wsConnected = false;
+        setTimeout(() => this.connectWs(), this._wsBackoff);
+        this._wsBackoff = Math.min(this._wsBackoff * 2, 30000);
+      };
+    },
+
+    async cancelRun() {
+      try {
+        const r = await fetch(`/runs/${this.runId}/cancel`, { method: 'POST', headers: this.apiHeaders() });
+        if (r.ok) this.run = await r.json();
+      } catch {}
+    },
+
+    async triggerRerun() {
+      if (!this.run) return;
+      this.rerunLoading = true;
+      try {
+        const r = await fetch('/run/', {
+          method: 'POST',
+          headers: this.apiHeaders(),
+          body: JSON.stringify({ team: this.run.team, request: this.run.request }),
+        });
+        if (r.ok) this.rerunRunId = (await r.json()).run_id;
+      } catch {} finally {
+        this.rerunLoading = false;
+      }
+    },
+
+    async triggerReplay() {
+      this.replayLoading = true; this.replayError = ''; this.replayResult = null;
+      try {
+        const body = {};
+        if (this.replayModel.trim()) body.model = this.replayModel.trim();
+        if (this.replayGoal.trim()) body.goal = this.replayGoal.trim();
+        const r = await fetch(`/runs/${this.runId}/replay`, {
+          method: 'POST', headers: this.apiHeaders(), body: JSON.stringify(body),
+        });
+        if (!r.ok) { const e = await r.json(); this.replayError = e.detail || `HTTP ${r.status}`; }
+        else { this.replayResult = await r.json(); }
+      } catch(e) { this.replayError = e.message; }
+      this.replayLoading = false;
+    },
+
+    payloadSummary(payload) {
+      const skip = ['agent_name'];
+      const parts = Object.entries(payload || {})
+        .filter(([k]) => !skip.includes(k))
+        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+      return parts.join('  ·  ');
+    },
+
+    formatDate(iso) {
+      if (!iso) return '';
+      return new Date(iso).toLocaleString();
+    },
+
+    formatTime(ts) {
+      if (!ts) return '';
+      return new Date(ts * 1000).toLocaleTimeString();
+    },
+
+    formatIso(iso) {
+      if (!iso) return '';
+      return new Date(iso).toLocaleTimeString();
+    },
+
+    async loadActivity() {
+      this.loadingActivity = true;
+      try {
+        const r = await fetch(`/runs/${this.runId}/activity`, { headers: this.apiHeaders() });
+        if (r.ok) this.activity = await r.json();
+      } catch {}
+      this.loadingActivity = false;
+    },
+
+    async loadGovernance() {
+      this.loadingGovernance = true;
+      try {
+        const r = await fetch(`/runs/${this.runId}/governance`, { headers: this.apiHeaders() });
+        if (r.ok) this.governanceData = await r.json();
+      } catch {} finally {
+        this.loadingGovernance = false;
+      }
+    },
+
+    async loadFallbacks() {
+      this.loadingFallbacks = true;
+      try {
+        const r = await fetch(`/runs/${this.runId}/fallbacks`, { headers: this.apiHeaders() });
+        if (r.ok) this.fallbackData = await r.json();
+      } catch {} finally {
+        this.loadingFallbacks = false;
+      }
+    },
+
+    copyHash(text) {
+      if (!text) return;
+      navigator.clipboard.writeText(text).catch(() => {});
+      this.copiedHash = text;
+      setTimeout(() => { if (this.copiedHash === text) this.copiedHash = ''; }, 2000);
+    },
+
+    /* ── Agent Debugger ── */
+    async loadDebugData() {
+      this.debugLoading = true;
+      try {
+        // Reuse already-loaded events if available
+        if (this.events.length > 0) {
+          this.debugData = [...this.events].sort((a, b) => a.timestamp - b.timestamp);
+        } else {
+          const r = await fetch(`/runs/${this.runId}/events`, { headers: this.apiHeaders() });
+          if (r.ok) {
+            const evs = await r.json();
+            this.debugData = evs.sort((a, b) => a.timestamp - b.timestamp);
+          }
+        }
+        this.debugStep = 0;
+      } catch {} finally {
+        this.debugLoading = false;
+      }
+    },
+
+    debugSeek(n) {
+      this.debugStep = Math.max(0, Math.min(n, this.debugData.length - 1));
+    },
+
+    debugPrev() {
+      if (this.debugStep > 0) this.debugStep--;
+    },
+
+    debugNext() {
+      if (this.debugStep < this.debugData.length - 1) this.debugStep++;
+    },
+
+    debugTogglePlay() {
+      if (this.debugPlaying) {
+        clearInterval(this.debugPlayTimer);
+        this.debugPlayTimer = null;
+        this.debugPlaying = false;
+      } else {
+        this.debugPlaying = true;
+        this.debugPlayTimer = setInterval(() => {
+          if (this.debugStep >= this.debugData.length - 1) {
+            clearInterval(this.debugPlayTimer);
+            this.debugPlayTimer = null;
+            this.debugPlaying = false;
+          } else {
+            this.debugStep++;
+          }
+        }, this.debugSpeed);
+      }
+    },
+
+    debugCostAt(stepIdx) {
+      let total = 0;
+      for (let i = 0; i <= stepIdx && i < this.debugData.length; i++) {
+        const ev = this.debugData[i];
+        if (ev.event_type === 'agent.end' && ev.payload?.cost_usd) {
+          total += parseFloat(ev.payload.cost_usd) || 0;
+        }
+        if (ev.event_type === 'pipeline.end' && ev.payload?.cost_usd && stepIdx === i) {
+          // Use pipeline total as authoritative at the last step
+          return parseFloat(ev.payload.cost_usd) || total;
+        }
+      }
+      return total;
+    },
+
+    debugTokensAt(stepIdx, field) {
+      let total = 0;
+      for (let i = 0; i <= stepIdx && i < this.debugData.length; i++) {
+        const ev = this.debugData[i];
+        if (ev.event_type === 'agent.end' && ev.payload?.[field]) {
+          total += parseInt(ev.payload[field]) || 0;
+        }
+      }
+      return total;
+    },
+
+    async submitReview(decision) {
+      if (!this.hitlReview || this.hitlSubmitting) return;
+      this.hitlSubmitting = true;
+      try {
+        const body = { decision };
+        if (decision === 'feedback') body.feedback = this.hitlFeedback;
+        if (decision === 'edit') body.edited = this.hitlEditedJson;
+        const r = await fetch(`/reviews/${this.hitlReview.review_id}`, {
+          method: 'POST',
+          headers: this.apiHeaders(),
+          body: JSON.stringify(body),
+        });
+        if (r.ok) this.hitlReview = null;
+      } catch (err) {
+        console.error('HITL submit failed:', err);
+      } finally {
+        this.hitlSubmitting = false;
+      }
+    },
+  }
+}
+</script>
+
+<!-- HITL Review Modal -->
+<div x-show="hitlReview" x-cloak
+     class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+  <div class="bg-gray-900 border border-indigo-700 rounded-xl w-full max-w-2xl shadow-2xl" @click.stop>
+    <template x-if="hitlReview">
+      <div>
+        <div class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-semibold text-white">Human Review Required</h2>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Agent: <span class="text-indigo-300 font-mono" x-text="hitlReview.agent_name"></span>
+            </p>
+          </div>
+          <span class="text-xs text-yellow-400 bg-yellow-900/30 border border-yellow-800 px-2 py-0.5 rounded-full">
+            Waiting for approval
+          </span>
+        </div>
+
+        <div class="px-6 py-4">
+          <div class="text-xs text-gray-400 uppercase tracking-wide mb-2">Artifact</div>
+          <pre class="bg-gray-950 border border-gray-800 rounded-lg p-3 text-xs text-green-300 font-mono overflow-auto max-h-64"
+               x-text="JSON.stringify(hitlReview.artifact, null, 2)"></pre>
+        </div>
+
+        <div class="px-6 pb-4">
+          <div class="text-xs text-gray-400 uppercase tracking-wide mb-2">Feedback (optional)</div>
+          <textarea x-model="hitlFeedback" rows="2"
+            placeholder="Add feedback for the agent…"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 resize-none text-gray-200"></textarea>
+        </div>
+
+        <div class="px-6 pb-6 flex gap-3 flex-wrap">
+          <template x-for="opt in (hitlReview.options || ['approve', 'reject'])" :key="opt">
+            <button
+              @click="submitReview(opt)"
+              :disabled="hitlSubmitting"
+              class="px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
+              :class="{
+                'bg-green-700 hover:bg-green-600 text-white': opt === 'approve',
+                'bg-red-800 hover:bg-red-700 text-white': opt === 'reject',
+                'bg-indigo-700 hover:bg-indigo-600 text-white': opt === 'edit',
+                'bg-gray-700 hover:bg-gray-600 text-white': !['approve','reject','edit'].includes(opt),
+              }"
+              x-text="hitlSubmitting ? '…' : opt"></button>
+          </template>
+          <button
+            @click="submitReview('feedback')"
+            :disabled="hitlSubmitting || !hitlFeedback"
+            class="px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-600 text-white transition disabled:opacity-50">
+            Send feedback
+          </button>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+</body>
+</html>
+

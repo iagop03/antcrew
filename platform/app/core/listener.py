@@ -1,0 +1,544 @@
+"""Antcrew event bus listener — persists every event to the DB.
+
+Subscribe once at app startup. Every pipeline.start/end, agent.start/end,
+hitl.review_required, etc. is written to the events table and used to update
+Run/HitlReview rows in real time.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import secrets
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Optional
+
+# Celery worker support: executor threads can't call asyncio.get_running_loop(),
+# so tasks register their event loop here and _sync_handler uses call_soon_threadsafe.
+_celery_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def set_celery_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Register the event loop used by the Celery task. Call once per task start."""
+    global _celery_loop
+    _celery_loop = loop
+
+from antcrew import bus
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.database import engine
+from app.models.run import (
+    ApiKey,
+    HitlReview,
+    Run,
+    WebhookConfig,
+    WebhookDelivery,
+    WebhookEvent,
+    Workspace,
+)
+from app.models.run import Event as DBEvent
+from app.services.webhook import notify_new_delivery
+
+if TYPE_CHECKING:
+    from antcrew import Event
+
+log = logging.getLogger(__name__)
+
+_REQUEST_MAX_LEN = 2000
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _sync_handler(event: "Event") -> None:
+    """Fire-and-forget: schedule DB write on the running event loop."""
+    try:
+        loop = asyncio.get_running_loop()
+        asyncio.ensure_future(_persist_event(event), loop=loop)
+    except RuntimeError:
+        # Called from an executor thread (e.g., Celery worker running _run_sync).
+        # Use the loop registered by the Celery task via set_celery_loop().
+        if _celery_loop is not None and _celery_loop.is_running():
+            _celery_loop.call_soon_threadsafe(
+                asyncio.ensure_future, _persist_event(event)
+            )
+
+
+async def _persist_event(event: "Event") -> None:
+    try:
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            db_event = DBEvent(
+                run_id=event.run_id,
+                thread_id=event.thread_id,
+                event_type=event.type,
+                payload=dict(event.payload),
+                timestamp=event.timestamp,
+            )
+            session.add(db_event)
+
+            if event.type == "pipeline.start" and event.run_id:
+                stmt = select(Run).where(Run.run_id == event.run_id)
+                existing = (await session.exec(stmt)).first()
+                if not existing:
+                    session.add(Run(
+                        run_id=event.run_id,
+                        thread_id=event.thread_id or "default",
+                        team=event.payload.get("team", "unknown"),
+                        request=event.payload.get("request", "")[:_REQUEST_MAX_LEN],
+                        status="running",
+                    ))
+
+            elif event.type == "pipeline.end" and event.run_id:
+                stmt = select(Run).where(Run.run_id == event.run_id)
+                run = (await session.exec(stmt)).first()
+                if run and run.status != "cancelled":
+                    # Don't overwrite a cancelled run — cancel_run already set the final status
+                    run.status = "success" if event.payload.get("success") else "error"
+                    run.model = event.payload.get("model")
+                    raw_cost_usd = event.payload.get("cost_usd", 0.0)
+                    run.finished_at = _utcnow()
+                    if run.created_at:
+                        ca = run.created_at.replace(tzinfo=None) if run.created_at.tzinfo else run.created_at
+                        run.duration_s = (run.finished_at - ca).total_seconds()
+
+                    # Fetch workspace once — used for both billing multiplier and Stripe reporting
+                    ws_row = None
+                    if run.workspace_id is not None:
+                        ws_row = (await session.exec(
+                            select(Workspace).where(Workspace.id == run.workspace_id)
+                        )).first()
+
+                    # Safe default: if the billing block below throws, the run still
+                    # completes with the raw provider cost rather than staying "running" forever.
+                    run.cost_usd = raw_cost_usd
+
+                    # Apply billing multiplier: trial ×1.0, byok ×0.4, managed ×3.0
+                    # Isolated try/except so a campaign bug never blocks run completion.
+                    if ws_row and raw_cost_usd > 0:
+                        try:
+                            from datetime import timezone as _tz
+
+                            from app.core.byok import get_cost_multiplier
+                            from app.models.admin import Campaign
+                            _now = datetime.now(_tz.utc).replace(tzinfo=None)
+                            _camp = (await session.exec(
+                                select(Campaign)
+                                .where(Campaign.active.is_(True))
+                                .where(Campaign.starts_at <= _now)
+                                .where(Campaign.ends_at >= _now)
+                                .order_by(Campaign.id.desc())
+                                .limit(1)
+                            )).first()
+                            _campaign_mult: Optional[float] = None
+                            if _camp:
+                                # Determine base eligibility (target: all vs new)
+                                _eligible = False
+                                if _camp.target == "all":
+                                    _eligible = True
+                                elif _camp.target == "new":
+                                    # Anti-abuse: check user registration date, not workspace creation date.
+                                    # A user who signed up before the campaign cannot get the discount
+                                    # just by creating a new workspace.
+                                    from app.models.auth import User as _User
+                                    _owner_id = getattr(ws_row, "owner_user_id", None)
+                                    if _owner_id is not None:
+                                        _user = await session.get(_User, _owner_id)
+                                        _registered_at = getattr(_user, "created_at", None) if _user else None
+                                    else:
+                                        _registered_at = getattr(ws_row, "created_at", None)
+                                    if _registered_at is not None and _registered_at >= _camp.starts_at:
+                                        _eligible = True
+
+                                if _eligible:
+                                    if _camp.discount_days is None:
+                                        # No per-workspace window — discount active for full campaign range
+                                        _campaign_mult = _camp.multiplier
+                                    elif run.workspace_id is not None:
+                                        # Enrollment-based: each workspace gets its own N-day window
+                                        from datetime import timedelta as _td
+
+                                        from app.models.admin import CampaignEnrollment
+                                        _enr_stmt = (
+                                            select(CampaignEnrollment)
+                                            .where(CampaignEnrollment.campaign_id == _camp.id)
+                                            .where(CampaignEnrollment.workspace_id == run.workspace_id)
+                                        )
+                                        _enr = (await session.exec(_enr_stmt)).first()
+                                        if _enr is None:
+                                            _can_enroll = True
+                                            if _camp.max_participants is not None:
+                                                _all_enr = (await session.exec(
+                                                    select(CampaignEnrollment)
+                                                    .where(CampaignEnrollment.campaign_id == _camp.id)
+                                                )).all()
+                                                if len(_all_enr) >= _camp.max_participants:
+                                                    _can_enroll = False
+                                            if _can_enroll:
+                                                _enr = CampaignEnrollment(
+                                                    campaign_id=_camp.id,
+                                                    workspace_id=run.workspace_id,
+                                                    enrolled_at=_now,
+                                                    discount_ends_at=_now + _td(days=_camp.discount_days),
+                                                )
+                                                session.add(_enr)
+                                        if _enr is not None and _enr.discount_ends_at >= _now:
+                                            _campaign_mult = _camp.multiplier
+                            multiplier = get_cost_multiplier(
+                                getattr(ws_row, "llm_key_mode", "managed"),
+                                is_trial=getattr(ws_row, "is_trial", False),
+                                multiplier_override=getattr(ws_row, "cost_multiplier_override", None),
+                                multiplier_locked=getattr(ws_row, "multiplier_locked", False),
+                                campaign_multiplier=_campaign_mult,
+                                managed_rate=getattr(ws_row, "base_managed_mult", None),
+                                byok_rate=getattr(ws_row, "base_byok_mult", None),
+                                proxy_rate=getattr(ws_row, "base_proxy_mult", None),
+                            )
+                            run.cost_usd = round(raw_cost_usd * multiplier, 6)
+                        except Exception as _billing_exc:
+                            log.error(
+                                "platform listener: billing multiplier failed for run %s "
+                                "(workspace %s, raw=$%.6f) — stored at raw cost: %s",
+                                event.run_id, run.workspace_id, raw_cost_usd, _billing_exc,
+                            )
+
+                    session.add(run)
+
+                    pipeline_payload = json.dumps({
+                        "run_id": event.run_id,
+                        "status": run.status,
+                        "cost_usd": run.cost_usd,
+                        "team": run.team,
+                    })
+
+                    # Global fallback webhook (env var)
+                    webhook_url = os.environ.get("WEBHOOK_URL")
+                    if webhook_url:
+                        session.add(WebhookDelivery(
+                            run_id=event.run_id,
+                            url=webhook_url,
+                            payload_json=pipeline_payload,
+                        ))
+                        notify_new_delivery()
+
+                    # Report metered usage to Stripe (fire-and-forget, Stripe workspaces only)
+                    if (ws_row and ws_row.stripe_customer_id and run.cost_usd > 0
+                            and getattr(ws_row, "billing_provider", "mor") == "stripe"):
+                        from app.services import billing as _billing
+                        asyncio.ensure_future(
+                            _billing.report_run_cost(
+                                run.workspace_id,
+                                ws_row.stripe_customer_id,
+                                run.cost_usd,
+                            )
+                        )
+
+                    # Per-workspace registered webhooks — filtered in SQL via webhook_event join
+                    if run.workspace_id is not None:
+                        from sqlmodel import col as _col
+                        hookable = (await session.exec(
+                            select(WebhookConfig)
+                            .join(WebhookEvent, WebhookEvent.webhook_id == WebhookConfig.id)
+                            .where(WebhookConfig.workspace_id == run.workspace_id)
+                            .where(WebhookConfig.enabled == True)  # noqa: E712
+                            .where(_col(WebhookEvent.event_type).in_(["pipeline.end", "*"]))
+                            .distinct()
+                        )).all()
+                        for wh in hookable:
+                            session.add(WebhookDelivery(
+                                run_id=event.run_id,
+                                url=wh.url,
+                                payload_json=pipeline_payload,
+                            ))
+                        if hookable:
+                            notify_new_delivery()
+
+            elif event.type == "agent.end" and event.run_id:
+                stmt = select(Run).where(Run.run_id == event.run_id)
+                run = (await session.exec(stmt)).first()
+                if run:
+                    run.tokens_in = (run.tokens_in or 0) + int(event.payload.get("tokens_in", 0))
+                    run.tokens_out = (run.tokens_out or 0) + int(event.payload.get("tokens_out", 0))
+                    session.add(run)
+
+            elif event.type == "hitl.review_required" and event.run_id:
+                review_id = event.payload.get("review_id")
+                artifact = event.payload.get("artifact", {})
+                if review_id:
+                    stmt = select(HitlReview).where(HitlReview.review_id == review_id)
+                    if not (await session.exec(stmt)).first():
+                        _ct = secrets.token_urlsafe(32)
+                        import hashlib as _hl
+                        session.add(HitlReview(
+                            review_id=review_id,
+                            client_token=_ct,
+                            client_token_hash=_hl.sha256(_ct.encode()).hexdigest(),
+                            run_id=event.run_id,
+                            agent_name=event.payload.get("agent_name", ""),
+                            artifact_json=json.dumps(artifact),
+                            options_json=json.dumps(event.payload.get("options", ["approve", "reject"])),
+                            review_type=event.payload.get("review_type", "approval"),
+                            item_schema=event.payload.get("item_schema"),
+                            status="pending",
+                        ))
+
+                    # Determine notification strategy — check workspace config first.
+                    hitl_webhook: Optional[str] = None
+                    ws_slack_channel: Optional[str] = None
+                    ws_for_hitl = None
+                    run_for_ws = (await session.exec(
+                        select(Run).where(Run.run_id == event.run_id)
+                    )).first()
+                    if run_for_ws and run_for_ws.workspace_id is not None:
+                        ws_for_hitl = (await session.exec(
+                            select(Workspace).where(Workspace.id == run_for_ws.workspace_id)
+                        )).first()
+                        if ws_for_hitl:
+                            if ws_for_hitl.slack_webhook_url:
+                                hitl_webhook = ws_for_hitl.slack_webhook_url
+                            if ws_for_hitl.slack_channel_id:
+                                ws_slack_channel = ws_for_hitl.slack_channel_id
+
+                    if not hitl_webhook:
+                        hitl_webhook = os.environ.get("HITL_WEBHOOK_URL")
+
+                    # Interactive Slack (Socket Mode).
+                    # Resolution order: per-workspace encrypted tokens → global env vars.
+                    from app.core.slack_hitl import (
+                        _decrypt as _dec,
+                    )
+                    from app.core.slack_hitl import (
+                        send_hitl_to_slack as _slack_send,
+                    )
+                    from app.core.slack_hitl import (
+                        start_slack_socket_mode as _start_sm,
+                    )
+                    effective_bot = ""
+                    effective_app = ""
+                    if ws_for_hitl:
+                        if ws_for_hitl.slack_bot_token_enc:
+                            effective_bot = _dec(ws_for_hitl.slack_bot_token_enc)
+                        if ws_for_hitl.slack_app_token_enc:
+                            effective_app = _dec(ws_for_hitl.slack_app_token_enc)
+                    if not effective_bot:
+                        effective_bot = os.environ.get("SLACK_BOT_TOKEN", "")
+                    if not effective_app:
+                        effective_app = os.environ.get("SLACK_APP_TOKEN", "")
+                    effective_channel = ws_slack_channel or os.environ.get("SLACK_CHANNEL_ID", "")
+
+                    if review_id and effective_bot and effective_channel:
+                        # Lazily start Socket Mode for per-workspace tokens on first review.
+                        if effective_app:
+                            _start_sm(effective_bot, effective_app)
+                        artifact_json_str = json.dumps(artifact)
+                        options_list = event.payload.get("options", ["approve", "reject"])
+                        asyncio.ensure_future(
+                            _slack_send(
+                                bot_token=effective_bot,
+                                channel_id=effective_channel,
+                                review_id=review_id,
+                                agent_name=event.payload.get("agent_name", ""),
+                                artifact_json=artifact_json_str,
+                                options=options_list,
+                            )
+                        )
+
+                    # Webhook notification (incoming webhook or HITL_WEBHOOK_URL env).
+                    if hitl_webhook and review_id:
+                        session.add(WebhookDelivery(
+                            run_id=event.run_id,
+                            url=hitl_webhook,
+                            payload_json=_build_hitl_payload(
+                                hitl_webhook,
+                                review_id=review_id,
+                                run_id=event.run_id,
+                                agent_name=event.payload.get("agent_name", ""),
+                                artifact=artifact,
+                                options=event.payload.get("options", ["approve", "reject"]),
+                            ),
+                        ))
+                        notify_new_delivery()
+
+                    # ── Per-reviewer notifications (email, Slack DM, Telegram) ──
+                    if review_id and ws_for_hitl:
+                        reviewer_keys = (await session.exec(
+                            select(ApiKey).where(
+                                ApiKey.workspace_id == ws_for_hitl.id,
+                                ApiKey.role == "reviewer",
+                                ApiKey.revoked_at == None,  # noqa: E711
+                            )
+                        )).all()
+                        _agent_name = event.payload.get("agent_name", "")
+                        _run_id = event.run_id
+                        _base_url = os.environ.get("PLATFORM_BASE_URL", "")
+                        _artifact_json = json.dumps(artifact)
+                        _options = event.payload.get("options", ["approve", "reject"])
+
+                        for rkey in reviewer_keys:
+                            # Email
+                            if rkey.email:
+                                from app.services.email import (
+                                    send_review_assigned as _send_email,
+                                )
+                                asyncio.ensure_future(_send_email(
+                                    to_email=rkey.email,
+                                    assignee_label=rkey.label,
+                                    review_id=review_id,
+                                    agent_name=_agent_name,
+                                    run_id=_run_id,
+                                    base_url=_base_url,
+                                ))
+
+                            # Slack DM
+                            if rkey.slack_user_id and effective_bot:
+                                from app.core.slack_hitl import send_hitl_dm as _send_dm
+                                asyncio.ensure_future(_send_dm(
+                                    bot_token=effective_bot,
+                                    slack_user_id=rkey.slack_user_id,
+                                    review_id=review_id,
+                                    agent_name=_agent_name,
+                                    artifact_json=_artifact_json,
+                                    options=_options,
+                                ))
+
+                            # Telegram
+                            if rkey.telegram_chat_id:
+                                from app.services.telegram import (
+                                    send_review_assigned as _send_tg,
+                                )
+                                asyncio.ensure_future(_send_tg(
+                                    chat_id=rkey.telegram_chat_id,
+                                    review_id=review_id,
+                                    agent_name=_agent_name,
+                                    run_id=_run_id,
+                                    base_url=_base_url,
+                                ))
+
+            elif event.type == "manual_action.required" and event.run_id:
+                from app.models.run import Ticket
+                ticket_id = event.payload.get("ticket_id")
+                if ticket_id:
+                    # Create the blocking Ticket if it doesn't exist yet
+                    stmt = select(Ticket).where(Ticket.ticket_id == ticket_id)
+                    if not (await session.exec(stmt)).first():
+                        session.add(Ticket(
+                            ticket_id=ticket_id,
+                            run_id=event.run_id,
+                            title=event.payload.get("title", "Manual step required"),
+                            description=event.payload.get("description", ""),
+                            ticket_type="manual_action",
+                            blocking=True,
+                            assignee=event.payload.get("assignee"),
+                            status="open",
+                            priority="high",
+                        ))
+                    # Mark the run as blocked
+                    run_to_block = (await session.exec(
+                        select(Run).where(Run.run_id == event.run_id)
+                    )).first()
+                    if run_to_block and run_to_block.status == "running":
+                        run_to_block.status = "blocked"
+                        session.add(run_to_block)
+
+            await session.commit()
+    except Exception as exc:
+        log.warning("platform listener: DB write failed: %s", exc)
+
+
+def _extract_artifact_excerpt(artifact: dict) -> str:
+    """Return a short human-readable summary extracted from an artifact dict."""
+    if not artifact or not isinstance(artifact, dict):
+        return ""
+    # PRD / ticket list: prefer title field, then first ticket title
+    title = artifact.get("title") or artifact.get("name") or ""
+    tickets = artifact.get("tickets") or artifact.get("items") or []
+    if tickets and isinstance(tickets, list):
+        first = tickets[0]
+        if isinstance(first, dict):
+            ticket_title = first.get("title") or first.get("name") or ""
+            if ticket_title:
+                count = len(tickets)
+                suffix = f" (+{count - 1} more)" if count > 1 else ""
+                return f"{ticket_title}{suffix}"
+    if title:
+        return title[:120]
+    # Fallback: any string value in the top level
+    for v in artifact.values():
+        if isinstance(v, str) and v.strip():
+            return v.strip()[:120]
+    return ""
+
+
+def _build_hitl_payload(
+    url: str,
+    *,
+    review_id: str,
+    run_id: str,
+    agent_name: str,
+    artifact: dict,
+    options: list,
+) -> str:
+    """Return a JSON payload for a HITL webhook delivery.
+
+    When the URL looks like a Slack incoming webhook (contains 'hooks.slack.com')
+    the payload is formatted as Slack Block Kit for immediate readability.
+    Otherwise a plain JSON object is returned.
+    """
+    base = os.environ.get("PLATFORM_BASE_URL", "").rstrip("/")
+    review_url = f"{base}/reviews" if base else "/reviews"
+    excerpt = _extract_artifact_excerpt(artifact)
+
+    if "hooks.slack.com" in url:
+        options_text = " · ".join(f"`{o}`" for o in options)
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "antcrew — Human Review Required"},
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Agent:*\n{agent_name}"},
+                    {"type": "mrkdwn", "text": f"*Run:*\n`{run_id[:16]}…`"},
+                ],
+            },
+        ]
+        if excerpt:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Artifact:*\n{excerpt}"},
+            })
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Options:* {options_text}\n<{review_url}|Open review dashboard →>",
+            },
+        })
+        blocks.append({"type": "divider"})
+        return json.dumps({
+            "blocks": blocks,
+            "text": f"[antcrew] {agent_name} needs review — {review_url}",
+        })
+
+    return json.dumps({
+        "event": "hitl.review_required",
+        "review_id": review_id,
+        "run_id": run_id,
+        "agent_name": agent_name,
+        "artifact_excerpt": excerpt,
+        "options": options,
+        "review_url": review_url,
+    })
+
+
+def start_listening() -> None:
+    """Subscribe the platform listener to the global antcrew bus."""
+    bus.subscribe("*", _sync_handler)
+    log.info("antcrew-platform: listening to antcrew event bus")
+
+
+def stop_listening() -> None:
+    bus.unsubscribe("*", _sync_handler)

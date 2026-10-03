@@ -1,0 +1,904 @@
+"""Background engine runner — dispatches antcrew capability-driven pipelines.
+
+Flow:
+    POST /engine/run
+        → dispatch_engine()
+            → emits pipeline.start on the global bus (DB row created by listener)
+            → spawns _run_engine_sync() in the thread pool
+                → EventLog + EventBusBridge (agent.start/end events)
+                → EngineLoop.run() until goal or error
+                → returns (success, cost_usd)
+            → emits pipeline.end with real LLM cost
+        ← returns run_id immediately
+
+The platform's existing listener, WebSocket stream, and /runs endpoints work
+transparently for engine runs — no changes needed there.
+"""
+from __future__ import annotations
+
+import asyncio
+import functools
+import json
+import logging
+import os
+import shutil
+import tempfile
+import threading as _threading
+import uuid as _uuid
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Optional
+
+from antcrew import Event as BusEvent
+from antcrew import bus, new_run_id
+from antcrew_engine import HitlDecision
+
+from app.services.runner_base import (
+    _check_workspace_budget,
+    _get_budget_lock,
+    _mark_workspace_budget_status,
+)
+
+log = logging.getLogger(__name__)
+
+_MAX_WORKERS = int(os.environ.get("ANTCREW_WORKERS", "4"))
+_executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="antcrew-engine")
+
+# ---------------------------------------------------------------------------
+# Cancellation
+# ---------------------------------------------------------------------------
+
+_cancel_events: dict[str, _threading.Event] = {}
+
+
+def cancel_engine_run(run_id: str) -> bool:
+    """Signal an in-flight engine run to stop. Returns True if the run was found."""
+    event = _cancel_events.get(run_id)
+    if event is None:
+        return False
+    event.set()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# ManualAction threading bridge
+# ---------------------------------------------------------------------------
+
+_manual_action_events: dict[str, _threading.Event] = {}
+
+
+def resolve_manual_action(ticket_id: str) -> bool:
+    """Unblock a ManualActionCapability waiting on *ticket_id*. Called from the ticket API."""
+    event = _manual_action_events.pop(ticket_id, None)
+    if event is None:
+        return False
+    event.set()
+    return True
+
+
+def _make_manual_action_callback(run_id: str, event_log, timeout: int = 86400):
+    """Return a blocking callable for ManualActionCapability.
+
+    The callback emits a ``manual_action.required`` bus event (which the
+    listener picks up to create the blocking Ticket + set run.status="blocked"),
+    then blocks on a threading.Event until the human resolves the ticket.
+    """
+    def request_action(content: dict) -> None:
+        import uuid as _u
+        ticket_id = str(_u.uuid4())
+        event = _threading.Event()
+        _manual_action_events[ticket_id] = event
+
+        bus.emit(BusEvent(
+            "manual_action.required",
+            {
+                "ticket_id":   ticket_id,
+                "title":       content.get("title", "Manual step required"),
+                "description": content.get("description", ""),
+                "assignee":    content.get("assignee"),
+            },
+            run_id=run_id,
+            thread_id="default",
+        ))
+
+        fired = event.wait(timeout=timeout)
+        _manual_action_events.pop(ticket_id, None)
+        if not fired:
+            log.warning(
+                "engine runner: manual_action %s timed out after %ds for run %s — continuing",
+                ticket_id, timeout, run_id,
+            )
+
+    return request_action
+
+
+# ---------------------------------------------------------------------------
+# HITL threading bridge
+# ---------------------------------------------------------------------------
+
+_engine_reviews: dict[str, _threading.Event] = {}
+_engine_verdicts: dict[str, HitlDecision] = {}
+
+
+def resolve_engine_review(review_id: str, decision: HitlDecision) -> bool:
+    """Unblock a HitlReviewer waiting on *review_id*. Called from the review API.
+
+    Accepts a HitlDecision (antcrew_engine.HitlDecision) so the platform→engine
+    boundary uses the same canonical type as the CLI and any other review channel.
+    """
+    event = _engine_reviews.pop(review_id, None)
+    if event is None:
+        return False
+    _engine_verdicts[review_id] = decision
+    event.set()
+    return True
+
+
+def _make_review_callback(run_id: str, cap_name: str, event_log, timeout: int = 3600):
+    """Return a blocking callable for HitlReviewer that integrates with the platform bus."""
+    def request_review(content) -> dict:
+        from antcrew_engine import HitlRequested, HitlResolved
+
+        review_id = str(_uuid.uuid4())
+        event = _threading.Event()
+        _engine_reviews[review_id] = event
+
+        event_log.emit(HitlRequested(review_id=review_id, reviewed_capability=cap_name))
+
+        bus.emit(BusEvent(
+            "hitl.review_required",
+            {
+                "review_id":  review_id,
+                "agent_name": f"engine:{cap_name}",
+                "options":    ["approve", "reject"],
+                "artifact":   content if isinstance(content, dict)
+                              else {"content": str(content)[:2_000]},
+            },
+            run_id=run_id,
+            thread_id="default",
+        ))
+
+        fired = event.wait(timeout=timeout)
+        if not fired:
+            _engine_reviews.pop(review_id, None)
+
+        verdict_data: HitlDecision = _engine_verdicts.pop(
+            review_id, {"verdict": "timeout", "feedback": None}
+        )
+        event_log.emit(HitlResolved(
+            review_id=review_id,
+            verdict=verdict_data.get("verdict", "timeout"),
+        ))
+        return verdict_data
+
+    return request_review
+
+
+def _patch_downstream_needs(registry, reviewed_cap: str, old_cond_str: str | None = None) -> None:
+    """Replace the gating condition with '<cap>_approved' in all downstream executors' needs.
+
+    old_cond_str defaults to f'{reviewed_cap}_exists' but should be the actual condition
+    produced by the upstream capability (e.g. 'architecture_exists' for 'architect').
+    """
+    import dataclasses
+
+    from antcrew_engine import ConditionId
+
+    old_cond  = ConditionId(old_cond_str or f"{reviewed_cap}_exists")
+    new_cond  = ConditionId(f"{reviewed_cap}_approved")
+    hitl_name = f"hitl_{reviewed_cap}"
+
+    for executor in registry.all():
+        if executor.descriptor.name == hitl_name:
+            continue  # don't patch the reviewer itself
+        if old_cond in executor.descriptor.needs:
+            executor.descriptor = dataclasses.replace(
+                executor.descriptor,
+                needs=executor.descriptor.needs - frozenset([old_cond]) | frozenset([new_cond]),
+            )
+
+
+def _load_existing_codebase(store, source_dir: Path, goal_description: str) -> None:
+    """Seed the store with an existing project's .py files + stub planning artifacts."""
+    from antcrew_engine import Artifact, ArtifactId, ArtifactKind
+
+    _SKIP = frozenset([".antcrew", "__pycache__", "venv", ".venv", ".git", "node_modules"])
+
+    loaded = 0
+    for py_file in sorted(source_dir.rglob("*.py")):
+        try:
+            rel = py_file.relative_to(source_dir)
+        except ValueError:
+            continue
+        if any(part in _SKIP for part in rel.parts):
+            continue
+        rel_str = str(rel).replace("\\", "/")
+        try:
+            content = py_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        store.write(Artifact(
+            id       = ArtifactId(f"src/{rel_str}"),
+            kind     = ArtifactKind.SOURCE,
+            content  = content,
+            metadata = {"file_path": rel_str, "source": "from_dir"},
+        ))
+        loaded += 1
+
+    log.info("engine runner: loaded %d source files from %s", loaded, source_dir)
+
+    # Stub planning artifacts so the engine skips planning phases
+    store.write(Artifact(
+        id       = ArtifactId("requirements"),
+        kind     = ArtifactKind.REQUIREMENTS,
+        content  = (
+            f"# Requirements\n\nExisting project loaded from `{source_dir}`.\n\n"
+            f"Goal: {goal_description}"
+        ),
+        metadata = {"file_path": ".antcrew/requirements.md"},
+    ))
+    store.write(Artifact(
+        id       = ArtifactId("architecture"),
+        kind     = ArtifactKind.ARCHITECTURE,
+        content  = (
+            f"# Architecture\n\nExisting codebase — see source files loaded from `{source_dir}`."
+        ),
+        metadata = {"file_path": ".antcrew/architecture.md"},
+    ))
+    store.write(Artifact(
+        id       = ArtifactId("task_graph"),
+        kind     = ArtifactKind.TASK_GRAPH,
+        content  = {
+            "tasks": [{
+                "id":          "existing_implementation",
+                "description": goal_description,
+                "status":      "done",
+            }],
+        },
+        metadata = {"file_path": ".antcrew/task_graph.json"},
+    ))
+
+AVAILABLE_ENGINE_CAPABILITIES = [
+    "Architect",
+    "TaskPlanner",
+    "CodeGenerator",
+    "CodeRegenerator",
+    "DependencyInstaller",
+    "DocGenerator",
+    "HitlReviewer",
+    "ManualActionCapability",
+    "TestGenerator",
+    "TestRunner",
+    "BugFixer",
+    "CodeReviewer",
+    "ReviewFixer",
+]
+
+_GOAL_META_REL = Path(".antcrew") / "goal.json"
+
+
+# ---------------------------------------------------------------------------
+# Goal meta persistence (mirrors antcrew/cli/engine_cmd.py)
+# ---------------------------------------------------------------------------
+
+def _save_goal_meta(
+    output: Path, description: str, tech: list[str],
+    conditions: list[str], full: bool,
+) -> None:
+    meta = {"description": description, "tech": tech, "conditions": conditions, "full": full}
+    meta_path = output / _GOAL_META_REL
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+
+def _load_goal_meta(output: Path) -> dict | None:
+    meta_path = output / _GOAL_META_REL
+    if not meta_path.exists():
+        return None
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Engine helpers
+# ---------------------------------------------------------------------------
+
+def _build_engine_registry(
+    llm,
+    *,
+    capability_models: "dict[str, str] | None" = None,
+    max_tasks: int = 12,
+    parallel_workers: int = 5,
+    manual_action_callback=None,
+    manual_action_title: str = "Manual step required",
+    manual_action_description: str = "",
+    manual_action_assignee: "str | None" = None,
+    manual_action_needs: "frozenset | None" = None,
+):
+    from antcrew_engine import (
+        Architect,
+        BugFixer,
+        CapabilityRegistry,
+        CodeGenerator,
+        CodeRegenerator,
+        CodeReviewer,
+        DependencyInstaller,
+        DocGenerator,
+        ReviewFixer,
+        TaskPlanner,
+        TestGenerator,
+        TestRunner,
+    )
+    from antcrew_engine import (
+        build_llm as _build_llm,
+    )
+    from antcrew_engine.capabilities import ManualActionCapability
+
+    _overrides = {
+        name: _build_llm(model_str)
+        for name, model_str in (capability_models or {}).items()
+    }
+
+    def _llm(cap_name: str):
+        return _overrides.get(cap_name, llm)
+
+    registry = CapabilityRegistry()
+    registry.register(Architect(llm=_llm("architect")))
+    registry.register(TaskPlanner(llm=_llm("task_planner"), max_tasks=max_tasks))
+    registry.register(CodeGenerator(llm=_llm("code_generator"), parallel_workers=parallel_workers))
+    registry.register(DependencyInstaller(llm=_llm("dependency_installer")))
+    registry.register(TestGenerator(llm=_llm("test_generator")))
+    registry.register(TestRunner())
+    registry.register(BugFixer(llm=_llm("bug_fixer")))
+    registry.register(CodeRegenerator(llm=_llm("code_regenerator")))
+    registry.register(CodeReviewer(llm=_llm("code_reviewer")))
+    registry.register(ReviewFixer(llm=_llm("review_fixer")))
+    registry.register(DocGenerator(llm=_llm("doc_generator")))
+    registry.register(ManualActionCapability(
+        title=manual_action_title,
+        description=manual_action_description,
+        assignee=manual_action_assignee,
+        needs=manual_action_needs,
+        request_action=manual_action_callback,
+    ))
+    return registry
+
+
+def _build_engine_validators():
+    from antcrew_engine import artifact_validators
+    from antcrew_engine.capabilities.validators import (
+        AllTasksCompletedValidator,
+        CodeReviewedValidator,
+        DependenciesInstalledValidator,
+        DocumentationExistsValidator,
+        TestsExistValidator,
+        TestsPassValidator,
+    )
+    return [
+        *artifact_validators(
+            ("requirements",       "requirements_exists"),
+            ("architecture",       "architecture_exists"),
+            ("task_graph",         "task_graph_exists"),
+            ("manual_action_done", "manual_action_done"),  # ManualActionCapability signal
+        ),
+        AllTasksCompletedValidator(),
+        DependenciesInstalledValidator(),
+        TestsExistValidator(),
+        TestsPassValidator(),
+        CodeReviewedValidator(),
+        DocumentationExistsValidator(),
+    ]
+
+
+def _build_engine_goal(description: str, tech: list[str], conditions: list[str], full: bool):
+    from antcrew_engine import (
+        Condition,
+        ConditionId,
+        Constraints,
+        DesiredProjectState,
+        Goal,
+    )
+
+    default_conditions = [
+        ("requirements_exists",    "requirements document written"),
+        ("architecture_exists",    "architecture designed"),
+        ("task_graph_exists",      "tasks planned"),
+        ("implementation_exists",  "all tasks implemented"),
+        ("dependencies_installed", "project dependencies installed"),
+        ("tests_exist",            "test suite written"),
+        ("tests_pass",             "tests passing"),
+        ("code_reviewed",          "code reviewed and approved"),
+        ("documentation_exists",   "README.md written"),
+    ] if full else [
+        ("requirements_exists", "requirements document written"),
+        ("architecture_exists", "architecture designed"),
+        ("task_graph_exists",   "tasks planned"),
+    ]
+
+    cond_set = (
+        frozenset(Condition(ConditionId(c.strip()), c.strip()) for c in conditions)
+        if conditions else
+        frozenset(Condition(ConditionId(cid), desc) for cid, desc in default_conditions)
+    )
+
+    return Goal(
+        description=description,
+        desired_state=DesiredProjectState(cond_set),
+        constraints=Constraints(tech_stack=tuple(tech)) if tech else Constraints(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sync executor — runs in thread pool, returns (success, cost_usd)
+# ---------------------------------------------------------------------------
+
+def _run_engine_sync(
+    run_id: str,
+    goal_description: str,
+    model: str,
+    tech: list[str],
+    conditions: list[str],
+    full: bool,
+    max_iter: int,
+    output_dir: Optional[Path],
+    fix_attempts: int = 3,
+    hitl_after: list[str] | None = None,
+    source_dir: Optional[Path] = None,
+    stop_event: Optional[_threading.Event] = None,
+    hitl_max_rejections: int = 5,
+    max_cost_usd: Optional[float] = None,
+    capability_models: "dict[str, str] | None" = None,
+    max_tasks: int = 12,
+    parallel_workers: int = 5,
+    byok_api_key: Optional[str] = None,
+    byok_base_url: Optional[str] = None,
+    manual_action_title: str = "Manual step required",
+    manual_action_description: str = "",
+    manual_action_assignee: "str | None" = None,
+    manual_action_after: "list[str] | None" = None,
+    manual_action_timeout_s: int = 86400,
+    docs_config: "dict | None" = None,
+) -> tuple[bool, float]:
+    from antcrew import Event as _BusEvent
+    from antcrew import bus as _bus
+    from antcrew_engine import (
+        ConditionId,
+        EngineLoop,
+        EventBusBridge,
+        EventLog,
+        FilesystemStore,
+        HitlReviewer,
+        MemoryStore,
+        artifact_validators,
+        build_llm,
+    )
+
+    hitl_after = hitl_after or []
+    manual_action_after = manual_action_after or []
+
+    llm = build_llm(model, prompt_caching=True, api_key=byok_api_key or None, base_url=byok_base_url or None)
+    event_log = EventLog()
+    EventBusBridge(
+        event_log,
+        run_id=run_id,
+        on_event=lambda t, d, **kw: _bus.emit(_BusEvent(t, d, **kw)),
+    )
+
+    goal = _build_engine_goal(goal_description, tech, conditions, full)
+    store = FilesystemStore(output_dir) if output_dir else MemoryStore()
+
+    manual_needs = frozenset(ConditionId(c) for c in manual_action_after) if manual_action_after else None
+    manual_cb = _make_manual_action_callback(run_id, event_log, timeout=manual_action_timeout_s)
+
+    registry = _build_engine_registry(
+        llm,
+        capability_models=capability_models,
+        max_tasks=max_tasks,
+        parallel_workers=parallel_workers,
+        manual_action_callback=manual_cb,
+        manual_action_title=manual_action_title,
+        manual_action_description=manual_action_description,
+        manual_action_assignee=manual_action_assignee,
+        manual_action_needs=manual_needs,
+    )
+    validators = _build_engine_validators()
+
+    # Inject documentation manager if workspace has S3 docs configured
+    if docs_config:
+        try:
+            from antcrew_engine.documentation import DocumentationManager
+            _doc_mgr = DocumentationManager(storage_type="s3", storage_config=docs_config)
+            if docs_config.get("schema_yaml"):
+                import yaml as _yaml
+                _doc_mgr.load_schema_from_dict(_yaml.safe_load(docs_config["schema_yaml"]))
+            _doc_mgr.index_from_storage()
+            for _executor in registry.all():
+                if hasattr(_executor, "set_documentation"):
+                    _executor.set_documentation(_doc_mgr)
+        except Exception as _doc_exc:
+            log.warning("engine runner: docs setup failed: %s", _doc_exc)
+
+    # Load existing codebase if source_dir is provided
+    if source_dir is not None:
+        _load_existing_codebase(store, source_dir, goal_description)
+
+    # Wire HITL reviewers.
+    # Auto-detect the actual artifact ID and triggering condition from the registry
+    # so --hitl-after architect correctly reads "architecture" (not "architect").
+    for cap_name in hitl_after:
+        source_exec = next((e for e in registry.all() if e.descriptor.name == cap_name), None)
+        triggers_condition: str | None = None
+        artifact_id:        str | None = None
+        if source_exec:
+            exists_conds = [
+                str(c) for c in source_exec.descriptor.produces
+                if str(c).endswith("_exists")
+            ]
+            if exists_conds:
+                triggers_condition = exists_conds[0]
+                artifact_id        = triggers_condition[: -len("_exists")]
+
+        callback = _make_review_callback(run_id, cap_name, event_log)
+        reviewer = HitlReviewer(
+            reviewed_capability=cap_name,
+            request_review=callback,
+            artifact_id=artifact_id,
+            triggers_condition=triggers_condition,
+        )
+        registry.register(reviewer)
+        # Validator: '<cap>_approval' artifact → '<cap>_approved' condition
+        validators += artifact_validators((f"{cap_name}_approval", f"{cap_name}_approved"))
+        # Patch downstream executors to require '<cap>_approved' instead of the real exists cond
+        _patch_downstream_needs(registry, cap_name, triggers_condition or f"{cap_name}_exists")
+
+    total_limits = {"code_regenerator": 2, "review_fixer": 3}
+    total_limits.update({f"hitl_{cap}": hitl_max_rejections for cap in hitl_after})
+
+    operator = EngineLoop(
+        registry, validators, event_log,
+        max_iterations=max_iter,
+        retry_limits={"test_runner": 1, "bug_fixer": fix_attempts, "code_reviewer": 2},
+        total_limits=total_limits,
+        stop_event=stop_event,
+        max_cost_usd=max_cost_usd,
+    )
+
+    success = False
+    try:
+        operator.run(store, goal)
+        success = True
+        if output_dir:
+            _save_goal_meta(output_dir, goal_description, tech, conditions, full)
+    except Exception as exc:
+        log.error("engine runner: run %s failed: %s", run_id, exc)
+
+    cost_usd = round(llm.get_usage_summary()["total_cost_usd"], 6)
+    satisfied_conditions = [str(e.condition_id) for e in event_log.events("condition_satisfied")]
+    expected_conditions = [str(c.id) for c in goal.desired_state.conditions]
+    return success, cost_usd, store, satisfied_conditions, expected_conditions
+
+
+# ---------------------------------------------------------------------------
+# Async dispatch
+# ---------------------------------------------------------------------------
+
+
+
+async def dispatch_engine(
+    goal: str,
+    *,
+    model: str = "claude",
+    repo_url: Optional[str] = None,
+    capability_models: "dict[str, str] | None" = None,
+    tech: list[str] | None = None,
+    conditions: list[str] | None = None,
+    full: bool = True,
+    max_iter: int = 50,
+    fix_attempts: int = 3,
+    hitl_after: list[str] | None = None,
+    hitl_max_rejections: int = 5,
+    max_cost_usd: Optional[float] = None,
+    output_dir: Optional[Path] = None,
+    source_dir: Optional[Path] = None,
+    resume: bool = False,
+    created_by: Optional[str] = None,
+    workspace_id: Optional[int] = None,
+    max_tasks: int = 12,
+    parallel_workers: int = 5,
+    manual_action_title: str = "Manual step required",
+    manual_action_description: str = "",
+    manual_action_assignee: "str | None" = None,
+    manual_action_after: "list[str] | None" = None,
+    manual_action_timeout_s: int = 86400,
+) -> str:
+    """Start a capability-driven engine run in the background.
+
+    Emits pipeline.start synchronously before returning so the DB row is created
+    immediately. agent.start / agent.end arrive via EventBusBridge as the engine
+    progresses. pipeline.end with the real LLM cost is emitted once the run finishes.
+
+    When resume=True and output_dir is set, loads the goal from .antcrew/goal.json
+    in output_dir (ignoring the goal argument if goal.json exists), and the
+    FilesystemStore picks up previously produced artifacts automatically.
+
+    Returns run_id.
+    """
+    tech = tech or []
+    conditions = conditions or []
+    hitl_after = hitl_after or []
+
+    if workspace_id is not None:
+        async with _get_budget_lock(workspace_id):
+            await _check_workspace_budget(workspace_id)
+
+    # Resume: load goal from persisted metadata, let goal arg override description.
+    if resume and output_dir is not None:
+        meta = _load_goal_meta(output_dir)
+        if meta:
+            if not goal:
+                goal = meta["description"]
+            tech = tech or meta.get("tech", [])
+            conditions = conditions or meta.get("conditions", [])
+            full = meta.get("full", full)
+            log.info("engine runner: resuming from %s — goal: %s", output_dir, goal)
+
+    if not goal:
+        raise ValueError("goal is required (or use resume=True with a prior output_dir)")
+
+    # Fetch BYOK key if this workspace uses customer-supplied LLM keys
+    _byok_api_key: Optional[str] = None
+    _byok_base_url: Optional[str] = None
+    _docs_config: "dict | None" = None
+    if workspace_id is not None:
+        from sqlmodel import select as _sel
+        from sqlmodel.ext.asyncio.session import AsyncSession
+
+        from app.core.database import engine as _db_engine
+        from app.models.run import Workspace as _WS
+        async with AsyncSession(_db_engine, expire_on_commit=False) as _sess:
+            _ws = (await _sess.exec(_sel(_WS).where(_WS.id == workspace_id))).first()
+            if _ws:
+                from app.services.runner_base import resolve_workspace_llm_config
+                _byok_api_key, _byok_base_url = await resolve_workspace_llm_config(_sess, _ws, model)
+                if _ws.docs_s3_bucket:
+                    from app.api.workspaces_docs import _decrypt as _d
+                    _docs_config = {
+                        "bucket": _ws.docs_s3_bucket,
+                        "prefix": _ws.docs_s3_prefix or "",
+                        "region": _ws.docs_s3_region or "us-east-1",
+                        "aws_access_key_id": _d(_ws.docs_s3_access_key_enc) if _ws.docs_s3_access_key_enc else None,
+                        "aws_secret_access_key": _d(_ws.docs_s3_secret_key_enc) if _ws.docs_s3_secret_key_enc else None,
+                        "schema_yaml": _ws.docs_schema_yaml or "",
+                    }
+
+    run_id = new_run_id()
+    stop_event = _threading.Event()
+    _cancel_events[run_id] = stop_event
+
+    # Emit pipeline.start now so the listener creates the Run DB row before we return.
+    bus.emit(BusEvent(
+        "pipeline.start",
+        {
+            "request": goal,
+            "team": "engine",
+            "run_id": run_id,
+            "thread_id": "default",
+        },
+        run_id=run_id,
+        thread_id="default",
+    ))
+
+    loop = asyncio.get_running_loop()
+
+    async def _bg() -> None:
+        success, cost_usd = False, 0.0
+        _store = None
+        _satisfied: list[str] = []
+        _expected: list[str] = []
+        _repo_tmp: Optional[Path] = None
+        _src = source_dir  # may be overridden by repo_url clone below
+
+        # Clone repo to a temp dir and use it as source_dir for the engine loop.
+        if repo_url and not source_dir:
+            try:
+                from app.core.security import validate_external_url
+                validate_external_url(repo_url)
+                _repo_tmp = Path(tempfile.mkdtemp(prefix="antcrew-engine-repo-"))
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "clone", "--depth=1", "--single-branch", repo_url, str(_repo_tmp),
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, _stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+                if proc.returncode != 0:
+                    shutil.rmtree(_repo_tmp, ignore_errors=True)
+                    _repo_tmp = None
+                    log.warning("engine runner: repo clone failed for %s", repo_url)
+                else:
+                    _src = _repo_tmp
+            except Exception as exc:
+                if _repo_tmp:
+                    shutil.rmtree(_repo_tmp, ignore_errors=True)
+                    _repo_tmp = None
+                log.warning("engine runner: repo clone error: %s", exc)
+
+        # Track cumulative cost/capability count for real-time pipeline.cost_update events.
+        _caps_done: list[int] = [0]
+        _cost_so_far: list[float] = [0.0]
+
+        def _on_agent_end(ev: BusEvent) -> None:
+            if ev.run_id != run_id:
+                return
+            _caps_done[0] += 1
+            payload = ev.payload or {}
+            _cost_so_far[0] += float(payload.get("cost_usd", 0.0))
+            bus.emit(BusEvent(
+                "pipeline.cost_update",
+                {
+                    "run_id": run_id,
+                    "capabilities_completed": _caps_done[0],
+                    "cost_usd_so_far": round(_cost_so_far[0], 6),
+                },
+                run_id=run_id,
+                thread_id="default",
+            ))
+
+        bus.subscribe("agent.end", _on_agent_end)
+        try:
+            fn = functools.partial(
+                _run_engine_sync,
+                run_id, goal, model, tech, conditions, full, max_iter, output_dir,
+                fix_attempts, hitl_after, _src, stop_event, hitl_max_rejections,
+                max_cost_usd, capability_models, max_tasks, parallel_workers,
+                _byok_api_key, _byok_base_url,
+                manual_action_title, manual_action_description,
+                manual_action_assignee, manual_action_after, manual_action_timeout_s,
+                _docs_config,
+            )
+            success, cost_usd, _store, _satisfied, _expected = await loop.run_in_executor(_executor, fn)
+        except Exception as exc:
+            log.error("engine runner: background task for %s raised: %s", run_id, exc)
+        finally:
+            bus.unsubscribe("agent.end", _on_agent_end)
+            if _repo_tmp:
+                shutil.rmtree(_repo_tmp, ignore_errors=True)
+            _cancel_events.pop(run_id, None)
+            bus.emit(BusEvent(
+                "pipeline.end",
+                {
+                    "success": success,
+                    "cost_usd": cost_usd,
+                    "run_id": run_id,
+                    "thread_id": "default",
+                },
+                run_id=run_id,
+                thread_id="default",
+            ))
+            # Persist state so /runs/{id}/artifacts and /engine/runs/{id}/progress can serve data.
+            await _store_engine_state(run_id, goal, output_dir, _store, _satisfied, _expected)
+            # Update workspace budget totals (mirrors runner.dispatch behaviour).
+            if workspace_id is not None:
+                await _mark_workspace_budget_status(workspace_id)
+            from app.api.stream import deregister_run as _deregister_run
+            _deregister_run(run_id)
+
+    if workspace_id is not None:
+        from app.api.stream import register_run as _register_run
+        _register_run(run_id, workspace_id)
+
+    asyncio.ensure_future(_bg())
+
+    if created_by or workspace_id is not None:
+        asyncio.ensure_future(_set_run_attribution(run_id, created_by, workspace_id))
+
+    return run_id
+
+
+async def _set_run_attribution(
+    run_id: str,
+    created_by: Optional[str],
+    workspace_id: Optional[int],
+) -> None:
+    from sqlmodel import select
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core.database import engine as _db_engine
+    from app.models.run import Run
+    from app.models.workspace import Workspace
+
+    try:
+        async with AsyncSession(_db_engine, expire_on_commit=False) as session:
+            result = await session.exec(select(Run).where(Run.run_id == run_id))
+            run = result.first()
+            if run:
+                if created_by:
+                    run.created_by = created_by
+                if workspace_id is not None:
+                    run.workspace_id = workspace_id
+                    ws = (await session.exec(
+                        select(Workspace).where(Workspace.id == workspace_id)
+                    )).first()
+                    if ws:
+                        run.llm_key_mode = ws.llm_key_mode
+                session.add(run)
+                await session.commit()
+    except Exception as exc:
+        log.warning("engine runner: failed to set attribution for %s: %s", run_id, exc)
+
+
+async def _store_engine_state(
+    run_id: str,
+    goal: str,
+    output_dir: Optional[Path],
+    store=None,
+    satisfied_conditions: "list[str] | None" = None,
+    expected_conditions: "list[str] | None" = None,
+) -> None:
+    """Persist run state to Run.state so /artifacts and /engine/runs/{id}/progress can serve data.
+
+    For MemoryStore runs (no output_dir), artifact content is serialized into state so the
+    /artifacts endpoint can return it — mirroring how Layer 1 team runs work.
+    For FilesystemStore runs, artifacts are on disk and the endpoint reads them directly;
+    only conditions are saved here.
+    """
+    import json as _json
+
+    from sqlmodel import select
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core.database import engine as _db_engine
+    from app.models.run import Run
+
+    state: dict = {
+        "engine": True,
+        "goal": goal,
+        "output_dir": str(output_dir) if output_dir else None,
+        "conditions_satisfied": satisfied_conditions or [],
+        "conditions_expected": expected_conditions or [],
+    }
+
+    # For MemoryStore runs (no disk), serialize artifact content into Run.state.
+    # FilesystemStore runs skip this — the /artifacts endpoint reads from output_dir directly.
+    if store is not None and output_dir is None:
+        try:
+            from antcrew_engine import ArtifactKind
+
+            from app.services.artifact_storage import get_backend, is_inline
+
+            _backend = get_backend()
+            _use_inline = is_inline()
+
+            async def _to_entry(a) -> dict:
+                content = a.content
+                if isinstance(content, dict):
+                    content = _json.dumps(content, indent=2)
+                content = content or ""
+                if _use_inline:
+                    return {"file_path": str(a.id), "content": content}
+                storage_key = await _backend.put(run_id, str(a.id), content)
+                return {"file_path": str(a.id), "storage_key": storage_key}
+
+            async def _collect(kind) -> list:
+                return [await _to_entry(a) for a in store.list(kind)]
+
+            state["code_artifacts"] = await _collect(ArtifactKind.SOURCE)
+            state["test_artifacts"] = await _collect(ArtifactKind.TEST)
+            state["doc_artifacts"]  = await _collect(ArtifactKind.DOCUMENTATION)
+        except Exception as exc:
+            log.warning("engine runner: failed to serialize artifacts for %s: %s", run_id, exc)
+
+    try:
+        async with AsyncSession(_db_engine, expire_on_commit=False) as session:
+            run = (await session.exec(select(Run).where(Run.run_id == run_id))).first()
+            if run:
+                run.state = state
+                session.add(run)
+                await session.commit()
+    except Exception as exc:
+        log.warning("engine runner: failed to store state for %s: %s", run_id, exc)
+
+
+def shutdown() -> None:
+    _executor.shutdown(wait=False, cancel_futures=True)
