@@ -387,16 +387,38 @@ class TraceLog:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def prune(self, days: int) -> int:
-        """Delete runs (and their agent_calls) older than *days* days.
+    def prune(self, days: int, *, dry_run: bool = False) -> int:
+        """Delete runs (and their associated records) older than *days* days.
 
-        Returns the number of run rows deleted.
+        ``days`` must be at least 1.  ``prune(0)`` is intentionally rejected
+        because it would silently wipe the entire database.
+
+        With ``dry_run=True`` the method returns the count of runs that *would*
+        be deleted without writing anything — useful for scheduled jobs that need
+        to preview before committing.
+
+        Returns the number of run rows deleted (or that would be deleted).
         """
         from datetime import timedelta
 
-        if days < 0:
-            raise ValueError(f"days must be >= 0, got {days}")
+        if days < 1:
+            raise ValueError(
+                f"days must be >= 1 to prevent accidental data loss, got {days}. "
+                "Pass dry_run=True first to preview what would be deleted."
+            )
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+        if dry_run:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE started_at < ?", (cutoff,)
+            ).fetchone()
+            return int(row[0])
+
+        self._conn.execute(
+            "DELETE FROM hitl_decisions WHERE run_id IN "
+            "(SELECT id FROM runs WHERE started_at < ?)",
+            (cutoff,),
+        )
         self._conn.execute(
             "DELETE FROM agent_calls WHERE run_id IN "
             "(SELECT id FROM runs WHERE started_at < ?)",
