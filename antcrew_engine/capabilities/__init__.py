@@ -21,6 +21,8 @@ from .security_scanner import SecurityScanner
 from .cobol_analyzer import COBOLAnalyzerExecutor
 from .cobol_generator import COBOLGeneratorExecutor
 from .cobol_refactorer import COBOLRefactorerExecutor
+from .cobol_test_generator import COBOLTestGeneratorExecutor
+from .cobol_validator import COBOLSyntaxValidatorExecutor
 from .requirements_elicitation import RequirementsElicitationExecutor
 from .spec_extractor import SpecExtractor
 from .task_planner import TaskPlanner
@@ -32,6 +34,8 @@ __all__ = [
     "COBOLAnalyzerExecutor",
     "COBOLGeneratorExecutor",
     "COBOLRefactorerExecutor",
+    "COBOLSyntaxValidatorExecutor",
+    "COBOLTestGeneratorExecutor",
     "RequirementsElicitationExecutor",
     "SpecExtractor",
     "Architect",
