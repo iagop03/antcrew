@@ -352,6 +352,7 @@ def _pick_fixture(system: str) -> str:
 
 
 class SimulatedLLM(BaseLLM):
+    _provider = "simulated"
     """
     Drop-in replacement for any real LLM â€” returns fixture JSON without API calls.
 

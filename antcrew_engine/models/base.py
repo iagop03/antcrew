@@ -146,6 +146,9 @@ class BaseLLM(ABC):
         llm.max_cost_usd   = 2.0   # abort run when this cost (USD) is exceeded
     """
 
+    # Provider label — overridden by each subclass for TraceLog model_id / provider columns
+    _provider: str = "unknown"
+
     # Streaming
     on_token: Optional[Callable[[str], None]] = None
     current_agent: str = ""
@@ -184,6 +187,9 @@ class BaseLLM(ABC):
 
     def _model_name(self) -> str:
         return getattr(self, "_model", getattr(self, "model", "")).lower()
+
+    def _provider_name(self) -> str:
+        return getattr(self, "_provider", "unknown")
 
     def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
         name = self._model_name()
@@ -358,6 +364,8 @@ class BaseLLM(ABC):
             self.trace.record_call(  # type: ignore[union-attr]
                 run_id=self._trace_run_id,  # type: ignore[arg-type]
                 agent_name=self.current_agent,
+                model_id=self._model_name(),
+                provider=self._provider_name(),
                 duration_ms=(time.monotonic() - _t0) * 1000,
                 input_tokens=sum(e["input_tokens"] for e in added),
                 output_tokens=sum(e["output_tokens"] for e in added),

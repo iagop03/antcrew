@@ -12,6 +12,7 @@ except ImportError:
 
 
 class AzureOpenAIModel(OpenAIModel):
+    _provider = "azure_openai"
     """Azure OpenAI endpoint adapter.
 
     Inherits all streaming, retry, cost-tracking, and reasoning-model logic

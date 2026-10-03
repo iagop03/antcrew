@@ -11,6 +11,7 @@ _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 class GeminiModel(BaseLLM):
+    _provider = "google"
     """
     Google Gemini model via REST API (no extra SDK required â€” uses httpx).
 

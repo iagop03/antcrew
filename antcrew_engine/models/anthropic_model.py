@@ -3,14 +3,18 @@
 import os
 from typing import Optional
 
-import anthropic
-
 from antcrew_engine.models.base import BaseLLM, Message
+
+try:
+    import anthropic as _anthropic_lib
+except ImportError:
+    _anthropic_lib = None  # type: ignore[assignment]
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 class AnthropicModel(BaseLLM):
+    _provider = "anthropic"
     _extra_body: dict = {}  # class-level default; overridden per-instance in __init__
 
     def __init__(
@@ -24,6 +28,12 @@ class AnthropicModel(BaseLLM):
         self.model = model
         self.prompt_caching = prompt_caching
         self._extra_body = extra_body or {}
+        if _anthropic_lib is None:
+            raise ImportError(
+                "anthropic package is required for AnthropicModel.\n"
+                "  Install: pip install antcrew[anthropic]\n"
+                "  Or use SimulatedLLM / OllamaModel for testing without the Anthropic SDK."
+            )
         key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not key:
             raise EnvironmentError(
@@ -40,7 +50,7 @@ class AnthropicModel(BaseLLM):
             client_kw["base_url"] = base_url
         if headers:
             client_kw["default_headers"] = headers
-        self._client = anthropic.Anthropic(**client_kw)
+        self._client = _anthropic_lib.Anthropic(**client_kw)
 
     def _build_system(self, system_parts: list[str]):
         """Return the system value for the API call.

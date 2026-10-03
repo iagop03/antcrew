@@ -20,6 +20,7 @@ def _is_reasoning_model(model: str) -> bool:
 
 
 class OpenAIModel(BaseLLM):
+    _provider = "openai"
     # Default; overridden in __init__ based on the chosen model.
     _is_reasoning: bool = False
 

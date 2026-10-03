@@ -9,6 +9,7 @@ _DEFAULT_MODEL = "llama3"
 
 
 class OllamaModel(BaseLLM):
+    _provider = "ollama"
     """
     Adapter for Ollama's local model server.
     Requires Ollama running at base_url (default http://localhost:11434).

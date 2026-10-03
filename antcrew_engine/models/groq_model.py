@@ -14,6 +14,7 @@ _DEFAULT_MODEL = "llama3-70b-8192"
 
 
 class GroqModel(BaseLLM):
+    _provider = "groq"
     """
     Adapter for Groq's ultra-fast inference API.
     Compatible with Llama 3, Mixtral, Gemma and other models hosted on Groq.

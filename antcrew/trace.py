@@ -75,6 +75,8 @@ CREATE TABLE IF NOT EXISTS agent_calls (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id           TEXT NOT NULL REFERENCES runs(id),
     agent_name       TEXT NOT NULL,
+    model_id         TEXT NOT NULL DEFAULT '',
+    provider         TEXT NOT NULL DEFAULT '',
     started_at       TEXT NOT NULL,
     duration_ms      REAL NOT NULL,
     input_tokens     INTEGER NOT NULL DEFAULT 0,
@@ -104,6 +106,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns and tables introduced after the initial schema (idempotent)."""
     existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_calls)").fetchall()}
     for col in ("prompt_full", "response_full", "user_full"):
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE agent_calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+    for col in ("model_id", "provider"):
         if col not in existing_cols:
             conn.execute(f"ALTER TABLE agent_calls ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
     # hitl_decisions table (added in trace v2)
@@ -180,6 +185,8 @@ class TraceLog:
         *,
         run_id: str,
         agent_name: str,
+        model_id: str = "",
+        provider: str = "",
         duration_ms: float,
         input_tokens: int = 0,
         output_tokens: int = 0,
@@ -202,13 +209,13 @@ class TraceLog:
         _rsnip = response_snippet or (response_full[:300] if response_full else "")
         cur = self._conn.execute(
             """INSERT INTO agent_calls
-               (run_id, agent_name, started_at, duration_ms,
+               (run_id, agent_name, model_id, provider, started_at, duration_ms,
                 input_tokens, output_tokens, cost_usd,
                 prompt_snippet, response_snippet,
                 prompt_full, response_full, user_full)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                run_id, agent_name, _now_iso(), round(duration_ms, 2),
+                run_id, agent_name, model_id, provider, _now_iso(), round(duration_ms, 2),
                 input_tokens, output_tokens, round(cost_usd, 6),
                 _psnip[:300], _rsnip[:300],
                 prompt_full if self.full_trace else "",

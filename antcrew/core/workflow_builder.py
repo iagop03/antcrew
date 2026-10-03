@@ -155,6 +155,8 @@ class WorkflowBuilder:
         Args:
             llm:          :class:`~antcrew.models.base.BaseLLM` instance shared by
                           all agents (each gets its own shallow copy for thread safety).
+                          Individual steps can override this by passing ``llm=`` to
+                          :meth:`step`, e.g. ``step("qa", QAAgent, llm=haiku_llm)``.
             checkpointer: Optional LangGraph checkpoint saver.  Defaults to in-memory.
         """
         import copy
@@ -167,13 +169,14 @@ class WorkflowBuilder:
 
         for step in self._steps:
             name = step["name"]
-            kwargs = step["agent_kwargs"]
+            kwargs = dict(step["agent_kwargs"])  # copy — we may pop 'llm'
+            node_llm = kwargs.pop("llm", None) or copy.copy(llm)
 
             if step["parallel"]:
-                instances = [cls(copy.copy(llm), **kwargs) for cls in step["agent_classes"]]
+                instances = [cls(copy.copy(node_llm), **kwargs) for cls in step["agent_classes"]]
                 agents[name] = _parallel(*instances, name=name)
             else:
-                agents[name] = step["agent_class"](copy.copy(llm), **kwargs)
+                agents[name] = step["agent_class"](node_llm, **kwargs)
 
             for dep in step["deps"]:
                 edge: tuple

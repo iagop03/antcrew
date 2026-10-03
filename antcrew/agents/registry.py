@@ -31,7 +31,13 @@ log = logging.getLogger(__name__)
 
 #: Mapping from config-file agent name → (module, class_name).
 #: Lazy-loaded at call time to avoid circular imports.
+#:
+#: Agents in CONTENT_AGENT_NAMES are content / marketing-focused and are
+#: excluded from the default "antcrew agents" listing in dev/regulated contexts.
+#: They are fully functional and reachable via config files — just categorised
+#: separately so the regulated-sector pitch stays focused on dev agents.
 AGENT_REGISTRY: dict[str, tuple[str, str]] = {
+    # ── dev / regulated-sector agents ────────────────────────────────────────
     "business_analyst":  ("antcrew.agents.business",         "BusinessAnalystAgent"),
     "pm":                ("antcrew.agents.pm",                "PMAgent"),
     "ui_designer":       ("antcrew.agents.ui_design",         "UIDesignAgent"),
@@ -41,9 +47,6 @@ AGENT_REGISTRY: dict[str, tuple[str, str]] = {
     "reviewer":          ("antcrew.agents.reviewer",          "ReviewerAgent"),
     "devops":            ("antcrew.agents.devops",            "DevOpsAgent"),
     "researcher":        ("antcrew.agents.researcher",        "ResearcherAgent"),
-    "idea":              ("antcrew.agents.idea",              "IdeaAgent"),
-    "copywriter":        ("antcrew.agents.copywriter",        "CopywriterAgent"),
-    "editor":            ("antcrew.agents.editor",            "EditorAgent"),
     "codebase_scanner":  ("antcrew.agents.codebase_scanner",  "CodebaseScannerAgent"),
     "sprint_planner":    ("antcrew.agents.sprint_planner",    "SprintPlannerAgent"),
     "doc_writer":        ("antcrew.agents.doc_writer",        "DocWriterAgent"),
@@ -53,7 +56,17 @@ AGENT_REGISTRY: dict[str, tuple[str, str]] = {
     "cost_estimator":    ("antcrew.agents.cost",              "CostAgent"),
     "security_auditor":  ("antcrew.agents.security",          "SecurityAgent"),
     "discovery":         ("antcrew.agents.discovery",         "DiscoveryAgent"),
+    # ── content / marketing agents ───────────────────────────────────────────
+    # Functional but omitted from the default dev listing (see CONTENT_AGENT_NAMES).
+    "idea":              ("antcrew.agents.idea",              "IdeaAgent"),
+    "copywriter":        ("antcrew.agents.copywriter",        "CopywriterAgent"),
+    "editor":            ("antcrew.agents.editor",            "EditorAgent"),
 }
+
+#: Agent names that are content / marketing-focused.
+#: These are excluded from the default ``antcrew agents`` listing so the dev /
+#: regulated-sector view stays uncluttered.  Pass ``--all`` to include them.
+CONTENT_AGENT_NAMES: frozenset[str] = frozenset({"idea", "copywriter", "editor"})
 
 
 def _load_plugins() -> None:

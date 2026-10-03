@@ -156,7 +156,15 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
     Internal helper — use :func:`load` for file-based configs.
     Also used recursively by ``team: auto`` and ``team: routed``.
     """
-    team_type = cfg.get("team", "dev").lower()
+    # ``execution:`` is an explicit routing key: pipeline | engine | auto | <team-name>.
+    # ``team:`` remains the canonical key; ``execution:`` overrides it when present.
+    _execution = cfg.get("execution", "").strip().lower()
+    if _execution == "engine":
+        team_type = "engine"
+    elif _execution in ("", "pipeline", "auto"):
+        team_type = cfg.get("team", "dev").lower()
+    else:
+        team_type = _execution  # e.g. execution: research
     prompt_caching = bool(cfg.get("prompt_caching", False))
     default_llm = build_llm(cfg.get("model", "claude"), prompt_caching=prompt_caching)
 
@@ -371,8 +379,20 @@ def _build_team_cfg(cfg: dict, base_dir: "Optional[Path]" = None):
             validate_timeout=validate_timeout,
         )
 
+    if team_type == "engine":
+        from antcrew.core.engine_adapter import EngineTeamAdapter
+        output_dir_cfg = cfg.get("output_dir") or None
+        max_iter = int(cfg.get("max_iterations", 50))
+        return EngineTeamAdapter(
+            default_llm,
+            max_cost_usd=max_cost_usd,
+            output_dir=str(output_dir_cfg) if output_dir_cfg else None,
+            max_iterations=max_iter,
+        )
+
     raise ValueError(
-        f"Unknown team '{team_type}'. Expected: dev, fullstack, research, content, custom, feature."
+        f"Unknown team '{team_type}'. "
+        "Expected: dev, fullstack, research, content, custom, feature, engine."
     )
 
 

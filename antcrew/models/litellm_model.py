@@ -29,6 +29,7 @@ from antcrew_engine.models.base import BaseLLM, Message
 
 
 class LiteLLMModel(BaseLLM):
+    _provider = "litellm"
     """LLM backend backed by LiteLLM — supports 100+ providers / models.
 
     Examples::

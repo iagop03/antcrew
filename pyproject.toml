@@ -24,8 +24,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "anthropic>=0.30",
-    "groq>=0.9",
     "httpx>=0.27",
     "langgraph>=0.2",
     "pydantic>=2.0",
@@ -41,6 +39,8 @@ Repository = "https://github.com/iagop03/antcrew"
 
 [project.optional-dependencies]
 cli       = []  # typer + rich already in core deps — alias for pip install antcrew[cli]
+anthropic = ["anthropic>=0.30"]  # AnthropicModel — Claude models via Anthropic SDK
+groq      = ["groq>=0.9"]        # GroqModel — ultra-fast Groq inference
 sqlite    = ["aiosqlite>=0.19", "langgraph-checkpoint-sqlite>=2.0"]  # SqliteSaver checkpointer
 telegram  = ["python-telegram-bot>=20.0"]
 gemini    = []  # GeminiModel uses httpx (already a core dep) — no extra packages needed
@@ -58,7 +58,8 @@ contracts = ["jsonschema>=4.0"]
 litellm   = ["litellm>=1.40"]   # LiteLLMModel: 100+ providers via one interface
 mcp       = []                   # MCPTool uses httpx (already in core deps)
 dev       = ["pytest", "pytest-asyncio", "pytest-cov>=5.0", "ruff", "httpx", "aiofiles>=23.0", "watchdog>=4.0", "jsonschema>=4.0", "hypothesis>=6.0"]
-all       = ["python-telegram-bot>=20.0", "openai>=1.30",
+all       = ["anthropic>=0.30", "groq>=0.9",
+             "python-telegram-bot>=20.0", "openai>=1.30",
              "slack-sdk>=3.19", "slack-bolt>=1.18",
              "uvicorn[standard]>=0.30", "aiofiles>=23.0",
              "chromadb>=0.5", "aiosqlite>=0.19", "langgraph-checkpoint-sqlite>=2.0",
