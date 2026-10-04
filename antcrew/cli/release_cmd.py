@@ -69,9 +69,11 @@ def release_create(
 
     if from_jira_state:
         try:
-            from antcrew.adapters.tracker import IssueFilter, get_tracker_adapter
-            import yaml as _yaml
             import os as _os
+
+            import yaml as _yaml
+
+            from antcrew.adapters.tracker import IssueFilter, get_tracker_adapter
             cfg_path = _os.environ.get("ANTCREW_CONFIG", "agentteam.yaml")
             cfg_data: dict = {}
             if Path(cfg_path).exists():
@@ -245,7 +247,8 @@ def release_package(
         console.print(f"[red]Release not found:[/] {release_id}")
         raise typer.Exit(1)
 
-    from antcrew.models.release import Release, ReleaseItem as _RI
+    from antcrew.models.release import Release
+    from antcrew.models.release import ReleaseItem as _RI
     release = Release(
         id=rel_data["id"],
         name=rel_data["name"],
@@ -333,6 +336,7 @@ def release_submit(
         antcrew release submit REL-A1B2C3D4 --dry-run
     """
     import os as _os
+
     import yaml as _yaml
 
     data = _load_store(store)

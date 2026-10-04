@@ -50,15 +50,15 @@ class EngineTeamAdapter:
 
     def run(self, request: str, *, thread_id: str = "default") -> dict:
         """Run the engine loop for *request* and return a result dict."""
-        from antcrew.engine import (
-            EngineLoop,
-            EventLog,
-            MemoryStore,
-        )
         from antcrew.cli.engine_cmd import (
             _build_goal,
             _build_registry,
             _build_validators,
+        )
+        from antcrew.engine import (
+            EngineLoop,
+            EventLog,
+            MemoryStore,
         )
 
         store = MemoryStore()

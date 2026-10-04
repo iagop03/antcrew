@@ -194,7 +194,7 @@ class ServiceNowClient:
 
     def _from_snow(self, row: dict[str, Any]) -> ChangeRecord:
         """Map ServiceNow field names back to neutral ChangeRecord."""
-        rev = {v: k for k, v in self._field_map.items()}
+        {v: k for k, v in self._field_map.items()}
 
         def _get(neutral: str) -> str:
             snow_field = self._field_map.get(neutral, neutral)

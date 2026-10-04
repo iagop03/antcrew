@@ -30,7 +30,6 @@ Usage::
 from __future__ import annotations
 
 import json as _json
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -203,7 +202,7 @@ class ChangePackager:
         lines.append("## CR Detail")
         for r in rows:
             lines += [
-                f"", f"### {r['change_ref']}",
+                "", f"### {r['change_ref']}",
                 f"**Summary:** {r['summary']}  ",
                 f"**Risk:** {r['risk_level']} — {r['risk_reason']}  ",
             ]

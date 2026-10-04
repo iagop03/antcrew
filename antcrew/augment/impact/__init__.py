@@ -14,7 +14,7 @@ Usage::
     print(analysis.risk_level)          # "high"
     print(analysis.affected_callers)    # ["BATCHCTL", "NIGHTLY"]
 """
-from antcrew.augment.impact.models import ImpactAnalysis, ImpactedComponent
 from antcrew.augment.impact.analyzer import ImpactAnalyzer
+from antcrew.augment.impact.models import ImpactAnalysis, ImpactedComponent
 
 __all__ = ["ImpactAnalysis", "ImpactedComponent", "ImpactAnalyzer"]

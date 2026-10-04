@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Optional
 
-
 ReleaseState = Literal["draft", "pending_approval", "approved", "rejected", "deployed"]
 ReleaseItemOrigin = Literal["antcrew", "vcs_only"]
 
