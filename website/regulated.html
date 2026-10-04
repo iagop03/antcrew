@@ -619,7 +619,7 @@ footer a:hover { color: var(--accent); }
     <div class="section-header">
       <div class="section-eyebrow">Compliance Pack</div>
       <h2 class="section-title">Todo lo que necesita tu equipo de auditoría</h2>
-      <p class="section-sub">Features exclusivas del tier Regulated. No disponibles en Open ni Pro.</p>
+      <p class="section-sub">Features exclusivas del tier Regulated. No disponibles en Open ni Team.</p>
     </div>
     <div class="features-grid">
       <div class="feature-card">
@@ -669,13 +669,14 @@ footer a:hover { color: var(--accent); }
       <div class="pricing-info">
         <div class="label">Tier Regulated</div>
         <h2>Empieza con una demo guiada</h2>
-        <p>Te mostramos el Compliance Pack con un caso real de tu sector. Sin contrato hasta que estés seguro.</p>
+        <p>Te mostramos el Compliance Pack con un caso real de tu sector. Self-hosted en tu infra desde el primer día. Sin contrato hasta que estés seguro.</p>
         <ul class="pricing-checklist">
+          <li><span class="ck">✓</span> Self-hosted — corre en tu VPC o servidor</li>
           <li><span class="ck">✓</span> TraceLog exportable + hash chain firmada</li>
           <li><span class="ck">✓</span> Audit trail HITL (auditor-facing)</li>
           <li><span class="ck">✓</span> Change packages firmados + ServiceNow</li>
           <li><span class="ck">✓</span> Informes SOX / FDA / Solvencia II</li>
-          <li><span class="ck">✓</span> SSO/SAML + SLA 99.9%</li>
+          <li><span class="ck">✓</span> License key offline — funciona en redes aisladas</li>
           <li><span class="ck">✓</span> Onboarding dedicado + canal privado</li>
         </ul>
       </div>
@@ -686,8 +687,8 @@ footer a:hover { color: var(--accent); }
           <div class="price-period">/workspace/mes</div>
           <div class="price-annual">€199/mes con facturación anual</div>
           <a class="price-cta" href="mailto:iago.pueyo99@gmail.com?subject=Demo antcrew Regulated">Reservar demo →</a>
-          <a class="price-cta-ghost" href="#">Ver documentación</a>
-          <div class="price-note">Sin compromiso · Respuesta en 24h</div>
+          <a class="price-cta-ghost" href="https://docs.antcrew.org">Ver documentación</a>
+          <div class="price-note">Sin compromiso · Respuesta en 24h · License key offline</div>
         </div>
       </div>
     </div>
@@ -708,7 +709,7 @@ footer a:hover { color: var(--accent); }
       </div>
       <div class="faq-item">
         <button class="faq-q" onclick="toggleFaq(this)">¿Mis datos pasan por los servidores de antcrew?<span class="faq-chevron">⌄</span></button>
-        <div class="faq-a">En el plan Open con BYOK las llamadas van directo de tu máquina al proveedor LLM. En Pro y Regulated managed, el tráfico pasa por nuestros runners cifrado en tránsito y en reposo. Para el tier Regulated también ofrecemos opciones on-premise.</div>
+        <div class="faq-a">No. antcrew es self-hosted: la plataforma corre en tu infra y las llamadas LLM van directamente desde tu servidor a tu proveedor. antcrew nunca ve tu tráfico ni almacena datos de producción.</div>
       </div>
       <div class="faq-item">
         <button class="faq-q" onclick="toggleFaq(this)">¿La hash chain puede verificarse sin antcrew?<span class="faq-chevron">⌄</span></button>
@@ -729,14 +730,12 @@ footer a:hover { color: var(--accent); }
 <!-- FOOTER -->
 <footer>
   <div class="footer-links">
-    <a href="#">Docs</a>
-    <a href="#">GitHub</a>
-    <a href="#">Pricing</a>
-    <a href="#">Estado</a>
-    <a href="#">Privacidad</a>
-    <a href="#">Contacto</a>
+    <a href="https://docs.antcrew.org">Docs</a>
+    <a href="https://github.com/iagop03/antcrew">GitHub</a>
+    <a href="pricing.html">Pricing</a>
+    <a href="mailto:iago.pueyo99@gmail.com">Contacto</a>
   </div>
-  <p>© 2026 antcrew · Apache 2.0 · <a href="mailto:iago.pueyo99@gmail.com">iago.pueyo99@gmail.com</a></p>
+  <p>© 2026 antcrew · SDK Apache 2.0 · Plataforma ELv2 · <a href="mailto:iago.pueyo99@gmail.com">iago.pueyo99@gmail.com</a></p>
   <p class="footer-regs" style="margin-top:8px">SOX · FDA 21 CFR Part 11 · Solvencia II · EIOPA · PCI-DSS · MiFID II</p>
 </footer>
 

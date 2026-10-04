@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>antcrew Pricing</title>
-<meta name="description" content="Planes para equipos de desarrollo — desde el SDK open-source hasta el tier Regulated para sectores financiero, sanitario y legal.">
+<meta name="description" content="Self-hosted por defecto. SDK Apache 2.0 gratuito. Team y Regulated activan features con una license key — sin phone-home, funciona en redes aisladas.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -15,11 +15,15 @@
   --surface-2: #F1F1F8;
   --border: #E0E0EC;
   --text: #0F0F1E;
-  --text-muted: #6666880;
   --text-secondary: #555570;
+  --text-muted: #666688;
   --accent: #5B5CF6;
   --accent-pale: rgba(91,92,246,0.08);
   --accent-pale-border: rgba(91,92,246,0.22);
+  --team: #0369A1;
+  --team-bg: #EFF6FF;
+  --team-border: #BAE6FD;
+  --team-badge: #0284C7;
   --regulated: #B45309;
   --regulated-bg: #FFFBEB;
   --regulated-border: #FCD34D;
@@ -29,164 +33,105 @@
   --shadow-md: 0 4px 16px rgba(15,15,30,0.08), 0 2px 6px rgba(15,15,30,0.04);
   --shadow-lg: 0 12px 40px rgba(15,15,30,0.12), 0 4px 12px rgba(15,15,30,0.06);
   --radius: 14px;
-  --text-muted-val: #666688;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #080810;
-    --surface: #10101F;
-    --surface-2: #181828;
-    --border: #22223A;
-    --text: #E8E8F5;
-    --text-secondary: #9999BC;
-    --text-muted-val: #6666A0;
-    --accent: #7C7DF8;
-    --accent-pale: rgba(124,125,248,0.1);
-    --accent-pale-border: rgba(124,125,248,0.25);
-    --regulated: #F59E0B;
-    --regulated-bg: rgba(245,158,11,0.07);
-    --regulated-border: rgba(245,158,11,0.3);
-    --regulated-badge: #F59E0B;
+    --bg: #080810; --surface: #10101F; --surface-2: #181828; --border: #22223A;
+    --text: #E8E8F5; --text-secondary: #9999BC; --text-muted: #6666A0;
+    --accent: #7C7DF8; --accent-pale: rgba(124,125,248,0.1); --accent-pale-border: rgba(124,125,248,0.25);
+    --team: #38BDF8; --team-bg: rgba(56,189,248,0.07); --team-border: rgba(56,189,248,0.3); --team-badge: #0284C7;
+    --regulated: #F59E0B; --regulated-bg: rgba(245,158,11,0.07); --regulated-border: rgba(245,158,11,0.3); --regulated-badge: #F59E0B;
     --green: #34D399;
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
-    --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.3); --shadow-md: 0 4px 16px rgba(0,0,0,0.4); --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
   }
 }
-
 :root[data-theme="dark"] {
-  --bg: #080810;
-  --surface: #10101F;
-  --surface-2: #181828;
-  --border: #22223A;
-  --text: #E8E8F5;
-  --text-secondary: #9999BC;
-  --text-muted-val: #6666A0;
-  --accent: #7C7DF8;
-  --accent-pale: rgba(124,125,248,0.1);
-  --accent-pale-border: rgba(124,125,248,0.25);
-  --regulated: #F59E0B;
-  --regulated-bg: rgba(245,158,11,0.07);
-  --regulated-border: rgba(245,158,11,0.3);
-  --regulated-badge: #F59E0B;
+  --bg: #080810; --surface: #10101F; --surface-2: #181828; --border: #22223A;
+  --text: #E8E8F5; --text-secondary: #9999BC; --text-muted: #6666A0;
+  --accent: #7C7DF8; --accent-pale: rgba(124,125,248,0.1); --accent-pale-border: rgba(124,125,248,0.25);
+  --team: #38BDF8; --team-bg: rgba(56,189,248,0.07); --team-border: rgba(56,189,248,0.3); --team-badge: #0284C7;
+  --regulated: #F59E0B; --regulated-bg: rgba(245,158,11,0.07); --regulated-border: rgba(245,158,11,0.3); --regulated-badge: #F59E0B;
   --green: #34D399;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.4);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3); --shadow-md: 0 4px 16px rgba(0,0,0,0.4); --shadow-lg: 0 12px 40px rgba(0,0,0,0.5);
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; line-height: 1.6; }
 
-body {
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
-  line-height: 1.6;
-}
-
-/* NAV */
 nav {
   position: sticky; top: 0; z-index: 100;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 0 24px;
-  display: flex; align-items: center; gap: 32px;
-  height: 60px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 24px; display: flex; align-items: center; gap: 32px; height: 60px;
   backdrop-filter: blur(8px);
 }
-.nav-logo {
-  font-weight: 800; font-size: 17px; letter-spacing: -0.5px;
-  color: var(--text); text-decoration: none;
-}
+.nav-logo { font-weight: 800; font-size: 17px; letter-spacing: -0.5px; color: var(--text); text-decoration: none; }
 .nav-logo span { color: var(--accent); }
 nav .nav-links { display: flex; gap: 24px; margin-left: auto; }
-.nav-links a {
-  font-size: 14px; font-weight: 500; color: var(--text-secondary);
-  text-decoration: none;
-}
+.nav-links a { font-size: 14px; font-weight: 500; color: var(--text-secondary); text-decoration: none; }
 .nav-links a:hover { color: var(--text); }
 .nav-cta {
-  background: var(--accent); color: #fff;
-  border: none; padding: 8px 18px; border-radius: 8px;
-  font-family: inherit; font-size: 14px; font-weight: 600;
-  cursor: pointer; text-decoration: none; white-space: nowrap;
+  background: var(--accent); color: #fff; border: none;
+  padding: 8px 18px; border-radius: 8px; font-family: inherit;
+  font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap;
 }
 
-/* HERO */
 .hero {
-  text-align: center;
-  padding: 80px 24px 56px;
+  text-align: center; padding: 80px 24px 56px;
   max-width: 700px; margin: 0 auto;
 }
 .hero-eyebrow {
-  display: inline-block;
-  font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--accent); background: var(--accent-pale);
-  border: 1px solid var(--accent-pale-border);
+  display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-pale); border: 1px solid var(--accent-pale-border);
   padding: 4px 12px; border-radius: 100px; margin-bottom: 24px;
 }
-.hero h1 {
-  font-size: clamp(32px, 5vw, 52px); font-weight: 800; letter-spacing: -1.5px;
-  line-height: 1.1; margin-bottom: 18px; text-wrap: balance;
-}
-.hero p {
-  font-size: 17px; color: var(--text-secondary); line-height: 1.65;
-  max-width: 540px; margin: 0 auto 36px;
-}
+.hero h1 { font-size: clamp(32px, 5vw, 52px); font-weight: 800; letter-spacing: -1.5px; line-height: 1.1; margin-bottom: 18px; text-wrap: balance; }
+.hero p { font-size: 17px; color: var(--text-secondary); line-height: 1.65; max-width: 540px; margin: 0 auto 28px; }
 
-/* BILLING TOGGLE */
+.self-hosted-banner {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 16px; margin-bottom: 32px;
+  font-size: 13px; color: var(--text-secondary);
+}
+.self-hosted-banner strong { color: var(--text); }
+.self-hosted-banner .dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; flex-shrink: 0; }
+
 .billing-toggle {
   display: inline-flex; align-items: center; gap: 12px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 100px; padding: 6px 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 100px; padding: 6px 8px;
 }
 .billing-toggle button {
-  padding: 7px 20px; border-radius: 100px; border: none;
-  font-family: inherit; font-size: 14px; font-weight: 600;
-  cursor: pointer; transition: all 0.18s;
+  padding: 7px 20px; border-radius: 100px; border: none; font-family: inherit;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.18s;
   background: transparent; color: var(--text-secondary);
 }
-.billing-toggle button.active {
-  background: var(--accent); color: #fff;
-}
+.billing-toggle button.active { background: var(--accent); color: #fff; }
 .billing-toggle .save-badge {
   font-size: 11px; font-weight: 700; color: var(--green);
-  background: rgba(5,150,105,0.1); padding: 2px 8px; border-radius: 100px;
-  white-space: nowrap;
+  background: rgba(5,150,105,0.1); padding: 2px 8px; border-radius: 100px; white-space: nowrap;
 }
 
-/* TIER GRID */
 .tiers-wrap { padding: 0 16px 80px; }
 .tiers {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  max-width: 1060px; margin: 48px auto 0;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 16px; max-width: 1060px; margin: 48px auto 0;
 }
 @media (max-width: 860px) { .tiers { grid-template-columns: 1fr; max-width: 460px; } }
 
 .tier-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 32px 28px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 32px 28px;
   display: flex; flex-direction: column; gap: 0;
-  box-shadow: var(--shadow-sm);
-  position: relative;
-  transition: box-shadow 0.2s;
+  box-shadow: var(--shadow-sm); position: relative; transition: box-shadow 0.2s;
 }
 .tier-card:hover { box-shadow: var(--shadow-md); }
-
-.tier-card.featured {
-  border-color: var(--accent-pale-border);
-  box-shadow: 0 0 0 2px var(--accent-pale-border), var(--shadow-md);
+.tier-card.team {
+  background: var(--team-bg); border-color: var(--team-border);
+  box-shadow: 0 0 0 2px var(--team-border), var(--shadow-md);
 }
-
 .tier-card.regulated {
-  background: var(--regulated-bg);
-  border-color: var(--regulated-border);
+  background: var(--regulated-bg); border-color: var(--regulated-border);
   box-shadow: 0 0 0 2px var(--regulated-border), var(--shadow-md);
 }
 
@@ -195,29 +140,29 @@ nav .nav-links { display: flex; gap: 24px; margin-left: auto; }
   font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
   padding: 4px 14px; border-radius: 100px; white-space: nowrap;
 }
-.tier-badge.popular { background: var(--accent); color: #fff; }
-.tier-badge.regulated { background: var(--regulated-badge); color: #fff; }
+.tier-badge.team-badge { background: var(--team-badge); color: #fff; }
+.tier-badge.regulated-badge { background: var(--regulated-badge); color: #fff; }
 
-.tier-name {
-  font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-secondary); margin-bottom: 12px;
-}
+.tier-name { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 12px; }
+.tier-card.team .tier-name { color: var(--team); }
 .tier-card.regulated .tier-name { color: var(--regulated); }
 
-.tier-price {
-  font-family: 'Space Mono', monospace;
-  font-size: 42px; font-weight: 700; letter-spacing: -2px;
-  line-height: 1; margin-bottom: 4px;
-  font-variant-numeric: tabular-nums;
-}
+.tier-price { font-family: 'Space Mono', monospace; font-size: 42px; font-weight: 700; letter-spacing: -2px; line-height: 1; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
 .tier-price .currency { font-size: 22px; vertical-align: super; letter-spacing: 0; }
 .tier-price .period { font-size: 14px; font-weight: 400; color: var(--text-secondary); letter-spacing: 0; }
-
 .tier-price-annual { display: none; }
 .annual-mode .tier-price-monthly { display: none; }
 .annual-mode .tier-price-annual { display: block; }
 
-.tier-desc { font-size: 14px; color: var(--text-secondary); margin: 12px 0 24px; line-height: 1.5; }
+.tier-desc { font-size: 14px; color: var(--text-secondary); margin: 12px 0 8px; line-height: 1.5; }
+
+.license-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px;
+  margin-bottom: 18px; letter-spacing: 0.02em;
+}
+.license-pill.open-pill { background: rgba(5,150,105,0.1); color: var(--green); }
+.license-pill.key-pill { background: var(--accent-pale); color: var(--accent); border: 1px solid var(--accent-pale-border); }
 
 .tier-cta {
   display: block; text-align: center; text-decoration: none;
@@ -225,85 +170,62 @@ nav .nav-links { display: flex; gap: 24px; margin-left: auto; }
   font-size: 14px; font-weight: 700; cursor: pointer; border: none;
   transition: all 0.18s; margin-bottom: 24px;
 }
-.tier-cta.secondary {
-  background: var(--surface-2); color: var(--text);
-  border: 1px solid var(--border);
-}
+.tier-cta.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 .tier-cta.secondary:hover { border-color: var(--accent); color: var(--accent); }
-.tier-cta.primary { background: var(--accent); color: #fff; }
-.tier-cta.primary:hover { filter: brightness(1.1); }
+.tier-cta.team-cta { background: var(--team-badge); color: #fff; }
+.tier-cta.team-cta:hover { filter: brightness(1.1); }
 .tier-cta.regulated-cta { background: var(--regulated-badge); color: #fff; }
 .tier-cta.regulated-cta:hover { filter: brightness(1.1); }
 
 .tier-divider { border: none; border-top: 1px solid var(--border); margin-bottom: 20px; }
+.tier-card.team .tier-divider { border-color: var(--team-border); }
 .tier-card.regulated .tier-divider { border-color: var(--regulated-border); }
 
 .tier-features { list-style: none; display: flex; flex-direction: column; gap: 10px; flex: 1; }
-.tier-features li {
-  display: flex; gap: 10px; align-items: flex-start;
-  font-size: 13.5px; line-height: 1.45;
-}
-.feature-icon {
-  flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px;
-  border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 10px;
-}
+.tier-features li { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; line-height: 1.45; }
+.feature-icon { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; }
 .feature-icon.check { background: rgba(5,150,105,0.12); color: var(--green); }
 .feature-icon.dash { background: var(--surface-2); color: var(--text-secondary); }
+.feature-section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin: 20px 0 8px; padding-top: 4px; }
 
-.feature-section-label {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text-secondary); margin: 20px 0 8px;
-  padding-top: 4px;
+/* HOW IT WORKS */
+.how-section { max-width: 860px; margin: 0 auto; padding: 0 16px 80px; }
+.how-section h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; text-align: center; margin-bottom: 40px; }
+.how-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+@media (max-width: 720px) { .how-steps { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 400px) { .how-steps { grid-template-columns: 1fr; } }
+.how-step {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
 }
+.step-num {
+  font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
+  color: var(--accent); background: var(--accent-pale); border: 1px solid var(--accent-pale-border);
+  display: inline-block; padding: 2px 8px; border-radius: 6px; margin-bottom: 12px;
+}
+.how-step h3 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.how-step p { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
 
 /* FEATURES TABLE */
-.features-section {
-  max-width: 1060px; margin: 0 auto; padding: 0 16px 80px;
-}
-.features-section h2 {
-  font-size: 22px; font-weight: 700; letter-spacing: -0.5px;
-  text-align: center; margin-bottom: 32px;
-}
-.features-table {
-  width: 100%; border-collapse: collapse;
-  background: var(--surface); border-radius: var(--radius);
-  overflow: hidden; box-shadow: var(--shadow-sm);
-}
-.features-table th, .features-table td {
-  padding: 14px 20px; font-size: 13.5px;
-  border-bottom: 1px solid var(--border);
-}
-.features-table thead th {
-  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--text-secondary); background: var(--surface-2);
-  text-align: center;
-}
+.features-section { max-width: 1060px; margin: 0 auto; padding: 0 16px 80px; }
+.features-section h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; text-align: center; margin-bottom: 32px; }
+.features-table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
+.features-table th, .features-table td { padding: 14px 20px; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+.features-table thead th { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); background: var(--surface-2); text-align: center; }
 .features-table thead th:first-child { text-align: left; }
 .features-table td:not(:first-child) { text-align: center; }
 .features-table tr:last-child td { border-bottom: none; }
-.features-table .group-row td {
-  background: var(--surface-2);
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.08em; color: var(--text-secondary);
-  padding: 8px 20px;
-}
+.features-table .group-row td { background: var(--surface-2); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); padding: 8px 20px; }
+.features-table .team-col { color: var(--team); font-weight: 600; }
 .features-table .regulated-col { color: var(--regulated); font-weight: 700; }
 .check-mark { color: var(--green); font-size: 16px; }
 .dash-mark { color: var(--border); font-size: 16px; }
 .partial { color: var(--text-secondary); font-size: 12px; }
 
 /* FAQ */
-.faq-section {
-  max-width: 720px; margin: 0 auto; padding: 0 16px 100px;
-}
-.faq-section h2 {
-  font-size: 22px; font-weight: 700; letter-spacing: -0.5px;
-  text-align: center; margin-bottom: 32px;
-}
-.faq-item {
-  border-bottom: 1px solid var(--border); padding: 0;
-}
+.faq-section { max-width: 720px; margin: 0 auto; padding: 0 16px 100px; }
+.faq-section h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; text-align: center; margin-bottom: 32px; }
+.faq-item { border-bottom: 1px solid var(--border); padding: 0; }
 .faq-q {
   width: 100%; background: none; border: none; padding: 20px 0;
   font-family: inherit; font-size: 15px; font-weight: 600;
@@ -313,20 +235,11 @@ nav .nav-links { display: flex; gap: 24px; margin-left: auto; }
 .faq-q:hover { color: var(--accent); }
 .faq-chevron { font-size: 18px; flex-shrink: 0; transition: transform 0.2s; color: var(--text-secondary); }
 .faq-item.open .faq-chevron { transform: rotate(180deg); }
-.faq-a {
-  display: none; font-size: 14px; color: var(--text-secondary);
-  line-height: 1.65; padding-bottom: 20px;
-}
+.faq-a { display: none; font-size: 14px; color: var(--text-secondary); line-height: 1.65; padding-bottom: 20px; }
 .faq-item.open .faq-a { display: block; }
+.faq-a code { font-family: 'Space Mono', monospace; font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
 
-/* FOOTER */
-footer {
-  border-top: 1px solid var(--border);
-  padding: 40px 24px;
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
+footer { border-top: 1px solid var(--border); padding: 40px 24px; text-align: center; color: var(--text-secondary); font-size: 13px; }
 footer a { color: var(--text-secondary); text-decoration: none; }
 footer a:hover { color: var(--accent); }
 .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
@@ -335,19 +248,23 @@ footer a:hover { color: var(--accent); }
 <body>
 
 <nav>
-  <a class="nav-logo" href="#"><span>ant</span>crew</a>
+  <a class="nav-logo" href="index.html"><span>ant</span>crew</a>
   <div class="nav-links">
-    <a href="#">Docs</a>
-    <a href="#">GitHub</a>
-    <a href="#">Changelog</a>
+    <a href="https://docs.antcrew.org">Docs</a>
+    <a href="https://github.com/iagop03/antcrew">GitHub</a>
+    <a href="regulated.html">Regulated</a>
   </div>
-  <a class="nav-cta" href="#">Empezar gratis</a>
+  <a class="nav-cta" href="https://github.com/iagop03/antcrew">Instalar gratis</a>
 </nav>
 
 <div class="hero">
   <div class="hero-eyebrow">Precios</div>
-  <h1>Elige el plan de tu equipo</h1>
-  <p>Desde el SDK open-source hasta el tier regulado con audit trail firmado para banca, salud y legal.</p>
+  <h1>Self-hosted por defecto</h1>
+  <p>El SDK es siempre Apache 2.0. La plataforma corre en tu infra. Los tiers Team y Regulated activan features con una license key — sin phone-home, funciona en redes aisladas.</p>
+  <div class="self-hosted-banner">
+    <span class="dot"></span>
+    <span><strong>Sin vendor lock-in.</strong> Tu código, tus keys, tu servidor.</span>
+  </div>
   <div class="billing-toggle" id="billingToggle">
     <button class="active" id="btnMonthly" onclick="setBilling('monthly')">Mensual</button>
     <button id="btnAnnual" onclick="setBilling('annual')">Anual</button>
@@ -363,62 +280,70 @@ footer a:hover { color: var(--accent); }
       <div class="tier-name">Open</div>
       <div class="tier-price tier-price-monthly">
         <span class="currency">€</span>0
-        <span class="period">/mes</span>
+        <span class="period">/siempre</span>
       </div>
       <div class="tier-price tier-price-annual">
         <span class="currency">€</span>0
-        <span class="period">/mes</span>
+        <span class="period">/siempre</span>
       </div>
-      <div class="tier-desc">SDK Apache 2.0. BYOK. Corre en tu máquina o en tu infra.</div>
+      <div class="tier-desc">Para developers y equipos pequeños. 1 workspace, hasta 3 miembros.</div>
+      <span class="license-pill open-pill">✓ Sin license key</span>
       <a class="tier-cta secondary" href="https://github.com/iagop03/antcrew">Ver en GitHub →</a>
       <hr class="tier-divider">
       <ul class="tier-features">
-        <div class="feature-section-label">Core</div>
-        <li><span class="feature-icon check">✓</span><span>SDK completo (Apache 2.0)</span></li>
+        <div class="feature-section-label">SDK &amp; CLI</div>
+        <li><span class="feature-icon check">✓</span><span>SDK completo — Apache 2.0</span></li>
         <li><span class="feature-icon check">✓</span><span>BYOK — cualquier proveedor LLM</span></li>
-        <li><span class="feature-icon check">✓</span><span>CLI: <code>antcrew run</code>, <code>release</code>, <code>trace</code></span></li>
-        <li><span class="feature-icon check">✓</span><span>Agentes ilimitados en local</span></li>
-        <li><span class="feature-icon check">✓</span><span>TraceLog local</span></li>
+        <li><span class="feature-icon check">✓</span><span>CLI: <code style="font-family:monospace;font-size:12px">antcrew run / release / trace</code></span></li>
+        <div class="feature-section-label" style="margin-top:12px">Plataforma</div>
+        <li><span class="feature-icon check">✓</span><span>Dashboard self-hosted</span></li>
+        <li><span class="feature-icon check">✓</span><span>TraceLog + Replay</span></li>
+        <li><span class="feature-icon check">✓</span><span>HITL (un revisor)</span></li>
+        <li><span class="feature-icon check">✓</span><span>Eval suite básica</span></li>
+        <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">Múltiples workspaces</span></li>
+        <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">Run scheduling</span></li>
+        <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">Webhooks (Jira, Slack…)</span></li>
         <div class="feature-section-label" style="margin-top:12px">Soporte</div>
         <li><span class="feature-icon check">✓</span><span>Community (GitHub Issues)</span></li>
-        <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">Cloud runners</span></li>
-        <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">Dashboard web</span></li>
       </ul>
     </div>
 
-    <!-- PRO -->
-    <div class="tier-card featured">
-      <div class="tier-badge popular">Más popular</div>
-      <div class="tier-name">Pro</div>
+    <!-- TEAM -->
+    <div class="tier-card team">
+      <div class="tier-badge team-badge">Más popular</div>
+      <div class="tier-name" style="margin-top:8px">Team</div>
       <div class="tier-price tier-price-monthly">
-        <span class="currency">€</span>79
-        <span class="period">/workspace/mes</span>
+        <span class="currency">€</span>99
+        <span class="period">/mes</span>
       </div>
       <div class="tier-price tier-price-annual">
-        <span class="currency">€</span>63
-        <span class="period">/workspace/mes</span>
+        <span class="currency">€</span>79
+        <span class="period">/mes</span>
       </div>
-      <div class="tier-desc">Managed. Sin infraestructura propia. Ideal para equipos de 5–20 devs.</div>
-      <a class="tier-cta primary" href="#">Empezar prueba →</a>
+      <div class="tier-desc">Para equipos de hasta 15 devs. Workspaces ilimitados, features de colaboración.</div>
+      <span class="license-pill key-pill">🔑 License key</span>
+      <a class="tier-cta team-cta" href="https://antcrew.lemonsqueezy.com/checkout/buy/team" id="teamCta">Comprar licencia →</a>
       <hr class="tier-divider">
       <ul class="tier-features">
         <div class="feature-section-label">Incluye todo de Open, más:</div>
-        <li><span class="feature-icon check">✓</span><span>Cloud runners (sin setup)</span></li>
-        <li><span class="feature-icon check">✓</span><span>Dashboard web</span></li>
-        <li><span class="feature-icon check">✓</span><span>Checkpoints + replay</span></li>
-        <li><span class="feature-icon check">✓</span><span>TraceLog persistido en cloud</span></li>
-        <li><span class="feature-icon check">✓</span><span>Workspace isolation automático</span></li>
+        <li><span class="feature-icon check">✓</span><span>Workspaces ilimitados</span></li>
+        <li><span class="feature-icon check">✓</span><span>Hasta 15 miembros</span></li>
+        <li><span class="feature-icon check">✓</span><span>HITL multi-revisor + escalación</span></li>
+        <li><span class="feature-icon check">✓</span><span>Run scheduling</span></li>
+        <li><span class="feature-icon check">✓</span><span>Webhooks (Jira, Linear, Slack)</span></li>
+        <li><span class="feature-icon check">✓</span><span>SSO — GitHub OAuth + SAML</span></li>
+        <li><span class="feature-icon check">✓</span><span>Eval regression + dashboards</span></li>
+        <li><span class="feature-icon check">✓</span><span>Team history</span></li>
         <div class="feature-section-label" style="margin-top:12px">Soporte</div>
         <li><span class="feature-icon check">✓</span><span>Email prioritario (48h)</span></li>
-        <li><span class="feature-icon check">✓</span><span>SLA 99.5% uptime</span></li>
-        <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">Audit trail exportable</span></li>
+        <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">Compliance Pack</span></li>
         <li><span class="feature-icon dash">–</span><span style="color:var(--text-secondary)">ServiceNow / ITSM</span></li>
       </ul>
     </div>
 
     <!-- REGULATED -->
     <div class="tier-card regulated">
-      <div class="tier-badge regulated">Regulated</div>
+      <div class="tier-badge regulated-badge">Regulated</div>
       <div class="tier-name" style="margin-top:8px">Regulated</div>
       <div class="tier-price tier-price-monthly">
         <span class="currency">€</span>249
@@ -428,25 +353,55 @@ footer a:hover { color: var(--accent); }
         <span class="currency">€</span>199
         <span class="period">/workspace/mes</span>
       </div>
-      <div class="tier-desc">Compliance Pack completo. Para equipos en banca, salud, legal y seguros.</div>
-      <a class="tier-cta regulated-cta" href="#">Reservar demo →</a>
+      <div class="tier-desc">Para banca, salud, legal y seguros. Audit trail exportable, hash chain firmada, ServiceNow.</div>
+      <span class="license-pill key-pill">🔑 License key</span>
+      <a class="tier-cta regulated-cta" href="mailto:iago.pueyo99@gmail.com?subject=antcrew%20Regulated">Hablar con nosotros →</a>
       <hr class="tier-divider">
       <ul class="tier-features">
-        <div class="feature-section-label">Incluye todo de Pro, más:</div>
+        <div class="feature-section-label">Incluye todo de Team, más:</div>
+        <li><span class="feature-icon check">✓</span><span>Compliance Pack — attestations ZIP</span></li>
         <li><span class="feature-icon check">✓</span><span>TraceLog exportable + hash chain firmada</span></li>
         <li><span class="feature-icon check">✓</span><span>Audit trail HITL (auditor-facing)</span></li>
-        <li><span class="feature-icon check">✓</span><span>Change packages firmados (.zip)</span></li>
+        <li><span class="feature-icon check">✓</span><span>ApproversConfig (sign-off por riesgo)</span></li>
         <li><span class="feature-icon check">✓</span><span>ServiceNow Change Request API</span></li>
-        <li><span class="feature-icon check">✓</span><span>Informes SOX / FDA / Solvencia II</span></li>
-        <li><span class="feature-icon check">✓</span><span>SSO / SAML</span></li>
+        <li><span class="feature-icon check">✓</span><span>Field encryption en reposo</span></li>
+        <li><span class="feature-icon check">✓</span><span>DPA + plantillas GDPR</span></li>
+        <li><span class="feature-icon check">✓</span><span>Política de retención personalizada</span></li>
         <div class="feature-section-label" style="margin-top:12px">Soporte</div>
-        <li><span class="feature-icon check">✓</span><span>SLA 99.9% + SLA contractual</span></li>
-        <li><span class="feature-icon check">✓</span><span>Onboarding dedicado</span></li>
+        <li><span class="feature-icon check">✓</span><span>Email prioritario (4h)</span></li>
         <li><span class="feature-icon check">✓</span><span>Canal privado (Slack / Teams)</span></li>
+        <li><span class="feature-icon check">✓</span><span>Onboarding dedicado</span></li>
       </ul>
     </div>
   </div>
 </div>
+
+<!-- HOW LICENSE KEYS WORK -->
+<section class="how-section">
+  <h2>Cómo funciona la license key</h2>
+  <div class="how-steps">
+    <div class="how-step">
+      <div class="step-num">01</div>
+      <h3>Compra la licencia</h3>
+      <p>Checkout seguro vía Lemon Squeezy. Gestiona el IVA europeo automáticamente como Merchant of Record.</p>
+    </div>
+    <div class="how-step">
+      <div class="step-num">02</div>
+      <h3>Recibes la key por email</h3>
+      <p>Un JWT firmado con tu tier, límites y features. Válido 12 meses (mensual) o hasta renovación (anual).</p>
+    </div>
+    <div class="how-step">
+      <div class="step-num">03</div>
+      <h3>Activa en tu instancia</h3>
+      <p>Añade <code>ANTCREW_LICENSE_KEY=eyJ...</code> a tu <code>.env</code>. La plataforma valida offline con la clave pública embebida.</p>
+    </div>
+    <div class="how-step">
+      <div class="step-num">04</div>
+      <h3>Sin phone-home</h3>
+      <p>La validación es 100% local. Funciona en redes aisladas, VPCs privadas y entornos air-gapped.</p>
+    </div>
+  </div>
+</section>
 
 <!-- FEATURES TABLE -->
 <section class="features-section">
@@ -457,38 +412,41 @@ footer a:hover { color: var(--accent); }
       <tr>
         <th style="width:40%">Feature</th>
         <th>Open</th>
-        <th>Pro</th>
+        <th class="team-col">Team</th>
         <th class="regulated-col">Regulated</th>
       </tr>
     </thead>
     <tbody>
       <tr class="group-row"><td colspan="4">SDK &amp; CLI</td></tr>
-      <tr><td>Licencia</td><td>Apache 2.0</td><td>Apache 2.0</td><td>Apache 2.0</td></tr>
-      <tr><td>BYOK (Anthropic, OpenAI, Groq…)</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
-      <tr><td>CLI completa</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
-      <tr><td>Agentes en local</td><td>Ilimitados</td><td>Ilimitados</td><td>Ilimitados</td></tr>
+      <tr><td>Licencia SDK</td><td>Apache 2.0</td><td>Apache 2.0</td><td>Apache 2.0</td></tr>
+      <tr><td>BYOK — cualquier proveedor LLM</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
+      <tr><td>CLI completa (<code style="font-family:monospace;font-size:12px">run, release, trace</code>)</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
 
-      <tr class="group-row"><td colspan="4">Cloud &amp; Platform</td></tr>
-      <tr><td>Cloud runners</td><td><span class="dash-mark">—</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
-      <tr><td>Dashboard web</td><td><span class="dash-mark">—</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
-      <tr><td>Checkpoints + replay</td><td><span class="dash-mark">—</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
-      <tr><td>Workspace isolation</td><td>Manual</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
+      <tr class="group-row"><td colspan="4">Plataforma (self-hosted)</td></tr>
+      <tr><td>Dashboard web</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
+      <tr><td>Workspaces</td><td>1</td><td class="team-col">Ilimitados</td><td class="regulated-col">Ilimitados</td></tr>
+      <tr><td>Miembros por workspace</td><td>3</td><td class="team-col">15</td><td class="regulated-col">Ilimitados</td></tr>
+      <tr><td>TraceLog + Replay</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
+      <tr><td>HITL</td><td>1 revisor</td><td class="team-col">Multi-revisor</td><td class="regulated-col">Multi-revisor + ApproversConfig</td></tr>
+      <tr><td>Eval suite</td><td>Básica</td><td class="team-col">Regression + dashboards</td><td class="regulated-col">Regression + dashboards</td></tr>
+      <tr><td>Run scheduling</td><td><span class="dash-mark">—</span></td><td><span class="check-mark team-col">✓</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>Webhooks (Jira, Linear, Slack…)</td><td><span class="dash-mark">—</span></td><td><span class="check-mark team-col">✓</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>SSO / SAML</td><td><span class="dash-mark">—</span></td><td><span class="check-mark team-col">✓</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>Team history</td><td><span class="dash-mark">—</span></td><td><span class="check-mark team-col">✓</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
 
       <tr class="group-row"><td colspan="4">Compliance Pack</td></tr>
-      <tr><td>TraceLog local</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
-      <tr><td>TraceLog exportable + firmado</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
-      <tr><td>Audit trail HITL (auditor-facing)</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
-      <tr><td>Change packages firmados (.zip)</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>Attestations ZIP exportable</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>TraceLog hash chain firmada</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>Audit trail HITL</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
       <tr><td>ServiceNow Change Request API</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
-      <tr><td>Informes SOX / FDA / Solvencia II</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
-      <tr><td>SSO / SAML</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>Field encryption en reposo</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
+      <tr><td>DPA + plantillas GDPR</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
 
       <tr class="group-row"><td colspan="4">Soporte</td></tr>
-      <tr><td>Community (GitHub)</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
-      <tr><td>Email prioritario</td><td><span class="dash-mark">—</span></td><td>48h</td><td>4h</td></tr>
+      <tr><td>Community (GitHub Issues)</td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td><td><span class="check-mark">✓</span></td></tr>
+      <tr><td>Email soporte</td><td><span class="dash-mark">—</span></td><td class="team-col">48h</td><td class="regulated-col">4h</td></tr>
       <tr><td>Canal privado (Slack/Teams)</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
       <tr><td>Onboarding dedicado</td><td><span class="dash-mark">—</span></td><td><span class="dash-mark">—</span></td><td><span class="check-mark regulated-col">✓</span></td></tr>
-      <tr><td>SLA uptime</td><td><span class="dash-mark">—</span></td><td>99.5%</td><td class="regulated-col">99.9%</td></tr>
     </tbody>
   </table>
   </div>
@@ -500,63 +458,61 @@ footer a:hover { color: var(--accent); }
 
   <div class="faq-item">
     <button class="faq-q" onclick="toggleFaq(this)">
-      ¿Qué es BYOK?
+      ¿Qué es una license key y cómo funciona?
       <span class="faq-chevron">⌄</span>
     </button>
-    <div class="faq-a">Bring Your Own Key. Conectas tus propias API keys de Anthropic, OpenAI, Groq o cualquier otro proveedor. antcrew actúa como orquestador y nunca ve ni almacena tus credenciales. El coste de inferencia va directamente a tu cuenta con el proveedor.</div>
+    <div class="faq-a">Es un JWT firmado con RSA-256 que contiene tu tier, los límites de workspaces y miembros, y las features activadas. Lo añades como variable de entorno: <code>ANTCREW_LICENSE_KEY=eyJ...</code>. La plataforma lo valida localmente con la clave pública embebida — sin conexión a Internet, sin phone-home.</div>
   </div>
 
   <div class="faq-item">
     <button class="faq-q" onclick="toggleFaq(this)">
-      ¿Mis datos pasan por los servidores de antcrew?
+      ¿Puedo usar antcrew en una red aislada (air-gapped)?
       <span class="faq-chevron">⌄</span>
     </button>
-    <div class="faq-a">En el plan Open con BYOK las llamadas van directamente desde tu máquina a tu proveedor LLM — antcrew no ve el contenido. En Pro y Regulated managed, el tráfico pasa por nuestros runners y está cifrado en tránsito y en reposo. Para el tier Regulated también ofrecemos opciones on-premise.</div>
+    <div class="faq-a">Sí. La validación de la license key es 100% offline. El único tráfico externo es el que tú generas hacia tu proveedor LLM (Ollama, Anthropic, OpenAI…). Si usas Ollama o un modelo local, antcrew funciona completamente sin salida a Internet.</div>
   </div>
 
   <div class="faq-item">
     <button class="faq-q" onclick="toggleFaq(this)">
-      ¿Puedo empezar con Open y migrar después?
+      ¿Qué pasa cuando expira la license key?
       <span class="faq-chevron">⌄</span>
     </button>
-    <div class="faq-a">Sí. El SDK es el mismo en todos los tiers. Cuando migras a Pro o Regulated, tu código de agentes no cambia — solo activas las features adicionales (cloud runners, TraceLog cloud, Compliance Pack) en la configuración.</div>
+    <div class="faq-a">Hay un período de gracia de 30 días. Durante ese tiempo la plataforma sigue funcionando y muestra una advertencia en el dashboard. Al expirar el período de gracia, la instancia degrada al plan Open (1 workspace, 3 miembros, sin features de Team/Regulated) — nunca se apaga ni se pierden datos.</div>
   </div>
 
   <div class="faq-item">
     <button class="faq-q" onclick="toggleFaq(this)">
-      ¿Qué sectores cubre el tier Regulated?
+      ¿Puedo actualizar de Open a Team sin reinstalar?
       <span class="faq-chevron">⌄</span>
     </button>
-    <div class="faq-a">El Compliance Pack está diseñado para cumplir con los requisitos de auditoría de banca y fintech (SOX, modelo 3 líneas de defensa), healthcare/farma (FDA 21 CFR Part 11), legal (chain of custody) y seguros (Solvencia II / EIOPA). Contacta con nosotros si tienes un marco regulatorio específico.</div>
+    <div class="faq-a">Sí. Es un cambio de variable de entorno y reinicio del proceso. El SDK y el código de tus agentes no cambian — solo se activan las features adicionales en la plataforma.</div>
   </div>
 
   <div class="faq-item">
     <button class="faq-q" onclick="toggleFaq(this)">
-      ¿Cómo funciona la facturación anual?
+      ¿Quién gestiona los pagos y el IVA europeo?
       <span class="faq-chevron">⌄</span>
     </button>
-    <div class="faq-a">Con el plan anual pagas por adelantado 12 meses y obtienes un 20% de descuento respecto al precio mensual. La factura es única al inicio del período.</div>
+    <div class="faq-a">Lemon Squeezy actúa como Merchant of Record. Gestiona el IVA de forma automática para todos los países de la UE, emite la factura conforme a la normativa local y permite pagar con tarjeta, SEPA o PayPal.</div>
   </div>
 
   <div class="faq-item">
     <button class="faq-q" onclick="toggleFaq(this)">
-      ¿Existe plan Enterprise para organizaciones grandes?
+      ¿Hay un plan Enterprise para organizaciones grandes?
       <span class="faq-chevron">⌄</span>
     </button>
-    <div class="faq-a">Sí. Para organizaciones con más de 20 workspaces, requisitos de contratos marco, facturación centralizada o despliegue on-premise, contacta con nosotros para un acuerdo personalizado.</div>
+    <div class="faq-a">Sí. Para organizaciones con más de 15 desarrolladores, contratos marco, facturación centralizada o requisitos de DPA específicos, escríbenos a <code>iago.pueyo99@gmail.com</code> para una propuesta personalizada.</div>
   </div>
 </section>
 
 <footer>
   <div class="footer-links">
-    <a href="#">Docs</a>
-    <a href="#">GitHub</a>
-    <a href="#">Estado del servicio</a>
-    <a href="#">Privacidad</a>
-    <a href="#">Términos</a>
-    <a href="#">Contacto</a>
+    <a href="https://docs.antcrew.org">Docs</a>
+    <a href="https://github.com/iagop03/antcrew">GitHub</a>
+    <a href="regulated.html">Regulated</a>
+    <a href="mailto:iago.pueyo99@gmail.com">Contacto</a>
   </div>
-  <p>© 2026 antcrew · Apache 2.0 open-source · <a href="#">iago.pueyo99@gmail.com</a></p>
+  <p>© 2026 antcrew · SDK Apache 2.0 · Plataforma ELv2 · <a href="mailto:iago.pueyo99@gmail.com">iago.pueyo99@gmail.com</a></p>
 </footer>
 
 <script>
@@ -564,18 +520,19 @@ function setBilling(mode) {
   const wrap = document.getElementById('tiersWrap');
   const btnM = document.getElementById('btnMonthly');
   const btnA = document.getElementById('btnAnnual');
+  const teamCta = document.getElementById('teamCta');
   if (mode === 'annual') {
     wrap.classList.add('annual-mode');
     btnA.classList.add('active'); btnM.classList.remove('active');
+    teamCta.textContent = 'Comprar licencia anual →';
   } else {
     wrap.classList.remove('annual-mode');
     btnM.classList.add('active'); btnA.classList.remove('active');
+    teamCta.textContent = 'Comprar licencia →';
   }
 }
-
 function toggleFaq(btn) {
-  const item = btn.closest('.faq-item');
-  item.classList.toggle('open');
+  btn.closest('.faq-item').classList.toggle('open');
 }
 </script>
 </body>
