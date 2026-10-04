@@ -67,6 +67,7 @@ nav:
   - Get Started:
     - "5-minute quick start": guides/quickstart.md
     - "A full team in action": guides/fullstack-team.md
+    - "Change-management pipeline": guides/change-management.md
   - SDK Reference:
     - Overview: engine/index.md
     - "Quick agents": engine/quick-agent.md

@@ -74,3 +74,89 @@ For programmatic access to the same data, use `GET /runs/{run_id}/events`.
 
 !!! tip "Per-agent model config"
     The model shown in the Trace tab reflects the resolved model after applying `run.model_overrides` → `workspace.agent_models` → platform default. See [Model configuration](../platform/model-config.md) to configure which model each capability uses.
+
+---
+
+## HITL audit trail
+
+Every HITL checkpoint — both in the supervised teams (`FlexibleHITL`) and in the engine loop (`HitlReviewer`) — is written into the tamper-evident hash chain in `TraceLog`.
+
+### Supervised teams (FlexibleHITL)
+
+```python
+from antcrew.core.hitl import FlexibleHITL, HITLDecision, HITLAction
+from antcrew.trace import TraceLog
+
+tlog = TraceLog("trace.db")
+run_id = tlog.begin_run(thread_id="t1", request="...", team="dev")
+
+hitl = FlexibleHITL(callback=my_callback, trace_log=tlog, run_id=run_id)
+# or attach after run_id is known:
+hitl.attach_trace(tlog, run_id)
+
+# gate() records to TraceLog automatically:
+hitl.gate("prd_review", state)
+```
+
+The callback must return a `HITLDecision` with a `reviewer_id` field to make the decision auditable:
+
+```python
+def my_callback(checkpoint: str, state) -> HITLDecision:
+    return HITLDecision(
+        action=HITLAction.APPROVE,
+        reviewer_id="alice@company.com",
+        reason="Reviewed and approved",
+    )
+```
+
+### Engine loop (HitlReviewer)
+
+```python
+from antcrew_engine.capabilities import HitlReviewer
+
+reviewer = HitlReviewer(
+    reviewed_capability="architect",
+    request_review=my_review_callback,
+    trace_log=tlog,      # ← wire TraceLog here
+    run_id=run_id,       # ← and run_id
+)
+```
+
+The `request_review` callback must include `reviewer_id` in its return dict for the decision to be attributed:
+
+```python
+def my_review_callback(content: dict) -> dict:
+    # ... show content to human ...
+    return {
+        "verdict": "approve",
+        "reviewer_id": "bob@company.com",
+        "feedback": "LGTM",
+    }
+```
+
+### Bridging the two models
+
+To convert a `HITLDecision` (supervised-team model) to a `HitlDecision` dict (engine model):
+
+```python
+from antcrew_engine.engine import hitl_decision_from_flexible
+
+engine_decision = hitl_decision_from_flexible(flexible_decision)
+# Maps: APPROVE→approve, MODIFY→edit, SKIP→approve, REQUEST_CHANGES/REJECT→reject
+```
+
+### Verifying the chain
+
+```bash
+antcrew trace --verify-chain ~/.antcrew/trace.db
+```
+
+Any tampered row breaks the SHA-256 chain and the command reports the first invalid entry.
+
+### Security contract
+
+| Scenario | FlexibleHITL | HitlReviewer |
+|---|---|---|
+| Callback raises exception | → REJECT (fail closed) | `verdict` defaults to `"timeout"` → treated as reject |
+| No callback configured | → REJECT | n/a — always requires `request_review` |
+| `reviewer_id` missing | Decision recorded, `reviewer_id=""` | Decision recorded, `reviewer_id=""` |
