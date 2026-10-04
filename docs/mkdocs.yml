@@ -80,6 +80,8 @@ nav:
     - "Governance & provenance": engine/governance.md
     - "TraceLog & Replay": engine/tracelog.md
     - "Event payload schema": engine/event-schema.md
+    - "Adapters (VCS, Tracker, ServiceNow)": engine/adapters.md
+    - "Release pipeline": engine/release.md
     - "Custom capabilities": engine/custom-agents.md
   - Platform:
     - Overview: platform/index.md

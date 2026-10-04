@@ -26,6 +26,10 @@ pip install antcrew   # antcrew_engine is bundled — no separate install needed
 
 **HITL checkpoints** — `HitlReviewer` is a built-in capability that pauses the loop and sends a review request to antcrew-platform. Execution resumes once a human approves or rejects from the dashboard.
 
+**[Adapters](adapters.md)** — pluggable integration layer for external systems. `VCSAdapter` (SVN, Git), `IssueTrackerAdapter` (Jira), and `ServiceNowClient` (Change Request API v2) all expose neutral Protocol interfaces so business logic never references provider-specific concepts. Config-driven: set `vcs: svn`, `tracker: jira`, or `servicenow: {instance_url: …}` in your YAML.
+
+**[Release pipeline](release.md)** — `Release` / `ReleaseItem` data model, `ImpactAnalyzer` (transitive COBOL risk), `ApproversConfig` (risk-proportional sign-off), and `ChangePackager` (Excel + Markdown + email drafts). Combine with `antcrew release submit` to push a signed Change Request to ServiceNow.
+
 ---
 
 ## Quick start
