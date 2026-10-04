@@ -65,7 +65,7 @@ class SVNAdapter:
         rev = changeset_id.lstrip("r")
         raw = self._svn("diff", "--summarize", "--xml", f"-r{str(int(rev) - 1)}:{rev}", self._url)
         try:
-            root = ET.fromstring(raw)
+            root = ET.fromstring(raw)  # nosec B314 — XML from local svn subprocess, not user input
             return [p.text or "" for p in root.findall(".//path") if p.text]
         except ET.ParseError:
             lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
@@ -78,7 +78,7 @@ class SVNAdapter:
     def _fetch_log(self, limit: int = 1000) -> list[ChangeSet]:
         raw = self._svn("log", "--xml", f"--limit={limit}", self._url)
         try:
-            root = ET.fromstring(raw)
+            root = ET.fromstring(raw)  # nosec B314 — XML from local svn subprocess, not user input
         except ET.ParseError:
             return []
         result: list[ChangeSet] = []
