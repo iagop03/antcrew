@@ -101,4 +101,4 @@ testpaths = ["tests"]
 markers = [
     "real_api: tests that call real LLM provider APIs (skipped unless ANTHROPIC_API_KEY or OPENAI_API_KEY is set)",
 ]
-addopts = "--cov=antcrew --cov=antcrew_engine --cov-report=term-missing --cov-fail-under=0"
+addopts = "--cov=antcrew --cov=antcrew_engine --cov-report=term-missing --cov-fail-under=65"
