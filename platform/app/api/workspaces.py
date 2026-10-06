@@ -29,6 +29,7 @@ from app.core.auth import (
 )
 from app.core.database import get_session
 from app.core.exceptions import WorkspaceNotFoundError
+from app.core.license_gate import check_workspace_limit
 from app.models.run import HitlReview, Run, Workspace
 
 router = APIRouter(
@@ -221,6 +222,8 @@ async def create_workspace(body: CreateWorkspace, session: AsyncSession = Depend
     result = await session.exec(select(Workspace).where(Workspace.slug == body.slug))
     if result.first():
         raise HTTPException(409, f"Workspace with slug {body.slug!r} already exists")
+    ws_count = (await session.exec(sa_select(func.count()).select_from(Workspace))).scalar() or 0
+    check_workspace_limit(ws_count)
     from app.core.byok import TRIAL_CREDIT_USD
     ws = Workspace(
         name=body.name,

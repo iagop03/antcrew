@@ -130,43 +130,6 @@ _TEMPLATES: list[dict] = [
             ],
         },
     },
-    {
-        "id": "template:cobol_modernisation",
-        "name": "COBOL Modernisation",
-        "description": "Pipeline de modernización COBOL: elicitación → análisis → generación → validación → tests.",
-        "is_template": True,
-        "workspace_id": None,
-        "created_at": None,
-        "definition": {
-            "nodes": [
-                {"id": "requirements_analyst", "type": "requirements_analyst", "label": "Requirements Analyst", "model": "claude", "x": 50,  "y": 80,
-                 "approval_required": False,
-                 "description": "Lee la documentación del workspace e identifica ambigüedades, contradicciones e información faltante."},
-                {"id": "cobol_analyzer",        "type": "cobol_analyzer",       "label": "COBOL Analyzer",       "model": "claude", "x": 290, "y": 80,
-                 "description": "Parsea programas COBOL existentes del workspace y genera mapa estructural de dependencias."},
-                {"id": "cobol_generator",       "type": "cobol_generator",      "label": "COBOL Generator",      "model": "claude", "x": 530, "y": 80,
-                 "description": "Genera código COBOL siguiendo ANS-85 a partir de las especificaciones y el análisis previo."},
-                {"id": "cobol_validator",       "type": "cobol_validator",      "label": "COBOL Validator",      "model": "claude", "x": 530, "y": 220,
-                 "description": "Valida la sintaxis del programa generado con GnuCOBOL o heurísticas estáticas."},
-                {"id": "cobol_reviewer",        "type": "reviewer",             "label": "COBOL Reviewer",       "model": "claude", "x": 290, "y": 220,
-                 "approval_required": True,
-                 "description": "Revisión humana del código COBOL generado antes de continuar."},
-                {"id": "cobol_refactorer",      "type": "cobol_refactorer",     "label": "COBOL Refactorer",     "model": "claude", "x": 50,  "y": 220,
-                 "description": "Mejora legibilidad sin cambiar comportamiento: renombrado, extracción de párrafos, eliminación de GOTO."},
-                {"id": "cobol_test_gen",        "type": "cobol_test_gen",       "label": "COBOL Test Gen",       "model": "claude", "x": 50,  "y": 360,
-                 "description": "Genera casos de prueba (normal/frontera/error) y esqueleto JCL para ejecución batch."},
-            ],
-            "edges": [
-                {"from": "requirements_analyst", "to": "cobol_analyzer",   "condition": None},
-                {"from": "cobol_analyzer",        "to": "cobol_generator",  "condition": None},
-                {"from": "cobol_generator",       "to": "cobol_validator",  "condition": None},
-                {"from": "cobol_validator",       "to": "cobol_reviewer",   "condition": None},
-                {"from": "cobol_reviewer",        "to": "cobol_generator",  "condition": "reviewer_fix_requested"},
-                {"from": "cobol_reviewer",        "to": "cobol_refactorer", "condition": "reviewer_approved"},
-                {"from": "cobol_refactorer",      "to": "cobol_test_gen",   "condition": None},
-            ],
-        },
-    },
 ]
 
 # All available agent types for the palette (from AGENT_REGISTRY)
@@ -203,19 +166,6 @@ _AGENT_PALETTE = [
      "role_description": "Analiza el repositorio existente para mapear arquitectura, convenciones y deuda técnica."},
     {"type": "feature",          "label": "Feature Agent",     "color": "#0891b2", "phase": "build",     "glyph": "</>",
      "role_description": "Implementa una feature completa de forma autónoma: ficheros, tests y PR description."},
-    # COBOL / Legacy Modernisation agents
-    {"type": "requirements_analyst", "label": "Requirements Analyst", "color": "#b45309", "phase": "discovery", "glyph": "?",
-     "role_description": "Lee la documentación funcional del workspace e identifica ambigüedades, contradicciones e información faltante."},
-    {"type": "cobol_analyzer",   "label": "COBOL Analyzer",    "color": "#b45309", "phase": "discovery", "glyph": "⊙",
-     "role_description": "Parsea programas COBOL existentes y produce un mapa estructural: divisiones, variables WORKING-STORAGE, párrafos, dependencias CALL/COPY."},
-    {"type": "cobol_generator",  "label": "COBOL Generator",   "color": "#0891b2", "phase": "build",     "glyph": "COB",
-     "role_description": "Genera código COBOL nuevo a partir de especificaciones funcionales siguiendo ANS-85 (formato fijo, PERFORM estructurado, sin GOTO)."},
-    {"type": "cobol_refactorer", "label": "COBOL Refactorer",  "color": "#0891b2", "phase": "build",     "glyph": "⟳",
-     "role_description": "Mejora la legibilidad de programas COBOL existentes sin cambiar el comportamiento: renombrado, extracción de párrafos, eliminación de GOTO."},
-    {"type": "cobol_validator",  "label": "COBOL Validator",   "color": "#059669", "phase": "quality",   "glyph": "✓",
-     "role_description": "Valida la sintaxis COBOL con GnuCOBOL (si disponible) o heurísticas estáticas. Devuelve errores con número de línea."},
-    {"type": "cobol_test_gen",   "label": "COBOL Test Gen",    "color": "#059669", "phase": "quality",   "glyph": "T",
-     "role_description": "Genera casos de prueba (normal, frontera, error) y esqueleto JCL para ejecución batch del programa COBOL."},
 ]
 
 # Derived from _TEMPLATES — single source of truth for known edge condition strings

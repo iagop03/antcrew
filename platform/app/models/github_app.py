@@ -1,7 +1,7 @@
 """GitHub App installation model."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
@@ -22,5 +22,5 @@ class GitHubInstallation(SQLModel, table=True):
     push_goal: Optional[str] = Field(default=None)
     push_model: str = Field(default="claude")
     push_branch_filter: str = Field(default="*")  # "*" = all branches, or e.g. "main"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

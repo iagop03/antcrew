@@ -95,7 +95,7 @@ async def upload_run(
         state=body.state,
         workspace_id=ctx.workspace_id,
         created_by=ctx.created_by,
-        finished_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        finished_at=datetime.now(timezone.utc),
     )
     session.add(run)
     await session.commit()
@@ -462,11 +462,38 @@ async def detail(
     session: AsyncSession = Depends(get_session),
     ctx: WorkspaceContext = Depends(get_workspace_context),
 ):
+    from app.core.run_cache import cache_run, get_cached_run
+    cached = await get_cached_run(run_id)
+    if cached:
+        run = Run.model_validate(cached)
+        _assert_run_access(run, ctx)
+        return run
+
     run = await get_run(session, run_id)
     if not run:
         raise RunNotFoundError(run_id)
     _assert_run_access(run, ctx)
+    await cache_run(run_id, run.model_dump())
     return run
+
+
+@router.get("/{run_id}/stats")
+async def run_stats(
+    run_id: str,
+    session: AsyncSession = Depends(get_session),
+    ctx: WorkspaceContext = Depends(get_workspace_context),
+) -> dict:
+    """Return cost and duration for a single run."""
+    run = await get_run(session, run_id)
+    if not run:
+        raise RunNotFoundError(run_id)
+    _assert_run_access(run, ctx)
+    return {
+        "run_id": run_id,
+        "cost_usd": run.cost_usd,
+        "duration_s": run.duration_s,
+        "status": run.status,
+    }
 
 
 @router.post("/{run_id}/cancel", response_model=Run,
@@ -758,7 +785,7 @@ async def force_unblock(
     )).all()
 
     from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     for t in tickets:
         t.status = "done"
         t.updated_at = now
@@ -1005,7 +1032,7 @@ async def margin_stats(
     from sqlalchemy import func as _func
     from sqlalchemy import select as _ssel
 
-    cutoff = _dt.now(_tz.utc).replace(tzinfo=None) - _td(days=days)
+    cutoff = _dt.now(_tz.utc) - _td(days=days)
 
     # Effective client label filter: viewer keys are always scoped to theirs
     effective_label = ctx.client_label or client_label

@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import WorkspaceContext, get_workspace_context, require_api_key
 from app.core.database import get_session
+from app.core.license_gate import require_feature
 from app.models.integrations import TeamSnapshot
 
 router = APIRouter(
@@ -16,7 +17,7 @@ router = APIRouter(
 )
 
 
-@router.get("/{team}/history")
+@router.get("/{team}/history", dependencies=[Depends(require_feature("team_history"))])
 async def team_history(
     team: str,
     days: int = Query(90, ge=1, le=365, description="Lookback window for eval scores"),
@@ -79,11 +80,11 @@ async def team_history(
     if not snapshots:
         return {"team": team, "snapshots": [], "regression_warnings": []}
 
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     # For each snapshot compute mean eval score during its active period.
     # Period: [snapshot.created_at, next_snapshot.created_at or now]
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
 
     enriched = []
     for i, snap in enumerate(snapshots):

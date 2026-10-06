@@ -114,7 +114,7 @@ async def workspace_analytics(
 
     from app.models.run import AgentEvent, Ticket
 
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     day_expr = func.date(Run.created_at)
 
     run_rows = (await session.execute(

@@ -300,7 +300,7 @@ async def submit_client_decision(
     review.status = _STATUS_MAP[body.decision]
     review.decision = body.decision
     review.feedback = body.feedback
-    review.resolved_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    review.resolved_at = datetime.now(timezone.utc)
     session.add(review)
 
     session.add(HitlAuditEntry(

@@ -216,7 +216,7 @@ async def _run_async(task, workspace_id: int, p: dict) -> dict:
                     ).first()
                     if run and run.status == "running":
                         run.status = "error"
-                        run.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                        run.finished_at = datetime.now(timezone.utc)
                         session.add(run)
                         await session.commit()
             except Exception as _mark_exc:

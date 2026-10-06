@@ -11,7 +11,7 @@ import hmac
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -147,7 +147,7 @@ async def github_installation_callback(
         )
     )).first()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if existing:
         existing.account_login = account_login
         existing.account_type = account_type
@@ -367,7 +367,7 @@ async def configure_push_trigger(
     inst.push_goal = body.push_goal or None
     inst.push_model = body.push_model or "claude"
     inst.push_branch_filter = body.push_branch_filter or "*"
-    inst.updated_at = datetime.utcnow()
+    inst.updated_at = datetime.now(timezone.utc)
     session.add(inst)
     await session.commit()
     await session.refresh(inst)

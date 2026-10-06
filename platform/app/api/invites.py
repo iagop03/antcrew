@@ -44,7 +44,7 @@ def _hash_join_token(token: str) -> str:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _base_url() -> str:

@@ -33,7 +33,7 @@
 </div>
 
 <!-- Stats -->
-<div class="px-6 grid grid-cols-4 gap-3 mb-6">
+<div class="px-6 grid gap-3 mb-6" :class="stats.run_limit != null ? 'grid-cols-5' : 'grid-cols-4'">
   <template x-for="[label, key, color] in [['Total','total','indigo'],['Running','running','yellow'],['Success','success','green'],['Error','error','red']]">
     <div class="bg-gray-900 rounded-lg p-3 border border-gray-800">
       <div class="text-xs text-gray-400 mb-1" x-text="label"></div>
@@ -44,6 +44,31 @@
         <template x-if="!loadingStats">
           <span x-text="stats[key] ?? 0"></span>
         </template>
+      </div>
+    </div>
+  </template>
+  <!-- Monthly quota card — only shown when a run limit is set in the license -->
+  <template x-if="!loadingStats && stats.run_limit != null">
+    <div class="bg-gray-900 rounded-lg p-3 border"
+         :class="quotaPct() >= 100 ? 'border-red-800' : quotaPct() >= 80 ? 'border-amber-800' : 'border-gray-800'">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs text-gray-400">This month</span>
+        <template x-if="quotaPct() >= 100">
+          <a href="https://antcrew.org/pricing" target="_blank"
+             class="text-xs text-red-400 hover:text-red-300 transition">Upgrade ↗</a>
+        </template>
+        <template x-if="quotaPct() >= 80 && quotaPct() < 100">
+          <a href="https://antcrew.org/pricing" target="_blank"
+             class="text-xs text-amber-400 hover:text-amber-300 transition">Upgrade ↗</a>
+        </template>
+      </div>
+      <div class="text-2xl font-bold tabular-nums"
+           :class="quotaPct() >= 100 ? 'text-red-400' : quotaPct() >= 80 ? 'text-amber-400' : 'text-teal-400'"
+           x-text="(stats.runs_this_month ?? 0) + ' / ' + stats.run_limit"></div>
+      <div class="mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all"
+             :class="quotaPct() >= 100 ? 'bg-red-500' : quotaPct() >= 80 ? 'bg-amber-500' : 'bg-teal-500'"
+             :style="'width: ' + Math.min(quotaPct(), 100) + '%'"></div>
       </div>
     </div>
   </template>
@@ -758,6 +783,11 @@ function dashboard() {
       } catch {} finally {
         this.loadingStats = false;
       }
+    },
+
+    quotaPct() {
+      if (!this.stats.run_limit) return 0;
+      return Math.round(((this.stats.runs_this_month ?? 0) / this.stats.run_limit) * 100);
     },
 
     connectWs() {

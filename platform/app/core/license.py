@@ -96,6 +96,7 @@ class LicenseContext:
     tier: str = "open"
     workspace_limit: Optional[int] = 1
     member_limit: Optional[int] = 3
+    max_runs_per_month: Optional[int] = None  # None = unlimited
     features: set[str] = field(default_factory=lambda: set(_TIER_FEATURES["open"]))
     expires_at: Optional[datetime] = None
     grace: bool = False          # True = key expired, within grace period
@@ -114,6 +115,11 @@ class LicenseContext:
         if self.member_limit is None:
             return True
         return current_count < self.member_limit
+
+    def within_run_limit(self, runs_this_month: int) -> bool:
+        if self.max_runs_per_month is None:
+            return True
+        return runs_this_month < self.max_runs_per_month
 
     @property
     def is_paid(self) -> bool:
@@ -193,10 +199,16 @@ def _parse_jwt(token: str) -> LicenseContext:
         v = payload["member_limit"]
         mem_limit = None if v == 0 else int(v)
 
+    max_runs: Optional[int] = None
+    if "max_runs_per_month" in payload:
+        v = payload["max_runs_per_month"]
+        max_runs = None if v == 0 else int(v)
+
     return LicenseContext(
         tier=effective_tier,
         workspace_limit=ws_limit,
         member_limit=mem_limit,
+        max_runs_per_month=max_runs,
         features=set(_TIER_FEATURES[effective_tier]),
         expires_at=expires_at,
         grace=grace,

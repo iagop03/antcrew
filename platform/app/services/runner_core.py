@@ -40,39 +40,6 @@ def _allowed_module_path(module_path: str) -> bool:
 _MAX_WORKERS = int(os.environ.get("ANTCREW_WORKERS", "4"))
 _DISPATCH_TIMEOUT = float(os.environ.get("ANTCREW_DISPATCH_TIMEOUT", "10"))
 _executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="antcrew-runner")
-_doc_trace_by_run: dict[str, dict] = {}  # run_id → doc_traceability, cleared after persist
-
-
-def _build_doc_traceability(doc_manager) -> dict:
-    """Build a doc traceability snapshot: {doc_id: sha256_of_content}."""
-    import hashlib
-    trace: dict = {"documents": [], "indexed_at": None}
-    try:
-        from datetime import datetime, timezone
-        trace["indexed_at"] = datetime.now(timezone.utc).isoformat()
-        storage = doc_manager.storage
-        for doc_id in storage.list_documents():
-            try:
-                content = storage.load(doc_id)
-                digest = "sha256:" + hashlib.sha256(content).hexdigest()
-            except Exception:
-                digest = "error"
-            meta: dict = {}
-            if hasattr(storage, "load_metadata"):
-                try:
-                    meta = storage.load_metadata(doc_id) or {}
-                except Exception:
-                    pass
-            trace["documents"].append({
-                "doc_id": doc_id,
-                "doc_type": meta.get("doc_type"),
-                "source_file": meta.get("source_file"),
-                "size_bytes": meta.get("size_bytes"),
-                "content_hash": digest,
-            })
-    except Exception:
-        pass
-    return trace
 
 # Per-workspace concurrency limit — prevents one workspace from consuming all thread-pool
 # workers and starving others (workspace starvation).  None = unlimited (open mode / no WS).
@@ -387,7 +354,7 @@ def _run_sync(
     initial_memory: Optional[dict] = None,
     kv_out: Optional[list] = None,
     cli_working_dir: Optional[str] = None,
-    doc_manager=None,
+    docs_config: Optional[dict] = None,
 ):
     """Run a team synchronously in the executor thread.
 
@@ -399,7 +366,7 @@ def _run_sync(
     org_context: pre-populate ProjectKB before running (keys: decisions, tech_stack, dependencies).
     replay_run_id: inject artifacts from a past ChromaMemory run as context for BA and PM.
     per_agent_channels: mutable list; per-agent PlatformChannels are appended so _bg() can set run_id.
-    doc_manager: pre-built DocumentationManager; when set, indexes docs and injects into all agents.
+    docs_config: S3 docs config dict; when set, indexes docs and injects DocumentationManager into all agents.
     """
     _pac = per_agent_channels if per_agent_channels is not None else []
 
@@ -456,13 +423,18 @@ def _run_sync(
                 except Exception as _e:
                     log.warning("runner: LLM override for %s failed: %s", _atype, _e)
 
-    if doc_manager is not None:
+    # Inject documentation manager if workspace has S3 docs configured
+    if docs_config:
         try:
-            doc_manager.index_from_storage()
+            from antcrew_engine.documentation import DocumentationManager as _DocMgr
+            _doc_mgr = _DocMgr(storage_type="s3", storage_config=docs_config)
+            if docs_config.get("schema_yaml"):
+                import yaml as _yaml
+                _doc_mgr.load_schema_from_dict(_yaml.safe_load(docs_config["schema_yaml"]))
+            _doc_mgr.index_from_storage()
             for _ag in all_agents:
                 if hasattr(_ag, "set_documentation"):
-                    _ag.set_documentation(doc_manager)
-            _doc_trace_by_run[thread_id] = _build_doc_traceability(doc_manager)
+                    _ag.set_documentation(_doc_mgr)
         except Exception as _doc_exc:
             log.warning("runner: docs setup failed: %s", _doc_exc)
 
@@ -592,13 +564,6 @@ async def _store_result(result) -> None:
 
     if not run_id:
         return
-
-    # Inject doc traceability if captured for this run's thread
-    thread_id = raw_state.get("_thread_id") if isinstance(raw_state, dict) else None
-    if thread_id:
-        _dt = _doc_trace_by_run.pop(thread_id, None)
-        if _dt:
-            state_dict["doc_traceability"] = _dt
 
     from app.services.artifact_storage import externalize_artifacts
     state_dict = await externalize_artifacts(state_dict, run_id)
@@ -952,7 +917,7 @@ async def _advance_sprint_after_run(
             ticket.status = "done" if run_status == "success" else "blocked"
             ticket.updated_at = __import__("datetime").datetime.now(
                 __import__("datetime").timezone.utc
-            ).replace(tzinfo=None)
+            )
             session.add(ticket)
             await session.commit()
 

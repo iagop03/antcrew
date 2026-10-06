@@ -75,7 +75,6 @@ class WorkspaceContext:
     role: str = "write"         # admin | write | read | reviewer | viewer — never "admin" by accident
     membership_ids: list[int] = field(default_factory=list)
     client_label: Optional[str] = None  # set for viewer keys scoped to a specific client
-    user_id: Optional[int] = None       # DB user id when auth is via session or a personal API key
 
     @property
     def workspace_ids(self) -> Optional[list[int]]:
@@ -167,7 +166,6 @@ async def _authenticate(raw_key: Optional[str], session) -> WorkspaceContext:
                 role=role if role in _VALID_ROLES else "read",
                 membership_ids=[m.workspace_id for m in memberships],
                 client_label=key_client_label,
-                user_id=key_user_id,
             )
 
         # Key provided but not found — check if multi-key mode is active
@@ -203,7 +201,7 @@ async def _session_context(token: str, session) -> Optional[WorkspaceContext]:
         WorkspaceMembership,
     )
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     token_hash = _hash_token(token)
     # New sessions are indexed by token_hash; legacy sessions by plaintext token.
     # token column is NULL for all sessions after migration 070; lookup by token_hash only.
@@ -248,7 +246,6 @@ async def _session_context(token: str, session) -> Optional[WorkspaceContext]:
         created_by=key.label,
         role=key.role if key.role in _VALID_ROLES else "read",
         membership_ids=[m.workspace_id for m in memberships],
-        user_id=user_session.user_id,
     )
 
 
@@ -381,7 +378,7 @@ def require_verified_session():
         if not cookie:
             return  # API-key or open-mode — no restriction
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = datetime.now(timezone.utc)
         _th = _hash_token(cookie)
         user_session = (await session.exec(
             _select(UserSession).where(
@@ -449,7 +446,7 @@ async def resolve_ws_session_token(token: str) -> Optional[WsAuth]:
         from app.core.database import engine
         from app.models.run import ApiKey, UserSession, WorkspaceMembership
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = datetime.now(timezone.utc)
         async with AsyncSession(engine, expire_on_commit=False) as session:
             _th = _hash_token(token)
             user_session = (await session.exec(

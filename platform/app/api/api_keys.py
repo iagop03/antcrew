@@ -33,7 +33,7 @@ _VALID_ROLES = ("admin", "write", "read", "reviewer", "compliance_viewer")
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 class CreateKeyRequest(BaseModel):

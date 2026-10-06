@@ -70,6 +70,8 @@ class User(SQLModel, table=True):
     accounting_access: bool = Field(default=False)
     use_case: Optional[str] = Field(default=None)   # customer_support | internal_automation | software_dev | data_analysis | other
     team_size: Optional[str] = Field(default=None)  # solo | 2-5 | 6-15 | 15+
+    github_id: Optional[int] = Field(default=None, unique=True, index=True)   # GitHub user ID for SSO
+    github_login: Optional[str] = Field(default=None)                          # GitHub username
     created_at: datetime = Field(default_factory=_utcnow)
 
 

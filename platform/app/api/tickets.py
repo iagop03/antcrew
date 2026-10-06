@@ -165,7 +165,7 @@ async def update_status(
             raise HTTPException(403, "This ticket is not accessible with the current API key")
 
     ticket.status = body.status
-    ticket.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
 
     # Unblock the run when the last blocking ticket is resolved
@@ -265,7 +265,7 @@ async def assign_to_sprint(
         ticket.backlog_order = body.backlog_order
     if body.depends_on is not None:
         ticket.depends_on = body.depends_on
-    ticket.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    ticket.updated_at = datetime.now(timezone.utc)
     session.add(ticket)
     await session.commit()
     await session.refresh(ticket)

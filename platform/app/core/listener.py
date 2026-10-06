@@ -50,7 +50,7 @@ _REQUEST_MAX_LEN = 2000
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _sync_handler(event: "Event") -> None:
@@ -101,7 +101,7 @@ async def _persist_event(event: "Event") -> None:
                     raw_cost_usd = event.payload.get("cost_usd", 0.0)
                     run.finished_at = _utcnow()
                     if run.created_at:
-                        ca = run.created_at.replace(tzinfo=None) if run.created_at.tzinfo else run.created_at
+                        ca = run.created_at if run.created_at.tzinfo else run.created_at.replace(tzinfo=timezone.utc)
                         run.duration_s = (run.finished_at - ca).total_seconds()
 
                     # Fetch workspace once — used for both billing multiplier and Stripe reporting
@@ -123,7 +123,7 @@ async def _persist_event(event: "Event") -> None:
 
                             from app.core.byok import get_cost_multiplier
                             from app.models.admin import Campaign
-                            _now = datetime.now(_tz.utc).replace(tzinfo=None)
+                            _now = datetime.now(_tz.utc)
                             _camp = (await session.exec(
                                 select(Campaign)
                                 .where(Campaign.active.is_(True))

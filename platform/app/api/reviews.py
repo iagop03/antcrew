@@ -25,6 +25,7 @@ from app.core.auth import (
 from app.core.channel import resolve_review
 from app.core.database import get_session
 from app.core.exceptions import ReviewNotFoundError
+from app.core.license_gate import require_feature
 from app.models.run import ApiKey, HitlAuditEntry, HitlReview, HitlReviewAssignee, Run
 from app.services.runs import list_reviews as list_reviews_svc
 from app.services.webhook import fire_event_webhooks, notify_new_delivery
@@ -121,15 +122,14 @@ router = APIRouter(
     dependencies=[Depends(require_api_key)],
 )
 
-_VALID_DECISIONS = ("approve", "reject", "edit", "feedback", "request_changes")
-_VALID_STATUSES = ("pending", "approved", "rejected", "edited", "feedback", "cancelled", "timeout", "changes_requested")
+_VALID_DECISIONS = ("approve", "reject", "edit", "feedback")
+_VALID_STATUSES = ("pending", "approved", "rejected", "edited", "feedback", "cancelled", "timeout")
 
 _DECISION_TO_STATUS = {
     "approve": "approved",
     "reject": "rejected",
     "edit": "edited",
     "feedback": "feedback",
-    "request_changes": "changes_requested",
 }
 
 
@@ -364,7 +364,7 @@ async def get_review_audit(
 
 
 @router.patch("/{review_id}/assign", response_model=HitlReviewPublic,
-              dependencies=[Depends(require_role("admin", "write", "reviewer"))])
+              dependencies=[Depends(require_role("admin", "write", "reviewer")), Depends(require_feature("hitl_multi"))])
 async def assign_review(
     review_id: str,
     body: ReviewAssign,
@@ -473,20 +473,16 @@ async def submit_review(
         try:
             from antcrew.trace import TraceLog as _TraceLog
             _tl = _TraceLog(_tl_path)
-            # Prefer user_id (the authenticated human) over created_by (the API key label).
-            _reviewer_id = (
-                str(ctx.user_id) if ctx.user_id is not None else ctx.created_by or ""
-            )
             _tl.record_hitl(
                 run_id=review.run_id,
                 step=review.agent_name or "unknown",
                 decision=body.decision,
-                reviewer_id=_reviewer_id,
+                reviewer_id=ctx.created_by or "",
                 reason=body.feedback or "",
             )
         except Exception as _tl_exc:
             import logging as _lg
-            _lg.getLogger(__name__).error("reviews: TraceLog record_hitl failed: %s", _tl_exc)
+            _lg.getLogger(__name__).debug("reviews: TraceLog record_hitl failed: %s", _tl_exc)
 
     if run is not None and run.team == "engine":
         from app.services.engine_runner import resolve_engine_review
@@ -503,7 +499,7 @@ async def submit_review(
         }
         resolve_engine_review(review_id, engine_decision)
 
-    resolved_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    resolved_at = datetime.now(timezone.utc)
     review.status = _DECISION_TO_STATUS.get(body.decision, body.decision)
     review.decision = body.decision
     review.edited_json = body.edited

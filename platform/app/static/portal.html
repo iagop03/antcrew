@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal de Licencias · antcrew</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<style>
+:root {
+  --bg: #0f0f18;
+  --surface: #1a1a2e;
+  --surface2: #22223a;
+  --border: #2e2e48;
+  --accent: #6366f1;
+  --accent-dim: #4f52c4;
+  --text: #e8e8f0;
+  --text-muted: #888899;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f5fb;
+    --surface: #ffffff;
+    --surface2: #f0f0fa;
+    --border: #dddde8;
+    --text: #1a1a2e;
+    --text-muted: #6666888;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+.header {
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo { font-weight: 700; font-size: 18px; color: var(--text); }
+.logo span { color: var(--accent); }
+
+.container { max-width: 760px; margin: 0 auto; padding: 40px 16px; }
+
+/* Login card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+}
+.card-title { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+.card-sub { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-muted); }
+.field input {
+  width: 100%; padding: 10px 14px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; color: var(--text); font-size: 15px;
+  outline: none; transition: border-color .15s;
+}
+.field input:focus { border-color: var(--accent); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 20px; border-radius: 7px; font-size: 14px;
+  font-weight: 600; cursor: pointer; border: none; transition: opacity .15s;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-dim); }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-danger:hover:not(:disabled) { opacity: .85; }
+.btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+.alert {
+  padding: 12px 16px; border-radius: 7px; font-size: 13px; margin-bottom: 16px;
+}
+.alert-success { background: #14532d22; border: 1px solid #22c55e44; color: var(--green); }
+.alert-error { background: #7f1d1d22; border: 1px solid #ef444444; color: var(--red); }
+
+/* License cards */
+.lic-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.lic-header {
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.lic-tier {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 100px; font-size: 12px; font-weight: 600;
+}
+.tier-open { background: #1e3a5f; color: #60a5fa; }
+.tier-team { background: #1a2e4a; color: #818cf8; }
+.tier-regulated { background: #1a2e1a; color: #4ade80; }
+.lic-meta { font-size: 13px; color: var(--text-muted); }
+.lic-meta strong { color: var(--text); }
+
+.lic-body { padding: 0 24px 20px; }
+.lic-instances { margin-top: 16px; }
+.lic-instances h4 { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; }
+
+.instance-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 7px; margin-bottom: 6px;
+  gap: 8px; flex-wrap: wrap;
+}
+.instance-info { font-size: 13px; }
+.instance-hostname { font-weight: 500; }
+.instance-meta { color: var(--text-muted); font-size: 12px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+.badge-active { background: #14532d22; color: var(--green); }
+.badge-revoked { background: #7f1d1d22; color: var(--red); }
+
+.jwt-box {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 12px; font-family: monospace; font-size: 11px;
+  color: var(--text-muted); word-break: break-all; margin-top: 12px;
+}
+.copy-btn { font-size: 12px; margin-top: 6px; }
+
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid transparent; border-top-color: currentColor;
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.top-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+}
+.top-bar h1 { font-size: 22px; font-weight: 700; }
+
+.empty { color: var(--text-muted); text-align: center; padding: 32px; font-size: 14px; }
+
+.expired-banner {
+  background: #7f1d1d22; border: 1px solid #ef444444;
+  color: var(--red); padding: 8px 14px; border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+}
+</style>
+</head>
+<body x-data="portalApp()" x-init="init()">
+
+<div class="header">
+  <div class="logo">ant<span>crew</span></div>
+  <span style="color:var(--text-muted);font-size:13px">Portal de Licencias</span>
+  <div style="margin-left:auto" x-show="view==='dashboard'">
+    <button class="btn btn-ghost" style="padding:6px 14px;font-size:13px" @click="logout()">Cerrar sesión</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Login -->
+  <div x-show="view==='login'" x-cloak>
+    <div class="card" style="max-width:420px;margin:60px auto">
+      <div class="card-title">Accede a tu portal</div>
+      <div class="card-sub">Recibirás un enlace de acceso en tu email.</div>
+
+      <div class="alert alert-success" x-show="loginSent" x-text="'Enlace enviado a ' + email + '. Revisa tu bandeja de entrada.'"></div>
+      <div class="alert alert-error" x-show="loginError" x-text="loginError"></div>
+
+      <div x-show="!loginSent">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" x-model="email" placeholder="tu@empresa.com"
+                 @keydown.enter="requestLink()" :disabled="loading">
+        </div>
+        <button class="btn btn-primary" @click="requestLink()" :disabled="loading || !email">
+          <span class="spinner" x-show="loading"></span>
+          Enviar enlace
+        </button>
+      </div>
+
+      <div x-show="loginSent" style="margin-top:12px">
+        <button class="btn btn-ghost" @click="loginSent=false">Usar otro email</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div x-show="view==='dashboard'" x-cloak>
+    <div class="top-bar">
+      <div>
+        <h1>Mis Licencias</h1>
+        <div style="font-size:13px;color:var(--text-muted)" x-text="userData.email"></div>
+      </div>
+    </div>
+
+    <div class="alert alert-error" x-show="dashError" x-text="dashError"></div>
+
+    <div x-show="loading" class="empty">
+      <span class="spinner" style="width:20px;height:20px;border-width:3px"></span>
+    </div>
+
+    <div x-show="!loading && userData.licenses && userData.licenses.length === 0" class="empty">
+      No tienes licencias activas. Contacta con soporte si crees que es un error.
+    </div>
+
+    <template x-for="lic in userData.licenses" :key="lic.id">
+      <div class="lic-card">
+        <div class="lic-header">
+          <div>
+            <span class="lic-tier" :class="'tier-'+lic.tier" x-text="tierLabel(lic.tier)"></span>
+            <div class="lic-meta" style="margin-top:6px">
+              <strong x-text="lic.active_instances"></strong> / <span x-text="lic.max_instances"></span> instancias ·
+              Caduca <strong x-text="formatDate(lic.expires_at)"></strong>
+            </div>
+          </div>
+          <div x-show="isExpired(lic.expires_at)" class="expired-banner">Licencia expirada</div>
+          <div x-show="lic.revoked" class="expired-banner">Revocada</div>
+        </div>
+
+        <div class="lic-body">
+          <!-- JWT key -->
+          <div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">License Key (JWT)</div>
+            <div class="jwt-box" x-text="lic.jwt_token || '(no disponible)'"></div>
+            <button class="btn btn-ghost copy-btn" @click="copyJwt(lic)" x-text="lic._copied ? '✓ Copiado' : 'Copiar key'"></button>
+          </div>
+
+          <!-- Instances -->
+          <div class="lic-instances">
+            <h4>Instancias registradas (<span x-text="lic.instances.length"></span>)</h4>
+            <div x-show="lic.instances.length === 0" style="font-size:13px;color:var(--text-muted)">
+              Ninguna instancia registrada. Se registran automáticamente al iniciar antcrew-platform.
+            </div>
+            <template x-for="inst in lic.instances" :key="inst.id">
+              <div class="instance-row">
+                <div class="instance-info">
+                  <div class="instance-hostname" x-text="inst.hostname || '(sin hostname)'"></div>
+                  <div class="instance-meta">
+                    v<span x-text="inst.platform_version || '?'"></span> ·
+                    Última actividad <span x-text="formatDate(inst.last_seen_at)"></span> ·
+                    ID <code x-text="inst.fingerprint_short"></code>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="badge" :class="inst.revoked ? 'badge-revoked' : 'badge-active'"
+                        x-text="inst.revoked ? 'Revocada' : 'Activa'"></span>
+                  <button class="btn btn-danger" style="padding:5px 12px;font-size:12px"
+                          x-show="!inst.revoked"
+                          @click="revokeInstance(lic, inst)"
+                          :disabled="inst._revoking">
+                    <span class="spinner" x-show="inst._revoking"></span>
+                    Revocar
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+</div>
+
+<script>
+function portalApp() {
+  return {
+    view: 'login',
+    email: '',
+    loading: false,
+    loginSent: false,
+    loginError: '',
+    dashError: '',
+    userData: { email: '', licenses: [] },
+
+    async init() {
+      // Check for token param in URL (magic link verify)
+      const params = new URLSearchParams(location.search);
+      const token = params.get('token');
+      if (token) {
+        await this.verifyToken(token);
+        return;
+      }
+      // Try loading existing session
+      await this.loadDashboard();
+    },
+
+    async requestLink() {
+      if (!this.email || this.loading) return;
+      this.loading = true;
+      this.loginError = '';
+      try {
+        const r = await fetch('/portal/auth/magic-link', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ email: this.email }),
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          this.loginError = e.detail || 'Error al enviar el enlace.';
+          return;
+        }
+        this.loginSent = true;
+      } catch(e) {
+        this.loginError = 'Error de red: ' + e.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async verifyToken(token) {
+      this.loading = true;
+      try {
+        const r = await fetch('/portal/auth/verify', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ token }),
+        });
+        // Clean URL
+        history.replaceState({}, '', '/portal/');
+        if (!r.ok) {
+          this.loginError = 'Enlace inválido o expirado. Solicita uno nuevo.';
+          this.view = 'login';
+          return;
+        }
+        await this.loadDashboard();
+      } catch(e) {
+        this.loginError = 'Error de red.';
+        this.view = 'login';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async loadDashboard() {
+      this.loading = true;
+      this.dashError = '';
+      try {
+        const r = await fetch('/portal/me');
+        if (r.status === 401) {
+          this.view = 'login';
+          return;
+        }
+        if (!r.ok) {
+          this.dashError = 'Error al cargar tus licencias.';
+          this.view = 'login';
+          return;
+        }
+        this.userData = await r.json();
+        // Fetch JWT for each license
+        for (const lic of this.userData.licenses) {
+          lic._copied = false;
+        }
+        this.view = 'dashboard';
+      } catch(e) {
+        this.view = 'login';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async logout() {
+      await fetch('/portal/auth/logout', { method: 'POST' });
+      this.view = 'login';
+      this.loginSent = false;
+      this.email = '';
+    },
+
+    async revokeInstance(lic, inst) {
+      if (!confirm(`¿Revocar la instancia ${inst.hostname || inst.fingerprint_short}? No podrá usar la licencia hasta que te contactes con soporte.`)) return;
+      inst._revoking = true;
+      try {
+        const r = await fetch(`/portal/instances/${inst.id}`, { method: 'DELETE' });
+        if (!r.ok) {
+          alert('Error al revocar la instancia.');
+          return;
+        }
+        inst.revoked = true;
+        lic.active_instances = Math.max(0, lic.active_instances - 1);
+      } catch(e) {
+        alert('Error de red.');
+      } finally {
+        inst._revoking = false;
+      }
+    },
+
+    async copyJwt(lic) {
+      // Fetch the full JWT (the /me endpoint omits it for security; we need a separate call)
+      try {
+        await navigator.clipboard.writeText(lic.jwt_token || '');
+        lic._copied = true;
+        setTimeout(() => { lic._copied = false; }, 2000);
+      } catch(e) {
+        alert('No se pudo copiar. Copia el texto manualmente.');
+      }
+    },
+
+    tierLabel(tier) {
+      const labels = { open: 'Open', team: 'Team', regulated: 'Regulated' };
+      return labels[tier] || tier;
+    },
+
+    formatDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' });
+    },
+
+    isExpired(iso) {
+      return iso && new Date(iso) < new Date();
+    },
+  };
+}
+</script>
+</body>
+</html>

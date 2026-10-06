@@ -360,39 +360,69 @@
               </span>
             </div>
 
-            <!-- Per-agent detail rows -->
-            <div class="mt-4 space-y-1">
+            <!-- Per-agent detail rows (n8n-style: click artifact key to see content) -->
+            <div class="mt-4 space-y-2">
               <template x-for="a in agentEvents" :key="'d-' + a.agent_name">
-                <div class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-xs">
-                  <div class="flex items-center justify-between mb-1">
-                    <span class="font-mono text-indigo-300" x-text="a.agent_name"></span>
+                <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden text-xs">
+                  <!-- Header row -->
+                  <div class="flex items-center justify-between px-3 py-2">
+                    <span class="font-mono text-indigo-300 font-medium" x-text="a.agent_name"></span>
                     <span class="text-gray-600 font-mono"
                           x-text="a.recorded_at ? formatIso(a.recorded_at) : ''"></span>
                   </div>
-                  <div class="flex gap-5 text-gray-500">
+                  <!-- Stats row -->
+                  <div class="flex gap-5 text-gray-500 px-3 pb-2">
                     <span>
-                      <span class="text-gray-400">in</span>
-                      <span class="tabular-nums ml-1" x-text="(a.tokens_in || 0).toLocaleString()"></span>
+                      <span class="text-gray-600">in</span>
+                      <span class="tabular-nums ml-1 text-gray-400" x-text="(a.tokens_in || 0).toLocaleString()"></span>
                     </span>
                     <span>
-                      <span class="text-gray-400">out</span>
-                      <span class="tabular-nums ml-1" x-text="(a.tokens_out || 0).toLocaleString()"></span>
+                      <span class="text-gray-600">out</span>
+                      <span class="tabular-nums ml-1 text-gray-400" x-text="(a.tokens_out || 0).toLocaleString()"></span>
                     </span>
                     <span>
-                      <span class="text-gray-400">cost</span>
+                      <span class="text-gray-600">cost</span>
                       <span class="tabular-nums ml-1 text-indigo-400"
                             x-text="a.cost_usd != null ? '$' + a.cost_usd.toFixed(4) : '—'"></span>
                     </span>
-                    <template x-if="a.produced_keys && a.produced_keys.length">
-                      <span class="flex gap-1 flex-wrap">
-                        <span class="text-gray-600">→</span>
-                        <template x-for="k in a.produced_keys" :key="k">
-                          <span class="font-mono text-green-400/80 bg-green-950/30 px-1 rounded"
-                                x-text="k"></span>
-                        </template>
-                      </span>
-                    </template>
+                    <span>
+                      <span class="text-gray-600">dur</span>
+                      <span class="tabular-nums ml-1 text-gray-400"
+                            x-text="a.duration_s ? a.duration_s.toFixed(1) + 's' : '—'"></span>
+                    </span>
                   </div>
+                  <!-- Artifact output badges — clickable to expand content -->
+                  <template x-if="a.produced_keys && a.produced_keys.length">
+                    <div class="border-t border-gray-800 px-3 py-2">
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <span class="text-gray-600 text-xs">output →</span>
+                        <template x-for="k in a.produced_keys" :key="k">
+                          <button
+                            @click="if (!parsedArtifacts) extractArtifacts(); toggleAgentArtifact(a.agent_name + '::' + k)"
+                            class="font-mono text-xs px-1.5 py-0.5 rounded border transition"
+                            :class="agentArtifactOpen[a.agent_name + '::' + k]
+                              ? 'bg-green-950 border-green-700 text-green-300'
+                              : 'bg-green-950/30 border-green-900/50 text-green-400/80 hover:border-green-700 hover:text-green-300'"
+                            x-text="k + (agentArtifactOpen[a.agent_name + '::' + k] ? ' ▲' : ' ▼')">
+                          </button>
+                        </template>
+                      </div>
+                      <!-- Expanded artifact content -->
+                      <template x-for="k in a.produced_keys" :key="'content-' + k">
+                        <div x-show="agentArtifactOpen[a.agent_name + '::' + k]"
+                             class="mt-2 border border-green-900/40 rounded-lg overflow-hidden">
+                          <div class="flex items-center justify-between px-2 py-1 bg-green-950/30 border-b border-green-900/30">
+                            <span class="font-mono text-green-400 text-xs" x-text="k"></span>
+                            <button @click="copyArtifact(k)"
+                                    class="text-xs text-gray-600 hover:text-gray-300 transition"
+                                    x-text="copiedArtifactKey === k ? '✓ copied' : 'copy'"></button>
+                          </div>
+                          <pre class="px-3 py-2.5 text-xs font-mono text-gray-300 overflow-auto max-h-64 whitespace-pre-wrap break-words leading-relaxed bg-black/20"
+                               x-text="formatArtifactContent(k)"></pre>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
                 </div>
               </template>
             </div>
@@ -1077,6 +1107,8 @@ function runDetail() {
     rerunRunId: null,
     parsedArtifacts: null,
     artifactExpanded: {},
+    agentArtifactOpen: {},
+    copiedArtifactKey: '',
     governanceData: null,
     loadingGovernance: false,
     copiedHash: '',
@@ -1159,6 +1191,25 @@ function runDetail() {
       if (done === 0 || total === 0 || done >= total) return null;
       const spentSoFar = this.agentEvents.reduce((s, a) => s + (a.cost_usd || 0), 0);
       return ((spentSoFar / done) * total).toFixed(4);
+    },
+
+    toggleAgentArtifact(key) {
+      this.agentArtifactOpen = { ...this.agentArtifactOpen, [key]: !this.agentArtifactOpen[key] };
+    },
+
+    formatArtifactContent(key) {
+      if (!this.parsedArtifacts) return '(loading…)';
+      const val = this.parsedArtifacts[key];
+      if (val === undefined || val === null) return '(not available)';
+      if (typeof val === 'string') return val;
+      return JSON.stringify(val, null, 2);
+    },
+
+    copyArtifact(key) {
+      const content = this.formatArtifactContent(key);
+      navigator.clipboard.writeText(content).catch(() => {});
+      this.copiedArtifactKey = key;
+      setTimeout(() => { if (this.copiedArtifactKey === key) this.copiedArtifactKey = ''; }, 2000);
     },
 
     extractArtifacts() {

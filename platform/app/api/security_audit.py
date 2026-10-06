@@ -67,7 +67,7 @@ _SEVERITY_TO_STOP = {"critical", "high", "medium"}  # default; overridden by con
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _fingerprint(pattern_class: str, file_path: str, line_number: Optional[int]) -> str:

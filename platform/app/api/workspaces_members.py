@@ -18,6 +18,7 @@ from app.core.auth import (
 )
 from app.core.database import get_session
 from app.core.exceptions import WorkspaceNotFoundError
+from app.core.license_gate import check_member_limit
 from app.models.run import ApiKey, Workspace, WorkspaceMembership
 
 router = APIRouter(
@@ -93,6 +94,10 @@ async def add_member(
     ws = (await session.exec(select(Workspace).where(Workspace.id == workspace_id))).first()
     if not ws:
         raise WorkspaceNotFoundError(workspace_id)
+    member_count = len((await session.exec(
+        select(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
+    )).all())
+    check_member_limit(member_count)
     key = (await session.exec(select(ApiKey).where(ApiKey.id == body.api_key_id))).first()
     if not key:
         raise HTTPException(404, f"ApiKey {body.api_key_id} not found")

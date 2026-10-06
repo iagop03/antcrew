@@ -23,7 +23,7 @@ router = APIRouter(
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _next_run(cron_expr: str) -> datetime:
@@ -61,6 +61,8 @@ async def create_schedule(
 ) -> RunSchedule:
     """Create a recurring engine run schedule."""
     from croniter import croniter
+    if len(body.cron_expr.strip().split()) != 5:
+        raise HTTPException(422, f"Cron expression must have exactly 5 fields: {body.cron_expr!r}")
     if not croniter.is_valid(body.cron_expr):
         raise HTTPException(422, f"Invalid cron expression: {body.cron_expr!r}")
 

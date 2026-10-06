@@ -1363,10 +1363,16 @@ export ANTCREW_API_KEY="<span class="text-amber-400">acw_...</span>"  <span clas
       <!-- Pack activo -->
       <template x-if="complianceStatus?.enabled">
         <div>
-          <p class="text-xs text-gray-400 mb-3">El Compliance Pack está activo. Accede al portal para compliance officers o crea claves de auditoría.</p>
+          <p class="text-xs text-gray-400 mb-3">El Compliance Pack está activo. Descarga el export ZIP firmado o accede al portal para compliance officers.</p>
           <div class="flex flex-wrap gap-2">
+            <button @click="downloadCompliancePack()"
+              :disabled="complianceExportLoading"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-md transition-colors">
+              <span x-show="!complianceExportLoading">↓ Descargar Pack ZIP</span>
+              <span x-show="complianceExportLoading">Generando…</span>
+            </button>
             <a href="/compliance/dashboard" target="_blank"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-md transition-colors">
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-medium rounded-md border border-gray-700 transition-colors">
               Abrir portal de auditoría ↗
             </a>
             <button @click="showCreateKey=true; createKeyForm.role='compliance_viewer'"
@@ -1374,6 +1380,10 @@ export ANTCREW_API_KEY="<span class="text-amber-400">acw_...</span>"  <span clas
               + Crear clave compliance_viewer
             </button>
           </div>
+          <p class="text-xs text-gray-700 mt-3">
+            El ZIP incluye attestations firmadas con HMAC-SHA256, manifest de integridad y audit log BYOK.
+            Endpoint directo: <code class="text-indigo-400 font-mono">GET /compliance/export</code>
+          </p>
         </div>
       </template>
 
@@ -1416,7 +1426,7 @@ export ANTCREW_API_KEY="<span class="text-amber-400">acw_...</span>"  <span clas
 
     <div class="mb-6">
       <h2 class="text-base font-semibold text-gray-100 mb-1">Documentation</h2>
-      <p class="text-sm text-gray-500">Sube documentos (especificaciones funcionales, arquitectura, COBOL existente). Los agentes los inyectarán como contexto en cada run. Soporta S3 y almacenamiento local.</p>
+      <p class="text-sm text-gray-500">Conecta un bucket S3 con la documentación de tu proyecto. Los agentes inyectarán contexto relevante automáticamente en cada run.</p>
     </div>
 
     <!-- Workspace selector -->
@@ -1531,13 +1541,13 @@ export ANTCREW_API_KEY="<span class="text-amber-400">acw_...</span>"  <span clas
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Documents</h3>
           <div class="flex items-center gap-2">
-            <button @click="docsReindex()" :disabled="docsIndexing"
+            <button @click="docsReindex()" :disabled="docsIndexing || !docsConfigConnected"
               class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-300 text-xs rounded-md border border-gray-700 transition-colors">
               <i class="ti ti-refresh text-sm" :class="docsIndexing && 'animate-spin'"></i>
-              <span x-show="!docsIndexing">Re-index</span>
+              <span x-show="!docsIndexing">Re-index S3</span>
               <span x-show="docsIndexing" x-cloak>Indexando…</span>
             </button>
-            <label
+            <label x-show="docsConfigConnected"
               class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md cursor-pointer transition-colors">
               <i class="ti ti-upload text-sm"></i>
               Upload
@@ -1572,36 +1582,30 @@ export ANTCREW_API_KEY="<span class="text-amber-400">acw_...</span>"  <span clas
 
         <!-- List -->
         <div x-show="docsListLoading" class="py-6 text-center text-gray-600 text-xs">Cargando documentos…</div>
-        <div x-show="!docsListLoading && docsList.length === 0"
+        <div x-show="!docsListLoading && docsList.length === 0 && docsConfigConnected"
           class="py-8 text-center text-gray-700 text-xs border border-dashed border-gray-800 rounded-lg">
-          Sin documentos. Sube un archivo o pulsa Re-index si el almacenamiento ya tiene contenido.
+          No hay documentos en el bucket. Sube un archivo o pulsa Re-index si el bucket ya tiene contenido.
+        </div>
+        <div x-show="!docsListLoading && !docsConfigConnected && docsList.length === 0"
+          class="py-8 text-center text-gray-700 text-xs">
+          Configura la conexión S3 primero.
         </div>
 
         <div x-show="docsList.length > 0" class="rounded-lg border border-gray-800 overflow-hidden">
           <table class="w-full text-xs" style="font-variant-numeric:tabular-nums">
             <thead>
               <tr class="border-b border-gray-800 text-gray-600 uppercase tracking-wide">
-                <th class="px-3 py-2 text-left font-medium">Archivo</th>
-                <th class="px-3 py-2 text-left font-medium w-24">Tipo</th>
-                <th class="px-3 py-2 text-right font-medium w-20">Tamaño</th>
-                <th class="px-3 py-2 text-right font-medium w-28">Subido</th>
+                <th class="px-3 py-2 text-left font-medium">Doc ID</th>
                 <th class="px-3 py-2 text-right font-medium w-16"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-800/60">
-              <template x-for="doc in docsList" :key="doc.doc_id">
+              <template x-for="doc in docsList" :key="doc">
                 <tr class="hover:bg-gray-800/30 transition-colors">
-                  <td class="px-3 py-2 font-mono text-gray-300 truncate max-w-xs" x-text="doc.source_file || doc.doc_id"></td>
-                  <td class="px-3 py-2 text-gray-500 truncate" x-text="doc.doc_type || '—'"></td>
-                  <td class="px-3 py-2 text-gray-500 text-right" x-text="doc.size_bytes != null ? (doc.size_bytes > 1024 ? (doc.size_bytes/1024).toFixed(0)+' KB' : doc.size_bytes+' B') : '—'"></td>
-                  <td class="px-3 py-2 text-gray-600 text-right" x-text="doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString() : '—'"></td>
-                  <td class="px-3 py-2 text-right whitespace-nowrap">
-                    <a :href="`/workspaces/${docsWsId}/docs/${encodeURIComponent(doc.doc_id)}/download`"
-                      class="text-gray-700 hover:text-indigo-400 transition-colors text-xs px-1" title="Descargar">
-                      <i class="ti ti-download"></i>
-                    </a>
-                    <button @click="docsDelete(doc.doc_id)"
-                      class="text-gray-700 hover:text-red-400 transition-colors text-xs px-1" title="Eliminar">
+                  <td class="px-3 py-2 font-mono text-gray-300 truncate max-w-xs" x-text="doc"></td>
+                  <td class="px-3 py-2 text-right">
+                    <button @click="docsDelete(doc)"
+                      class="text-gray-700 hover:text-red-400 transition-colors text-xs px-1">
                       <i class="ti ti-trash"></i>
                     </button>
                   </td>
@@ -2057,6 +2061,7 @@ function settings() {
     complianceBillingCycle: 'monthly',
     complianceCheckoutLoading: false,
     complianceCheckoutMsg: '',
+    complianceExportLoading: false,
 
     // Documentation
     docsWsId: '',
@@ -2221,6 +2226,35 @@ function settings() {
         const r = await fetch('/compliance/status', { headers: this.apiHeaders() });
         if (r.ok) this.complianceStatus = await r.json();
       } catch {}
+    },
+
+    async downloadCompliancePack() {
+      if (!this.apiKey || this.complianceExportLoading) return;
+      this.complianceExportLoading = true;
+      try {
+        const r = await fetch('/compliance/export', { headers: this.apiHeaders() });
+        if (r.status === 402) {
+          const e = await r.json().catch(() => ({}));
+          alert(e.detail?.message || 'Se requiere licencia Regulated para exportar el Pack.');
+          return;
+        }
+        if (!r.ok) { alert('Error al generar el export: ' + r.status); return; }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const cd = r.headers.get('content-disposition') || '';
+        const m = cd.match(/filename="([^"]+)"/);
+        a.download = m ? m[1] : 'compliance_export.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch(e) {
+        alert('Error de red: ' + e.message);
+      } finally {
+        this.complianceExportLoading = false;
+      }
     },
 
     async startComplianceCheckout() {
@@ -3124,7 +3158,7 @@ function settings() {
         const r = await fetch(`/workspaces/${this.docsWsId}/docs/${encodeURIComponent(docId)}`, {
           method: 'DELETE', headers: this._docsHeaders(),
         });
-        if (r.status === 204 || r.ok) this.docsList = this.docsList.filter(d => d.doc_id !== docId);
+        if (r.status === 204 || r.ok) this.docsList = this.docsList.filter(d => d !== docId);
       } catch {}
     },
 

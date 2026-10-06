@@ -20,7 +20,7 @@ async def get_active_free_promo(session) -> "Optional[Campaign]":
 
     from app.models.admin import Campaign
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     return (await session.exec(
         select(Campaign)
         .where(Campaign.active.is_(True))

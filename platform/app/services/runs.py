@@ -30,7 +30,7 @@ async def _claim_display_id(session: AsyncSession, workspace_id: int) -> str:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 async def list_runs(
@@ -82,7 +82,8 @@ async def get_run_events(session: AsyncSession, run_id: str) -> list[DBEvent]:
 
 
 async def get_run_stats(session: AsyncSession, workspace_id: Optional[int] = None, workspace_ids: Optional[list[int]] = None) -> dict:
-    """Return aggregate counts and cost. Uses SQL aggregates — O(1) regardless of table size."""
+    """Return aggregate counts, cost and monthly quota. Uses SQL aggregates — O(1) regardless of table size."""
+    _month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     stmt = sa_select(
         func.count(Run.id).label("total"),
         func.sum(case((Run.status == "running", 1), else_=0)).label("running"),
@@ -91,6 +92,7 @@ async def get_run_stats(session: AsyncSession, workspace_id: Optional[int] = Non
         func.sum(case((Run.status == "cancelled", 1), else_=0)).label("cancelled"),
         func.coalesce(func.sum(Run.cost_usd), 0.0).label("total_cost_usd"),
         func.avg(Run.duration_s).label("avg_duration_s"),
+        func.sum(case((Run.created_at >= _month_start, 1), else_=0)).label("runs_this_month"),
     ).select_from(Run)
     if workspace_ids is not None:
         stmt = stmt.where(Run.workspace_id.in_(workspace_ids)) if len(workspace_ids) != 1 else stmt.where(Run.workspace_id == workspace_ids[0])
@@ -101,6 +103,10 @@ async def get_run_stats(session: AsyncSession, workspace_id: Optional[int] = Non
         warnings.simplefilter("ignore", DeprecationWarning)
         result = await session.execute(stmt)
     row = result.one()
+
+    from app.core.license import get_license
+    lic = get_license()
+
     return {
         "total": row.total or 0,
         "running": row.running or 0,
@@ -109,6 +115,8 @@ async def get_run_stats(session: AsyncSession, workspace_id: Optional[int] = Non
         "cancelled": row.cancelled or 0,
         "total_cost_usd": round(float(row.total_cost_usd or 0), 6),
         "avg_duration_s": round(float(row.avg_duration_s), 2) if row.avg_duration_s else None,
+        "runs_this_month": int(row.runs_this_month or 0),
+        "run_limit": lic.max_runs_per_month,
     }
 
 
@@ -128,7 +136,7 @@ async def cancel_run(session: AsyncSession, run_id: str) -> Optional[Run]:
     run.status = "cancelled"
     run.finished_at = _utcnow()
     if run.created_at:
-        ca = run.created_at.replace(tzinfo=None) if run.created_at.tzinfo else run.created_at
+        ca = run.created_at if run.created_at.tzinfo else run.created_at.replace(tzinfo=timezone.utc)
         run.duration_s = (run.finished_at - ca).total_seconds()
     session.add(run)
 

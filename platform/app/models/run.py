@@ -28,6 +28,7 @@ from app.models.eval import CompareRun, EvalRun, EvalSchedule
 from app.models.feedback import UserFeedback
 from app.models.integrations import TeamSnapshot, TicketDestination
 from app.models.memory import RunMemory
+from app.models.release import Release, ReleaseApproval, ReleaseItem
 from app.models.review import HitlAuditEntry, HitlReview, HitlReviewAssignee
 from app.models.security import AuditFinding, SecurityAuditConfig, SecurityAuditRun
 from app.models.webhook import WebhookConfig, WebhookDelivery, WebhookEvent
@@ -81,6 +82,7 @@ class Run(SQLModel, table=True):
     tokens_in: int = Field(default=0)   # cumulative input tokens across all agent.end events (migration 055)
     tokens_out: int = Field(default=0)  # cumulative output tokens across all agent.end events (migration 055)
     billed_usd: Optional[float] = Field(default=None)  # amount billed to the client (for margin tracking)
+    change_ref: Optional[str] = Field(default=None, index=True)  # CR / change-request reference (T1)
 
 
 class Sprint(SQLModel, table=True):
@@ -252,4 +254,8 @@ __all__ = [
     "RunTemplate",
     "RunPreset",
     "RunSchedule",
+    # release domain
+    "Release",
+    "ReleaseItem",
+    "ReleaseApproval",
 ]

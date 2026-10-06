@@ -6,11 +6,6 @@ import logging
 import os
 
 try:
-    import app.ee  # noqa: F401 — registers EE hooks if the package is installed
-except ImportError:
-    pass
-
-try:
     from pathlib import Path as _Path
 
     from dotenv import load_dotenv as _load_dotenv
@@ -36,6 +31,7 @@ from app.api import admin as admin_api
 from app.api import admin_analytics as admin_analytics_api
 from app.api import admin_billing as admin_billing_api
 from app.api import admin_campaigns as admin_campaigns_api
+from app.api import admin_portal as admin_portal_api
 from app.api import admin_users as admin_users_api
 from app.api import (
     api_keys,
@@ -64,13 +60,18 @@ from app.api import contract_schemas as contract_schemas_api
 from app.api import discovery as discovery_api
 from app.api import feedback as feedback_api
 from app.api import github_app as github_app_api
+from app.api import instances as instances_api
 from app.api import integrations as integrations_api
 from app.api import invites as invites_api
 from app.api import memory as memory_api
 from app.api import pages as pages_api
 from app.api import pipelines as pipelines_api
+from app.api import portal as portal_api
+from app.api import regulated as regulated_api
 from app.api import run_schedules as run_schedules_api
 from app.api import security_audit as security_audit_api
+from app.api import servicenow as servicenow_api
+from app.api import sso as sso_api
 from app.api import teams as teams_api
 from app.api import waitlist as waitlist_api
 from app.api import workspaces_analytics as workspaces_analytics_api
@@ -302,92 +303,6 @@ async def _mark_interrupted_runs() -> None:
         log.debug("startup: no zombie runs found")
 
 
-async def _register_instance() -> None:
-    """Register this instance with platform.antcrew.org at startup.
-
-    Uses ANTCREW_LICENSE_KEY + a stable fingerprint derived from hostname
-    and machine-id. Non-fatal — missing key or network errors are logged
-    and the platform continues running (7-day grace period applies).
-    """
-    import hashlib
-    import socket
-
-    import httpx
-
-    license_key = os.environ.get("ANTCREW_LICENSE_KEY", "").strip()
-    if not license_key:
-        log.debug("instance-registration: no ANTCREW_LICENSE_KEY set, skipping")
-        return
-
-    portal_url = os.environ.get(
-        "ANTCREW_PORTAL_URL", "https://platform.antcrew.org"
-    ).rstrip("/")
-
-    # Build stable fingerprint: sha256(hostname + machine-id + install-uuid)
-    hostname = socket.gethostname()
-    machine_id = ""
-    for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
-        try:
-            machine_id = open(path).read().strip()
-            break
-        except OSError:
-            pass
-    if not machine_id:
-        # Fallback: hash of DATA_DIR path (stable per install)
-        machine_id = hashlib.sha256(
-            os.environ.get("DATA_DIR", hostname).encode()
-        ).hexdigest()
-
-    install_uuid = os.environ.get("ANTCREW_INSTALL_UUID", "")
-    if not install_uuid:
-        # Generate and persist if DATA_DIR is available
-        data_dir = os.environ.get("DATA_DIR", "")
-        uuid_file = (Path(data_dir) / ".install_uuid") if data_dir else None
-        if uuid_file and uuid_file.exists():
-            install_uuid = uuid_file.read_text().strip()
-        else:
-            import uuid as _uuid
-            install_uuid = str(_uuid.uuid4())
-            if uuid_file:
-                try:
-                    uuid_file.write_text(install_uuid)
-                except OSError:
-                    pass
-
-    fingerprint = hashlib.sha256(
-        f"{hostname}:{machine_id}:{install_uuid}".encode()
-    ).hexdigest()
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{portal_url}/instances/register",
-                json={
-                    "license_jwt": license_key,
-                    "fingerprint": fingerprint,
-                    "hostname": hostname,
-                    "platform_version": VERSION,
-                },
-            )
-        if r.status_code == 200:
-            data = r.json()
-            status = data.get("status", "?")
-            msg = data.get("message", "")
-            log.info(
-                "instance-registration: %s (active: %d/%d)%s",
-                status, data.get("active_instances", 0), data.get("max_instances", 0),
-                f" — {msg}" if msg else "",
-            )
-        elif r.status_code == 402:
-            log.warning("instance-registration: license expired")
-        elif r.status_code == 403:
-            log.warning("instance-registration: license revoked")
-        else:
-            log.warning("instance-registration: unexpected status %d", r.status_code)
-    except Exception as exc:
-        log.warning("instance-registration: failed to contact portal (%s) — grace period active", exc)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _webhook_task, _scheduler_task, _hitl_cleanup_task, _retention_task
@@ -423,7 +338,6 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_velocity_check_loop(), name="velocity-check")
         asyncio.create_task(_budget_alert_loop(), name="budget-alert")
         asyncio.create_task(_compliance_digest_loop(), name="compliance-digest")
-        asyncio.create_task(_register_instance(), name="instance-registration")
     yield
     if not _TESTING:
         stop_listening()
@@ -477,6 +391,7 @@ app.add_middleware(
 _csrf = [Depends(_require_csrf)]
 
 app.include_router(auth_session_api.router)
+app.include_router(sso_api.router)               # GitHub SSO — no CSRF (OAuth callback)
 app.include_router(pipeline.router,             dependencies=_csrf)
 app.include_router(runs.router,                 dependencies=_csrf)
 app.include_router(tickets.router,              dependencies=_csrf)
@@ -526,6 +441,11 @@ app.include_router(memory_api.router,        dependencies=_csrf)
 app.include_router(a2a_api.router)            # A2A: no CSRF — called by external agents
 app.include_router(waitlist_api.router)       # Public — no auth, no CSRF
 app.include_router(compliance_api.router,    dependencies=_csrf)
+app.include_router(portal_api.router)         # Portal: cookie-auth, no X-Api-Key
+app.include_router(admin_portal_api.router,  dependencies=_csrf)
+app.include_router(instances_api.router)      # Instance registration: no CSRF, shared secret
+app.include_router(regulated_api.router,     dependencies=_csrf)
+app.include_router(servicenow_api.router,    dependencies=_csrf)
 
 app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 

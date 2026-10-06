@@ -51,9 +51,10 @@ _connect_args: dict = {"ssl": True} if _ssl else {}
 # SQLite uses a StaticPool internally and ignores these kwargs.
 _pool_kwargs: dict = (
     {
-        "pool_size":    int(os.getenv("DB_POOL_SIZE", "5")),
-        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "5")),
-        "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        "pool_size":     int(os.getenv("DB_POOL_SIZE", "10")),
+        "max_overflow":  int(os.getenv("DB_MAX_OVERFLOW", "5")),
+        "pool_timeout":  int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        "pool_pre_ping": True,   # re-validate connections on checkout; drops stale ones silently
     }
     if not DB_URL.startswith("sqlite")
     else {}

@@ -25,7 +25,7 @@ _VALID_STATUSES = ("planning", "active", "done")
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 class SprintCreate(BaseModel):

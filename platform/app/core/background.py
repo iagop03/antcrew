@@ -34,7 +34,7 @@ async def _do_run_retention(engine) -> int:
             select(Workspace).where(Workspace.data_retention_days.isnot(None))
         )).all()
 
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = datetime.now(timezone.utc)
         for ws in ws_rows:
             cutoff = now - timedelta(days=ws.data_retention_days)
             runs = (await session.exec(
@@ -132,7 +132,7 @@ async def _hitl_cleanup_loop() -> None:
         await asyncio.sleep(300)
         try:
             from datetime import datetime, timezone
-            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=timeout_s)
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_s)
             async with AsyncSession(_engine, expire_on_commit=False) as session:
                 result = await session.exec(
                     select(HitlReview).where(
@@ -141,7 +141,7 @@ async def _hitl_cleanup_loop() -> None:
                     )
                 )
                 stale = result.all()
-                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                now = datetime.now(timezone.utc)
                 for r in stale:
                     r.status = "timeout"
                     r.resolved_at = now
@@ -212,7 +212,7 @@ async def _data_retention_loop() -> None:
         await asyncio.sleep(3600)
         try:
             from datetime import datetime, timezone
-            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=retention_days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
             deleted_d, deleted_e = await _do_retention(_engine, cutoff)
             if deleted_d or deleted_e:
                 log.info(
@@ -264,7 +264,7 @@ async def _velocity_check_loop() -> None:
     while True:
         await asyncio.sleep(interval * 60)
         try:
-            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - window
+            cutoff = datetime.now(timezone.utc) - window
             async with AsyncSession(_engine, expire_on_commit=False) as session:
                 rows = (await session.exec(
                     _sa_select(
@@ -415,7 +415,7 @@ async def _compliance_digest_loop() -> None:
     await asyncio.sleep(600)
     while True:
         try:
-            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
             async with AsyncSession(_engine, expire_on_commit=False) as session:
                 workspaces = (await session.exec(
                     select(Workspace).where(Workspace.compliance_pack_enabled.is_(True))
@@ -493,7 +493,7 @@ async def _discovery_session_cleanup_loop() -> None:
     while True:
         await asyncio.sleep(21600)  # 6 hours
         try:
-            cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=ttl_days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
             async with AsyncSession(_engine, expire_on_commit=False) as session:
                 stale = (await session.exec(
                     select(DiscoverySession).where(DiscoverySession.updated_at <= cutoff)

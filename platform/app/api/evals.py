@@ -147,7 +147,7 @@ async def upload_eval_report(
 
     from datetime import datetime, timezone
     run_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
 
     run_stub = Run(
         run_id=run_id,
@@ -481,7 +481,7 @@ async def eval_trends(
     from sqlmodel import desc as _desc
     from sqlmodel import select as _sel
 
-    cutoff = _dt.now(_tz.utc).replace(tzinfo=None) - _td(days=days)
+    cutoff = _dt.now(_tz.utc) - _td(days=days)
 
     q = (
         _sel(EvalRun)

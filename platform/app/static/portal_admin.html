@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · Licencias · antcrew</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<style>
+:root {
+  --bg: #0f0f18;
+  --surface: #1a1a2e;
+  --surface2: #22223a;
+  --border: #2e2e48;
+  --accent: #6366f1;
+  --accent-dim: #4f52c4;
+  --text: #e8e8f0;
+  --text-muted: #888899;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f5fb; --surface: #fff; --surface2: #f0f0fa;
+    --border: #dddde8; --text: #1a1a2e; --text-muted: #66668888;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+.topbar {
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.logo { font-weight: 700; font-size: 17px; }
+.logo span { color: var(--accent); }
+.topbar-title { color: var(--text-muted); font-size: 13px; }
+
+.tabs {
+  display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap;
+}
+.tab {
+  padding: 6px 14px; border-radius: 6px; font-size: 13px;
+  font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all .15s;
+  background: transparent; color: var(--text-muted);
+}
+.tab.active, .tab:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
+.tab.active { color: var(--accent); border-color: var(--accent); }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 32px 16px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.card-title { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
+
+.field-row {
+  display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+}
+.field { flex: 1; min-width: 180px; }
+.field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 5px; }
+.field input, .field select {
+  width: 100%; padding: 8px 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; color: var(--text); font-size: 14px; outline: none;
+  transition: border-color .15s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 7px; font-size: 13px;
+  font-weight: 600; cursor: pointer; border: none; transition: opacity .15s;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-dim); }
+.btn-danger { background: var(--red); color: #fff; font-size: 12px; padding: 5px 10px; }
+.btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 8px 12px; color: var(--text-muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border)20; vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface2)66; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+.tier-open { background: #1e3a5f; color: #60a5fa; }
+.tier-team { background: #1a2e4a; color: #818cf8; }
+.tier-regulated { background: #1a2e1a; color: #4ade80; }
+.badge-active { background: #14532d22; color: var(--green); }
+.badge-revoked { background: #7f1d1d22; color: var(--red); }
+.badge-warn { background: #78350f22; color: var(--yellow); }
+
+.spinner {
+  display: inline-block; width: 13px; height: 13px;
+  border: 2px solid transparent; border-top-color: currentColor;
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.abuse-row { background: #7f1d1d11; }
+.abuse-badge { background: #7f1d1d; color: var(--red); }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: #00000080;
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px; width: 100%; max-width: 500px; max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-title { font-size: 17px; font-weight: 600; margin-bottom: 20px; }
+
+.stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.stat {
+  flex: 1; min-width: 140px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 20px;
+}
+.stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.stat-value { font-size: 26px; font-weight: 700; }
+
+.search-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: flex-end; }
+</style>
+</head>
+<body x-data="adminPortal()" x-init="init()">
+
+<div class="topbar">
+  <div class="logo">ant<span>crew</span></div>
+  <span class="topbar-title">Admin · Licencias</span>
+  <div class="tabs">
+    <button class="tab" :class="{active:tab==='licenses'}" @click="tab='licenses'">Licencias</button>
+    <button class="tab" :class="{active:tab==='abuse'}" @click="tab='abuse';loadAbuse()">Abuso</button>
+    <button class="tab" :class="{active:tab==='issue'}" @click="tab='issue'">Emitir licencia</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Licenses tab -->
+  <div x-show="tab==='licenses'">
+    <!-- Stats -->
+    <div class="stat-row">
+      <div class="stat"><div class="stat-label">Total licencias</div><div class="stat-value" x-text="licenses.length"></div></div>
+      <div class="stat"><div class="stat-label">Activas</div><div class="stat-value" x-text="licenses.filter(l=>!l.revoked && !isExpired(l.expires_at)).length"></div></div>
+      <div class="stat"><div class="stat-label">Instancias activas</div><div class="stat-value" x-text="licenses.reduce((s,l)=>s+l.active_instances,0)"></div></div>
+    </div>
+
+    <!-- Search -->
+    <div class="search-row">
+      <div class="field" style="flex:2;min-width:200px">
+        <label>Email</label>
+        <input type="text" x-model="filter.email" placeholder="buscar email..." @input.debounce.300ms="loadLicenses()">
+      </div>
+      <div class="field" style="min-width:130px">
+        <label>Tier</label>
+        <select x-model="filter.tier" @change="loadLicenses()">
+          <option value="">Todos</option>
+          <option value="open">Open</option>
+          <option value="team">Team</option>
+          <option value="regulated">Regulated</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:130px">
+        <label>Estado</label>
+        <select x-model="filter.revoked" @change="loadLicenses()">
+          <option value="">Todos</option>
+          <option value="false">Activas</option>
+          <option value="true">Revocadas</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" @click="loadLicenses()" :disabled="loading">
+        <span class="spinner" x-show="loading"></span>
+        Buscar
+      </button>
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden">
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Tier</th>
+            <th>Instancias</th>
+            <th>Expira</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="lic in licenses" :key="lic.id">
+            <tr>
+              <td x-text="lic.email"></td>
+              <td><span class="badge" :class="'tier-'+lic.tier" x-text="lic.tier"></span></td>
+              <td>
+                <span x-text="lic.active_instances + ' / ' + lic.max_instances"></span>
+                <span x-show="lic.active_instances > lic.max_instances" class="badge badge-warn" style="margin-left:4px">!</span>
+              </td>
+              <td x-text="formatDate(lic.expires_at)" :style="isExpired(lic.expires_at) ? 'color:var(--red)' : ''"></td>
+              <td>
+                <span class="badge" :class="lic.revoked ? 'badge-revoked' : 'badge-active'"
+                      x-text="lic.revoked ? 'Revocada' : isExpired(lic.expires_at) ? 'Expirada' : 'Activa'"></span>
+              </td>
+              <td>
+                <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" @click="openDetail(lic)">Ver</button>
+                <button class="btn btn-danger" @click="toggleRevoke(lic)"
+                        x-text="lic.revoked ? 'Restaurar' : 'Revocar'"></button>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="licenses.length===0 && !loading">
+            <td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px">Sin resultados</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Abuse tab -->
+  <div x-show="tab==='abuse'">
+    <div class="card">
+      <div class="card-title">Detección de abuso</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+        Licencias con más instancias activas de las permitidas.
+      </p>
+      <button class="btn btn-primary" @click="loadAbuse()" :disabled="abuseLoading">
+        <span class="spinner" x-show="abuseLoading"></span>
+        Actualizar
+      </button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden" x-show="abuseData">
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Tier</th><th>Límite</th><th>Activas</th><th>Exceso</th><th>Hostnames</th><th></th></tr>
+        </thead>
+        <tbody>
+          <template x-for="a in abuseData?.abusers ?? []" :key="a.license_id">
+            <tr class="abuse-row">
+              <td x-text="a.email"></td>
+              <td><span class="badge" :class="'tier-'+a.tier" x-text="a.tier"></span></td>
+              <td x-text="a.max_instances"></td>
+              <td x-text="a.active_instances"></td>
+              <td><span class="badge abuse-badge" x-text="'+'+a.over_by"></span></td>
+              <td style="font-size:12px;color:var(--text-muted)" x-text="a.hostnames.join(', ')"></td>
+              <td><button class="btn btn-danger" @click="openLicenseById(a.license_id)">Ver</button></td>
+            </tr>
+          </template>
+          <tr x-show="!abuseData?.abusers?.length">
+            <td colspan="7" style="text-align:center;color:var(--green);padding:24px">✓ Sin anomalías detectadas</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Issue tab -->
+  <div x-show="tab==='issue'">
+    <div class="card" style="max-width:520px">
+      <div class="card-title">Emitir nueva licencia</div>
+      <div class="field-row">
+        <div class="field">
+          <label>Email del cliente *</label>
+          <input type="email" x-model="issueForm.email" placeholder="cliente@empresa.com">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Tier *</label>
+          <select x-model="issueForm.tier">
+            <option value="open">Open</option>
+            <option value="team">Team</option>
+            <option value="regulated">Regulated</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Instancias máx.</label>
+          <input type="number" x-model.number="issueForm.max_instances" min="1" max="100">
+        </div>
+        <div class="field">
+          <label>Validez (días)</label>
+          <input type="number" x-model.number="issueForm.expires_days" min="1">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Lemon Squeezy Customer ID</label>
+          <input type="text" x-model="issueForm.ls_customer_id" placeholder="opcional">
+        </div>
+        <div class="field">
+          <label>LS Order ID</label>
+          <input type="text" x-model="issueForm.ls_order_id" placeholder="opcional">
+        </div>
+      </div>
+      <div class="field">
+        <label>Notas internas</label>
+        <input type="text" x-model="issueForm.notes" placeholder="opcional">
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary" @click="issueLicense()" :disabled="issueLoding || !issueForm.email">
+          <span class="spinner" x-show="issueLoding"></span>
+          Emitir licencia
+        </button>
+        <span x-show="issueSuccess" style="color:var(--green);font-size:13px;font-weight:600">✓ Emitida correctamente</span>
+        <span x-show="issueError" style="color:var(--red);font-size:13px" x-text="issueError"></span>
+      </div>
+
+      <!-- Result JWT -->
+      <div x-show="issuedJwt" style="margin-top:20px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">License Key emitida:</div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:12px;font-family:monospace;font-size:11px;word-break:break-all;color:var(--text-muted)" x-text="issuedJwt"></div>
+        <button class="btn btn-ghost" style="margin-top:8px;font-size:12px" @click="copyText(issuedJwt)">Copiar JWT</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- License detail modal -->
+<div class="modal-overlay" x-show="showDetail" @click.self="showDetail=false" x-cloak>
+  <div class="modal">
+    <div class="modal-title">Licencia #<span x-text="detailLic?.id"></span></div>
+    <div x-show="detailLic">
+      <div class="field-row">
+        <div class="field">
+          <label>Email</label>
+          <input type="text" :value="detailLic?.email" readonly>
+        </div>
+        <div class="field">
+          <label>Tier</label>
+          <select x-model="detailPatch.tier">
+            <option value="open">Open</option>
+            <option value="team">Team</option>
+            <option value="regulated">Regulated</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Instancias máx.</label>
+          <input type="number" x-model.number="detailPatch.max_instances" min="1">
+        </div>
+        <div class="field">
+          <label>Extender (días desde hoy)</label>
+          <input type="number" x-model.number="detailPatch.expires_days" placeholder="ej. 365">
+        </div>
+      </div>
+      <div class="field">
+        <label>Notas</label>
+        <input type="text" x-model="detailPatch.notes">
+      </div>
+
+      <!-- Instances list -->
+      <div style="margin-top:20px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">
+          Instancias (<span x-text="detailInstances.length"></span>)
+        </div>
+        <template x-for="inst in detailInstances" :key="inst.id">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+            <div style="font-size:13px">
+              <div style="font-weight:500" x-text="inst.hostname || '(sin hostname)'"></div>
+              <div style="color:var(--text-muted);font-size:12px">
+                v<span x-text="inst.platform_version || '?'"></span> ·
+                <span x-text="formatDate(inst.last_seen_at)"></span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="badge" :class="inst.revoked ? 'badge-revoked' : 'badge-active'"
+                    x-text="inst.revoked ? 'Revocada' : 'Activa'"></span>
+              <button class="btn btn-danger" x-show="!inst.revoked"
+                      @click="adminRevokeInstance(inst)">Revocar</button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" @click="savePatch()" :disabled="patchLoading">
+          <span class="spinner" x-show="patchLoading"></span>
+          Guardar cambios
+        </button>
+        <button class="btn btn-ghost" @click="showDetail=false">Cerrar</button>
+        <span x-show="patchSuccess" style="color:var(--green);font-size:13px;font-weight:600;align-self:center">✓ Guardado</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function adminPortal() {
+  return {
+    tab: 'licenses',
+    loading: false,
+    licenses: [],
+    filter: { email: '', tier: '', revoked: '' },
+
+    abuseLoading: false,
+    abuseData: null,
+
+    issueForm: { email: '', tier: 'team', max_instances: 1, expires_days: 365, notes: '', ls_customer_id: '', ls_order_id: '' },
+    issueLoding: false,
+    issueSuccess: false,
+    issueError: '',
+    issuedJwt: '',
+
+    showDetail: false,
+    detailLic: null,
+    detailInstances: [],
+    detailPatch: {},
+    patchLoading: false,
+    patchSuccess: false,
+
+    get apiKey() {
+      return localStorage.getItem('ac_admin_key') || '';
+    },
+
+    headers() {
+      return { 'Content-Type': 'application/json', 'X-Api-Key': this.apiKey };
+    },
+
+    async init() {
+      const key = this.apiKey || prompt('Admin API key:');
+      if (key) localStorage.setItem('ac_admin_key', key);
+      await this.loadLicenses();
+    },
+
+    async loadLicenses() {
+      this.loading = true;
+      try {
+        const p = new URLSearchParams({ limit: 100 });
+        if (this.filter.email) p.set('email', this.filter.email);
+        if (this.filter.tier) p.set('tier', this.filter.tier);
+        if (this.filter.revoked !== '') p.set('revoked', this.filter.revoked);
+        const r = await fetch(`/admin/portal/licenses?${p}`, { headers: this.headers() });
+        if (r.status === 401 || r.status === 403) {
+          const key = prompt('API key incorrecta. Introduce la admin API key:');
+          if (key) { localStorage.setItem('ac_admin_key', key); await this.loadLicenses(); }
+          return;
+        }
+        this.licenses = await r.json();
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async loadAbuse() {
+      this.abuseLoading = true;
+      try {
+        const r = await fetch('/admin/portal/abuse-report', { headers: this.headers() });
+        this.abuseData = await r.json();
+      } finally {
+        this.abuseLoading = false;
+      }
+    },
+
+    async issueLicense() {
+      this.issueLoding = true;
+      this.issueSuccess = false;
+      this.issueError = '';
+      this.issuedJwt = '';
+      try {
+        const r = await fetch('/admin/portal/licenses', {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify(this.issueForm),
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          this.issueError = e.detail || 'Error al emitir.';
+          return;
+        }
+        const lic = await r.json();
+        this.issuedJwt = lic.jwt_token || '';
+        this.issueSuccess = true;
+        await this.loadLicenses();
+      } finally {
+        this.issueLoding = false;
+      }
+    },
+
+    async openDetail(lic) {
+      this.detailLic = lic;
+      this.detailPatch = { tier: lic.tier, max_instances: lic.max_instances, notes: lic.notes || '', expires_days: null };
+      this.patchSuccess = false;
+      this.showDetail = true;
+      const r = await fetch(`/admin/portal/licenses/${lic.id}/instances`, { headers: this.headers() });
+      this.detailInstances = r.ok ? await r.json() : [];
+    },
+
+    openLicenseById(id) {
+      const lic = this.licenses.find(l => l.id === id);
+      if (lic) { this.tab = 'licenses'; this.openDetail(lic); }
+    },
+
+    async savePatch() {
+      this.patchLoading = true;
+      this.patchSuccess = false;
+      try {
+        const body = {};
+        if (this.detailPatch.tier) body.tier = this.detailPatch.tier;
+        if (this.detailPatch.max_instances) body.max_instances = this.detailPatch.max_instances;
+        if (this.detailPatch.expires_days) body.expires_days = this.detailPatch.expires_days;
+        if (this.detailPatch.notes !== undefined) body.notes = this.detailPatch.notes;
+        const r = await fetch(`/admin/portal/licenses/${this.detailLic.id}`, {
+          method: 'PATCH', headers: this.headers(), body: JSON.stringify(body),
+        });
+        if (r.ok) {
+          const updated = await r.json();
+          Object.assign(this.detailLic, updated);
+          this.patchSuccess = true;
+          await this.loadLicenses();
+        }
+      } finally {
+        this.patchLoading = false;
+      }
+    },
+
+    async toggleRevoke(lic) {
+      const action = lic.revoked ? 'restaurar' : 'revocar';
+      if (!confirm(`¿${action} la licencia de ${lic.email}?`)) return;
+      const r = await fetch(`/admin/portal/licenses/${lic.id}`, {
+        method: 'PATCH', headers: this.headers(),
+        body: JSON.stringify({ revoked: !lic.revoked }),
+      });
+      if (r.ok) lic.revoked = !lic.revoked;
+    },
+
+    async adminRevokeInstance(inst) {
+      if (!confirm('¿Revocar esta instancia?')) return;
+      const r = await fetch(`/admin/instances/${inst.id}`, { method: 'DELETE', headers: this.headers() });
+      if (r.ok) inst.revoked = true;
+    },
+
+    copyText(text) {
+      navigator.clipboard.writeText(text).catch(() => alert('No se pudo copiar'));
+    },
+
+    formatDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' });
+    },
+
+    isExpired(iso) {
+      return iso && new Date(iso) < new Date();
+    },
+  };
+}
+</script>
+</body>
+</html>

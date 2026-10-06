@@ -1,7 +1,7 @@
 """Admin platform analytics — velocity, main analytics, HITL resolution, churn, capabilities."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Integer, case, extract, func
@@ -29,7 +29,7 @@ async def admin_velocity(
 
     from app.models.run import Run
 
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=window_minutes)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
     rows = (await session.exec(
         sa_select(
             Run.workspace_id,
@@ -62,7 +62,7 @@ async def admin_analytics(
     """Time-series platform analytics for the last 12 months."""
     from app.models.run import Run, Ticket
 
-    cutoff = datetime.utcnow() - timedelta(days=365)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
 
     def _by_month(rows):
         return [
@@ -230,7 +230,7 @@ async def workspace_churn(
     """Workspaces that have run at least once but made no runs in the last *days* days."""
     from app.models.run import Run as _ChurnRun
 
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     subq = (
         sa_select(
             _ChurnRun.workspace_id,
@@ -247,7 +247,7 @@ async def workspace_churn(
         .order_by(subq.c.last_run.asc())
     )).all()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return {
         "window_days": days,
         "count": len(rows),
@@ -274,7 +274,7 @@ async def capability_analytics(
     from fastapi import HTTPException
     from sqlalchemy import text as sa_text
 
-    cutoff = datetime.utcnow() - timedelta(days=max(1, min(days, 365)))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
     try:
         rows = (await session.execute(
             sa_text("""

@@ -28,6 +28,7 @@ from sqlmodel import select
 
 from app.core.auth import WorkspaceContext, get_workspace_context
 from app.core.database import get_session
+from app.core.license_gate import require_feature
 from app.models.compliance import ApprovedAgentHash
 from app.models.workspace import Workspace
 
@@ -152,23 +153,6 @@ async def _build_attestation(run: Any, session: Any) -> dict:
             "algorithm": "sha256",
             "digest": "sha256:" + hashlib.sha256(_tl_serial.encode()).hexdigest(),
             "entries": len(_tracelog) if isinstance(_tracelog, list) else 1,
-        }
-
-    # Document→code traceability: list of docs indexed during this run with content hashes
-    _doc_trace = _state.get("doc_traceability")
-    if _doc_trace and isinstance(_doc_trace, dict):
-        body["doc_traceability"] = {
-            "indexed_at": _doc_trace.get("indexed_at"),
-            "document_count": len(_doc_trace.get("documents", [])),
-            "documents": [
-                {
-                    "doc_id": d.get("doc_id"),
-                    "doc_type": d.get("doc_type"),
-                    "source_file": d.get("source_file"),
-                    "content_hash": d.get("content_hash"),
-                }
-                for d in _doc_trace.get("documents", [])
-            ],
         }
 
     body["document_hash"] = "sha256:" + hashlib.sha256(
@@ -653,7 +637,7 @@ async def compliance_checkout(
     return CheckoutOut(checkout_url=checkout.url)
 
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(require_feature("compliance_export"))])
 async def export_attestations(
     ws: Workspace = Depends(_require_compliance_pack),
     ctx: WorkspaceContext = Depends(get_workspace_context),
@@ -694,30 +678,12 @@ async def export_attestations(
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # 1. Per-run attestation JSONs — collect all first so traceability can reference them
-        attestation_docs: list[dict] = []
+        # 1. Per-run attestation JSONs
         for run in runs:
             doc = await _build_attestation(run, session)
-            attestation_docs.append(doc)
             zf.writestr(
                 f"attestations/attestation-{run.run_id[:12]}.json",
                 json.dumps(doc, indent=2, default=str),
-            )
-
-        # 1b. Document traceability per run (included when attestation has doc_traceability)
-        all_doc_traces = []
-        for run, doc in zip(runs, attestation_docs):
-            dt = doc.get("doc_traceability")
-            if dt:
-                all_doc_traces.append({
-                    "run_id": run.run_id,
-                    "created_at": run.created_at.isoformat() if run.created_at else None,
-                    **dt,
-                })
-        if all_doc_traces:
-            zf.writestr(
-                "doc_traceability.json",
-                json.dumps(all_doc_traces, indent=2, default=str),
             )
 
         # 2. Keybridge audit log (opt-in)
@@ -812,7 +778,8 @@ class ApprovedHashOut(BaseModel):
     active: bool
 
 
-@router.post("/approved-hashes", response_model=ApprovedHashOut, status_code=201)
+@router.post("/approved-hashes", response_model=ApprovedHashOut, status_code=201,
+             dependencies=[Depends(require_feature("approvers_config"))])
 async def register_approved_hash(
     body: ApprovedHashIn,
     ws: Workspace = Depends(_require_compliance_pack),
@@ -891,7 +858,106 @@ async def list_approved_hashes(
     ]
 
 
-@router.delete("/approved-hashes/{hash_id}", status_code=200)
+# ---------------------------------------------------------------------------
+# Hash Chain Export  (hash_chain_export)
+# ---------------------------------------------------------------------------
+
+class HashChainSummary(BaseModel):
+    workspace_slug: str
+    keybridge_url: Optional[str]
+    configured: bool
+    entries: Optional[int] = None
+    chain_verified: Optional[bool] = None
+    exported_at: str
+
+
+@router.get(
+    "/hash-chain",
+    response_model=HashChainSummary,
+    dependencies=[Depends(require_feature("hash_chain_export"))],
+)
+async def get_hash_chain(
+    ws: Workspace = Depends(_require_compliance_pack),
+    ctx: WorkspaceContext = Depends(get_workspace_context),
+    verify: bool = Query(True, description="Verify hash chain integrity before returning"),
+    since: Optional[str] = Query(None, description="ISO timestamp — only entries after this date"),
+):
+    """Fetch the keybridge SHA-256 hash chain audit log and optionally verify its integrity.
+
+    Returns a summary. When KEYBRIDGE_URL + KEYBRIDGE_METRICS_TOKEN are configured,
+    the raw JSONL is fetched from the keybridge /audit/export endpoint.
+    Each entry in the chain references the SHA-256 of the previous entry, forming
+    a tamper-evident provenance record of every LLM API call made through the proxy.
+
+    Use the compliance/export endpoint with include_keybridge_audit=true to bundle
+    the full JSONL in the Compliance Pack ZIP archive.
+    """
+    keybridge_url = os.environ.get("KEYBRIDGE_URL", "").rstrip("/")
+    keybridge_token = os.environ.get("KEYBRIDGE_METRICS_TOKEN", "")
+    exported_at = datetime.now(timezone.utc).isoformat()
+
+    if not keybridge_url or not keybridge_token:
+        return HashChainSummary(
+            workspace_slug=ws.slug,
+            keybridge_url=None,
+            configured=False,
+            exported_at=exported_at,
+        )
+
+    params: dict = {}
+    if since:
+        params["since"] = since
+
+    try:
+        import httpx as _httpx  # noqa: PLC0415
+
+        async with _httpx.AsyncClient(timeout=30) as hx:
+            r = await hx.get(
+                f"{keybridge_url}/audit/export",
+                headers={"X-Api-Key": keybridge_token},
+                params=params,
+            )
+        if not r.is_success:
+            raise HTTPException(502, f"Keybridge audit fetch failed: HTTP {r.status_code}")
+
+        lines = [ln for ln in r.text.splitlines() if ln.strip()]
+        entries = len(lines)
+
+        chain_ok: Optional[bool] = None
+        if verify and entries > 1:
+            import json as _json  # noqa: PLC0415
+
+            chain_ok = True
+            prev_hash: Optional[str] = None
+            for ln in lines:
+                try:
+                    entry = _json.loads(ln)
+                except Exception:
+                    chain_ok = False
+                    break
+                entry_hash = entry.get("entry_hash")
+                if prev_hash is not None and entry.get("prev_hash") != prev_hash:
+                    chain_ok = False
+                    break
+                prev_hash = entry_hash
+
+        return HashChainSummary(
+            workspace_slug=ws.slug,
+            keybridge_url=keybridge_url,
+            configured=True,
+            entries=entries,
+            chain_verified=chain_ok,
+            exported_at=exported_at,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.warning("compliance: hash chain export error: %s", exc)
+        raise HTTPException(502, f"Keybridge error: {exc}")
+
+
+@router.delete("/approved-hashes/{hash_id}", status_code=200,
+               dependencies=[Depends(require_feature("approvers_config"))])
 async def delete_approved_hash(
     hash_id: int,
     ws: Workspace = Depends(_require_compliance_pack),

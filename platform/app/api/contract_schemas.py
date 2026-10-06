@@ -138,7 +138,7 @@ async def upsert_contract_schema(
             f"Extendable contracts: {sorted(EXTENDABLE_CONTRACTS)}",
         )
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     row = (await session.exec(
         select(WorkspaceContractSchema)
         .where(WorkspaceContractSchema.workspace_id == workspace_id)

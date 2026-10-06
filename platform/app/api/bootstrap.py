@@ -123,7 +123,7 @@ async def active_campaign(session=Depends(get_session)):
 
     from app.models.admin import Campaign
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     camp = (await session.exec(
         select(Campaign)
         .where(Campaign.active.is_(True))

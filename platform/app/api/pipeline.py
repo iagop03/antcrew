@@ -119,6 +119,29 @@ async def trigger_run(
             if not effective_hitl and ws.hitl_default:
                 effective_hitl = True
 
+    # Enforce monthly run limit if set in the license key
+    from app.core.license import get_license
+    _lic = get_license()
+    if _lic.max_runs_per_month is not None and ctx.workspace_id is not None:
+        from datetime import datetime, timezone
+
+        from sqlalchemy import func
+
+        from app.models.run import Run
+        _month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        _run_count = (await session.exec(
+            select(func.count(Run.id)).where(
+                Run.workspace_id == ctx.workspace_id,
+                Run.created_at >= _month_start,
+            )
+        )).one()
+        if not _lic.within_run_limit(_run_count):
+            raise HTTPException(
+                429,
+                f"Monthly run limit reached ({_lic.max_runs_per_month} runs/month). "
+                "Upgrade your license to continue.",
+            )
+
     try:
         run_id = await dispatch(
             body.team, body.request, body.thread_id,

@@ -33,7 +33,10 @@ _VALID_PROVIDERS = frozenset({
     "lmstudio", "vllm",
 })
 
-_IS_DEV = os.environ.get("APP_ENV", "production").lower() in ("dev", "development", "local")
+_IS_DEV = (
+    os.environ.get("APP_ENV", "production").lower() in ("dev", "development", "local")
+    or os.environ.get("ANTCREW_TESTING") == "1"
+)
 
 
 @dataclass
@@ -150,7 +153,7 @@ async def get_workspace_llm_key(
     if row is None:
         return None
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
     window_start = row.use_window_start
     if window_start is None or (now - window_start).total_seconds() > 86400:
         row.use_count_24h = 1

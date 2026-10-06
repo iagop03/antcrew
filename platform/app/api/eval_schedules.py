@@ -19,6 +19,7 @@ from app.core.auth import (
     ws_filter,
 )
 from app.core.database import get_session
+from app.core.license_gate import require_feature
 from app.models.run import EvalRun, EvalSchedule
 
 router = APIRouter(
@@ -44,7 +45,8 @@ class ScheduleCreate(BaseModel):
 # CRUD
 # ---------------------------------------------------------------------------
 
-@router.post("/", response_model=EvalSchedule, status_code=201)
+@router.post("/", response_model=EvalSchedule, status_code=201,
+             dependencies=[Depends(require_feature("evals_regression"))])
 async def create_schedule(
     body: ScheduleCreate,
     session: AsyncSession = Depends(get_session),
@@ -61,7 +63,7 @@ async def create_schedule(
         expect_min_code_files=body.expect_min_code_files,
         expect_review_verdict=body.expect_review_verdict,
         workspace_id=ctx.workspace_id,
-        next_run_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=body.interval_hours),
+        next_run_at=datetime.now(timezone.utc) + timedelta(hours=body.interval_hours),
     )
     session.add(sched)
     await session.commit()
@@ -80,7 +82,8 @@ async def list_schedules(
     return (await session.exec(q)).all()
 
 
-@router.delete("/{schedule_id}", status_code=204)
+@router.delete("/{schedule_id}", status_code=204,
+               dependencies=[Depends(require_feature("evals_regression"))])
 async def delete_schedule(
     schedule_id: int,
     session: AsyncSession = Depends(get_session),
@@ -96,7 +99,8 @@ async def delete_schedule(
     await session.commit()
 
 
-@router.patch("/{schedule_id}/toggle", response_model=EvalSchedule)
+@router.patch("/{schedule_id}/toggle", response_model=EvalSchedule,
+              dependencies=[Depends(require_feature("evals_regression"))])
 async def toggle_schedule(
     schedule_id: int,
     session: AsyncSession = Depends(get_session),
@@ -128,7 +132,7 @@ async def dispatch_due_schedules(engine) -> int:
     from app.services.eval_runner import EvalRunConfig, _executor, run_eval_sync
 
     log = logging.getLogger("eval_scheduler")
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = datetime.now(timezone.utc)
 
     async with _Sess(engine, expire_on_commit=False) as session:
         result = await session.exec(

@@ -55,6 +55,11 @@ _HANDLED_EVENTS = frozenset({
     "subscription_expired",
 })
 
+# Order events trigger license issuance for self-hosted customers
+_ORDER_EVENTS = frozenset({
+    "order_created",
+})
+
 
 # ---------------------------------------------------------------------------
 # Signature verification
@@ -92,6 +97,11 @@ async def mor_webhook(
 
     meta = payload.get("meta", {})
     event_name: str = meta.get("event_name", "")
+
+    # Self-hosted license issuance on order completion
+    if event_name in _ORDER_EVENTS:
+        await _handle_order_created(payload, session)
+        return {"received": True}
 
     if event_name not in _HANDLED_EVENTS:
         log.debug("mor: ignoring event %r", event_name)
@@ -133,6 +143,79 @@ async def mor_webhook(
         ws.id, ws.slug, event_name, ls_status, new_status,
     )
     return {"received": True}
+
+
+async def _handle_order_created(payload: dict, session: AsyncSession) -> None:
+    """Issue a self-hosted license when a Lemon Squeezy order is completed.
+
+    Reads tier + instances from the order's custom_data:
+        custom_data.tier           (open | team | regulated)
+        custom_data.max_instances  (int, default 1)
+        custom_data.expires_days   (int, default 365)
+
+    The buyer's email is taken from the order billing address.
+    """
+    from datetime import timedelta
+
+    data = payload.get("data", {})
+    attrs = data.get("attributes", {})
+    meta = payload.get("meta", {})
+    custom_data: dict = meta.get("custom_data") or {}
+
+    email: str = (
+        (attrs.get("user_email") or "")
+        or (attrs.get("billing_address") or {}).get("email", "")
+    ).lower().strip()
+
+    if not email:
+        log.warning("mor: order_created has no email — cannot issue license")
+        return
+
+    tier: str = custom_data.get("tier", "team")
+    if tier not in ("open", "team", "regulated"):
+        tier = "team"
+
+    max_instances: int = int(custom_data.get("max_instances", 1))
+    expires_days: int = int(custom_data.get("expires_days", 365))
+    ls_customer_id: str = str(attrs.get("customer_id", "") or "")
+    ls_order_id: str = str(data.get("id", "") or "")
+
+    # Delegate to admin_portal logic to keep JWT generation in one place
+    try:
+        from sqlmodel import select as _select
+
+        from app.api.admin_portal import _generate_license_jwt
+        from app.models.portal import PortalLicense, PortalUser
+
+        now_utc = __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        )
+        expires_at = now_utc + timedelta(days=expires_days)
+        jwt_token = _generate_license_jwt(
+            email=email, tier=tier, max_instances=max_instances, expires_at=expires_at
+        )
+
+        user = (await session.exec(
+            _select(PortalUser).where(PortalUser.email == email)
+        )).first()
+        if not user:
+            user = PortalUser(email=email, ls_customer_id=ls_customer_id, ls_order_id=ls_order_id)
+            session.add(user)
+            await session.flush()
+
+        lic = PortalLicense(
+            portal_user_id=user.id,
+            tier=tier,
+            jwt_token=jwt_token,
+            max_instances=max_instances,
+            expires_at=expires_at,
+            notes=f"Auto-issued via LS order {ls_order_id}",
+        )
+        session.add(lic)
+        await session.commit()
+        log.info("mor: issued %s license for %s (order %s)", tier, email, ls_order_id)
+    except Exception as exc:
+        log.error("mor: failed to issue license for order %s: %s", ls_order_id, exc)
 
 
 async def _resolve_workspace(

@@ -49,39 +49,6 @@ _executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="ant
 # ---------------------------------------------------------------------------
 
 _cancel_events: dict[str, _threading.Event] = {}
-_doc_trace_by_run: dict[str, dict] = {}  # run_id → doc_traceability, cleared after persist
-
-
-def _build_doc_traceability(doc_manager) -> dict:
-    """Build a doc traceability snapshot: {doc_id: sha256_of_content}."""
-    import hashlib
-    trace: dict = {"documents": [], "indexed_at": None}
-    try:
-        from datetime import datetime, timezone
-        trace["indexed_at"] = datetime.now(timezone.utc).isoformat()
-        storage = doc_manager.storage
-        for doc_id in storage.list_documents():
-            try:
-                content = storage.load(doc_id)
-                digest = "sha256:" + hashlib.sha256(content).hexdigest()
-            except Exception:
-                digest = "error"
-            meta: dict = {}
-            if hasattr(storage, "load_metadata"):
-                try:
-                    meta = storage.load_metadata(doc_id) or {}
-                except Exception:
-                    pass
-            trace["documents"].append({
-                "doc_id": doc_id,
-                "doc_type": meta.get("doc_type"),
-                "source_file": meta.get("source_file"),
-                "size_bytes": meta.get("size_bytes"),
-                "content_hash": digest,
-            })
-    except Exception:
-        pass
-    return trace
 
 
 def cancel_engine_run(run_id: str) -> bool:
@@ -492,7 +459,7 @@ def _run_engine_sync(
     manual_action_assignee: "str | None" = None,
     manual_action_after: "list[str] | None" = None,
     manual_action_timeout_s: int = 86400,
-    doc_manager=None,
+    docs_config: "dict | None" = None,
 ) -> tuple[bool, float]:
     from antcrew import Event as _BusEvent
     from antcrew import bus as _bus
@@ -538,13 +505,18 @@ def _run_engine_sync(
     )
     validators = _build_engine_validators()
 
-    if doc_manager is not None:
+    # Inject documentation manager if workspace has S3 docs configured
+    if docs_config:
         try:
-            doc_manager.index_from_storage()
-            for _reg_exec in registry.all():
-                if hasattr(_reg_exec, "set_documentation"):
-                    _reg_exec.set_documentation(doc_manager)
-            _doc_trace_by_run[run_id] = _build_doc_traceability(doc_manager)
+            from antcrew_engine.documentation import DocumentationManager
+            _doc_mgr = DocumentationManager(storage_type="s3", storage_config=docs_config)
+            if docs_config.get("schema_yaml"):
+                import yaml as _yaml
+                _doc_mgr.load_schema_from_dict(_yaml.safe_load(docs_config["schema_yaml"]))
+            _doc_mgr.index_from_storage()
+            for _executor in registry.all():
+                if hasattr(_executor, "set_documentation"):
+                    _executor.set_documentation(_doc_mgr)
         except Exception as _doc_exc:
             log.warning("engine runner: docs setup failed: %s", _doc_exc)
 
@@ -678,7 +650,7 @@ async def dispatch_engine(
     # Fetch BYOK key if this workspace uses customer-supplied LLM keys
     _byok_api_key: Optional[str] = None
     _byok_base_url: Optional[str] = None
-    _doc_mgr = None
+    _docs_config: "dict | None" = None
     if workspace_id is not None:
         from sqlmodel import select as _sel
         from sqlmodel.ext.asyncio.session import AsyncSession
@@ -690,11 +662,16 @@ async def dispatch_engine(
             if _ws:
                 from app.services.runner_base import resolve_workspace_llm_config
                 _byok_api_key, _byok_base_url = await resolve_workspace_llm_config(_sess, _ws, model)
-                try:
-                    from app.api.workspaces_docs import build_doc_manager_for_workspace as _bdm
-                    _doc_mgr = _bdm(_ws)
-                except Exception as _docs_exc:
-                    log.debug("engine runner: could not build doc manager: %s", _docs_exc)
+                if _ws.docs_s3_bucket:
+                    from app.api.workspaces_docs import _decrypt as _d
+                    _docs_config = {
+                        "bucket": _ws.docs_s3_bucket,
+                        "prefix": _ws.docs_s3_prefix or "",
+                        "region": _ws.docs_s3_region or "us-east-1",
+                        "aws_access_key_id": _d(_ws.docs_s3_access_key_enc) if _ws.docs_s3_access_key_enc else None,
+                        "aws_secret_access_key": _d(_ws.docs_s3_secret_key_enc) if _ws.docs_s3_secret_key_enc else None,
+                        "schema_yaml": _ws.docs_schema_yaml or "",
+                    }
 
     run_id = new_run_id()
     stop_event = _threading.Event()
@@ -778,7 +755,7 @@ async def dispatch_engine(
                 _byok_api_key, _byok_base_url,
                 manual_action_title, manual_action_description,
                 manual_action_assignee, manual_action_after, manual_action_timeout_s,
-                _doc_mgr,
+                _docs_config,
             )
             success, cost_usd, _store, _satisfied, _expected = await loop.run_in_executor(_executor, fn)
         except Exception as exc:
@@ -881,9 +858,6 @@ async def _store_engine_state(
         "conditions_satisfied": satisfied_conditions or [],
         "conditions_expected": expected_conditions or [],
     }
-    _dt = _doc_trace_by_run.pop(run_id, None)
-    if _dt:
-        state["doc_traceability"] = _dt
 
     # For MemoryStore runs (no disk), serialize artifact content into Run.state.
     # FilesystemStore runs skip this — the /artifacts endpoint reads from output_dir directly.

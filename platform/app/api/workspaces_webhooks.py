@@ -18,6 +18,7 @@ from app.core.auth import (
 )
 from app.core.database import get_session
 from app.core.exceptions import WorkspaceNotFoundError
+from app.core.license_gate import require_feature
 from app.core.security import validate_external_url
 from app.models.run import WebhookConfig, WebhookDelivery, WebhookEvent, Workspace
 
@@ -115,7 +116,7 @@ async def list_webhook_configs(
 
 
 @router.post("/{workspace_id}/webhooks", status_code=201, response_model=WebhookConfigOut,
-             dependencies=[Depends(require_role("admin"))])
+             dependencies=[Depends(require_role("admin")), Depends(require_feature("webhooks"))])
 async def create_webhook_config(
     workspace_id: int,
     body: CreateWebhookConfig,
@@ -151,7 +152,7 @@ async def create_webhook_config(
 
 
 @router.delete("/{workspace_id}/webhooks/{webhook_id}", status_code=204,
-               dependencies=[Depends(require_role("admin"))])
+               dependencies=[Depends(require_role("admin")), Depends(require_feature("webhooks"))])
 async def delete_webhook_config(
     workspace_id: int,
     webhook_id: int,
@@ -180,7 +181,7 @@ async def delete_webhook_config(
 
 @router.patch("/{workspace_id}/webhooks/{webhook_id}/toggle",
               response_model=WebhookConfigOut,
-              dependencies=[Depends(require_role("admin"))])
+              dependencies=[Depends(require_role("admin")), Depends(require_feature("webhooks"))])
 async def toggle_webhook_config(
     workspace_id: int,
     webhook_id: int,

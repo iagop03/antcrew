@@ -1,7 +1,7 @@
 """Admin user management, feedback read, GDPR erase, and BYOK key rotation routes."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -121,7 +121,7 @@ async def erase_user_data(
     if user.email.startswith("erased_") and user.email.endswith("@erased.antcrew"):
         raise HTTPException(409, "User data has already been erased")
 
-    erased_at = datetime.utcnow().replace(microsecond=0).isoformat()
+    erased_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     placeholder = f"[erased {erased_at}]"
 
     user.email = f"erased_{user_id}@erased.antcrew"
@@ -163,7 +163,7 @@ async def erase_user_data(
     keys = (await session.exec(
         select(ApiKey).where(ApiKey.user_id == user_id).where(ApiKey.revoked_at == None)  # noqa: E711
     )).all()
-    now_dt = datetime.utcnow()
+    now_dt = datetime.now(timezone.utc)
     for key in keys:
         key.revoked_at = now_dt
         session.add(key)

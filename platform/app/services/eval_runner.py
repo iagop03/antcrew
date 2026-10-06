@@ -142,7 +142,7 @@ def run_eval_sync(eval_id: str, cfg: EvalRunConfig, loop: asyncio.AbstractEventL
             "elapsed_ms": round(elapsed, 1),
             "overall_score": report.overall_score,
             "passed": report.passed,
-            "finished_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "finished_at": datetime.now(timezone.utc),
         }))
         _emit("eval.done", {
             "team": cfg.team,
@@ -160,6 +160,6 @@ def run_eval_sync(eval_id: str, cfg: EvalRunConfig, loop: asyncio.AbstractEventL
             "status": "error",
             "error": str(exc),
             "elapsed_ms": round(elapsed, 1),
-            "finished_at": datetime.now(_tz.utc).replace(tzinfo=None),
+            "finished_at": datetime.now(_tz.utc),
         }))
         _emit("eval.done", {"team": cfg.team, "status": "error", "error": str(exc)})

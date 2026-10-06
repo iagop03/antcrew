@@ -26,7 +26,7 @@ COOKIE_MAX_AGE = 2592000  # 30 days
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _is_secure() -> bool:
@@ -339,13 +339,8 @@ async def register(
             code_hash=_hash_verification_code(code),
             expires_at=_utcnow() + timedelta(minutes=15),
         )
-        # Use a fresh mini-session so errors don't touch the committed data
-        from sqlmodel.ext.asyncio.session import AsyncSession as _AsyncSession
-
-        from app.core.database import engine as _engine
-        async with _AsyncSession(_engine, expire_on_commit=False) as vs:
-            vs.add(verification)
-            await vs.commit()
+        session.add(verification)
+        await session.commit()
         _asyncio.create_task(_send_code(email, code))
     except Exception as _exc:
         log.warning("register: could not create verification code for %s: %s", email, _exc)
@@ -773,6 +768,11 @@ async def mfa_setup(
     totp = pyotp.TOTP(secret)
     uri = totp.provisioning_uri(name=user.email, issuer_name=_totp_issuer())
 
+    # Store the pending secret so /mfa/enable can verify the code without it in the POST body
+    user.totp_secret = _encrypt_totp(secret)
+    session.add(user)
+    await session.commit()
+
     import base64
     import io
     try:
@@ -785,11 +785,11 @@ async def mfa_setup(
     except Exception:
         qr_svg_b64 = None
 
-    return {"secret": secret, "provisioning_uri": uri, "mfa_enabled": user.mfa_enabled, "qr_svg_b64": qr_svg_b64}
+    return {"secret": secret, "totp_secret": secret, "provisioning_uri": uri, "mfa_enabled": user.mfa_enabled, "qr_svg_b64": qr_svg_b64}
 
 
 class _MfaEnableRequest(BaseModel):
-    secret: str   # base32 secret from GET /auth/mfa/setup
+    secret: Optional[str] = None  # explicit secret (backwards-compat); if absent uses server-stored pending secret
     code: str     # 6-digit TOTP code to verify before enabling
 
 
@@ -802,8 +802,9 @@ async def mfa_enable(
 ):
     """Activate MFA for the authenticated user after verifying the first TOTP code.
 
-    Stores the secret and sets mfa_enabled=True. All subsequent logins will require
-    a valid TOTP code.
+    Two flows supported:
+    - New: call GET /auth/mfa/setup first (stores secret server-side), then POST with {code} only.
+    - Legacy: POST with {secret, code} — explicit secret verified without prior setup call.
     """
     import pyotp
 
@@ -817,19 +818,26 @@ async def mfa_enable(
     if user_session.user_id is None:
         raise HTTPException(400, "MFA requires a user account")
 
-    if not body.secret or not body.code:
-        raise HTTPException(400, "secret and code are required")
-
-    totp = pyotp.TOTP(body.secret)
-    if not totp.verify(body.code.strip(), valid_window=1):
-        raise HTTPException(400, "Invalid TOTP code — check your authenticator app and try again")
-
     from app.models.run import User
     user = (await session.exec(select(User).where(User.id == user_session.user_id))).first()
     if user is None:
         raise HTTPException(404, "User not found")
 
-    user.totp_secret = _encrypt_totp(body.secret)
+    if body.secret:
+        # Legacy flow: secret provided explicitly in request body
+        pending_secret = body.secret
+        user.totp_secret = _encrypt_totp(body.secret)
+        session.add(user)
+    else:
+        # New flow: use server-stored pending secret from GET /auth/mfa/setup
+        if not user.totp_secret:
+            raise HTTPException(400, "Call GET /auth/mfa/setup first to generate a TOTP secret")
+        pending_secret = _decrypt_totp(user.totp_secret)
+
+    totp = pyotp.TOTP(pending_secret)
+    if not totp.verify(body.code.strip(), valid_window=1):
+        raise HTTPException(400, "Invalid TOTP code — check your authenticator app and try again")
+
     user.mfa_enabled = True
     session.add(user)
     await session.commit()

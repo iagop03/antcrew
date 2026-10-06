@@ -49,7 +49,7 @@ _STATUSES = ("pending", "verified", "rejected")
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def _ensure_dir() -> Path:

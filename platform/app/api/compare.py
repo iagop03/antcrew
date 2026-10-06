@@ -249,7 +249,7 @@ async def get_compare(
 
     if row.status == "running":
         row.status = final_status
-        row.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        row.finished_at = datetime.now(timezone.utc)
         session.add(row)
         await session.commit()
 

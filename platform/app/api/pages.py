@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 _STATIC = Path(__file__).parent.parent / "static"
+_DOCS = Path(__file__).parent.parent / "docs"
 
 router = APIRouter(tags=["pages"])
 
@@ -63,6 +64,29 @@ async def webhooks_page():
 @router.get("/onboard")
 async def onboard_page():
     return _html("onboard.html")
+
+
+@router.get("/docs")
+async def docs_page():
+    return _html("docs.html")
+
+
+@router.get("/docs/content/{path:path}")
+async def docs_content(path: str):
+    """Serve raw Markdown from app/docs/. Traversal-safe — only .md files under _DOCS."""
+    # Normalise: strip leading slash, ensure .md extension
+    clean = path.lstrip("/")
+    if not clean.endswith(".md"):
+        clean = f"{clean}.md"
+    target = (_DOCS / clean).resolve()
+    # Path-traversal guard
+    try:
+        target.relative_to(_DOCS.resolve())
+    except ValueError:
+        raise HTTPException(403, "Forbidden")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, f"Doc not found: {path}")
+    return PlainTextResponse(target.read_text(encoding="utf-8"), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/settings")
@@ -139,6 +163,23 @@ async def discover_page():
 @router.get("/agent-analytics")
 async def agent_analytics_page():
     return _html("analytics.html")
+
+
+@router.get("/portal/")
+@router.get("/portal")
+async def portal_page():
+    return _html("portal.html")
+
+
+@router.get("/portal/auth/verify")
+async def portal_verify_page():
+    """Magic link lands here — portal.html handles the token param client-side."""
+    return _html("portal.html")
+
+
+@router.get("/admin/portal-ui")
+async def admin_portal_page():
+    return _html("portal_admin.html")
 
 
 @router.get("/sw.js")

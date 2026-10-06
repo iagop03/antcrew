@@ -23,13 +23,7 @@ class CampaignCreate(BaseModel):
     discount_days: Optional[int] = None
     max_participants: Optional[int] = None
 
-    @classmethod
-    def _strip_tz(cls, dt: datetime) -> datetime:
-        return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
-
     def clean_dates(self) -> "CampaignCreate":
-        self.starts_at = self._strip_tz(self.starts_at)
-        self.ends_at = self._strip_tz(self.ends_at)
         return self
 
 
@@ -111,8 +105,6 @@ async def patch_campaign(
     if camp is None:
         raise HTTPException(404, "Campaign not found")
     for field, value in body.model_dump(exclude_unset=True).items():
-        if isinstance(value, datetime) and value.tzinfo is not None:
-            value = value.replace(tzinfo=None)
         setattr(camp, field, value)
     session.add(camp)
     await session.commit()
