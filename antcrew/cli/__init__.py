@@ -4,6 +4,7 @@ from __future__ import annotations
 # Import submodules — each registers its @app.command() / @_*_app.command()
 # decorators on the shared Typer instances above.
 from antcrew.cli import (
+    issue_cmd,  # noqa: F401
     augment_cmd,  # noqa: F401
     configure_cmd,  # noqa: F401
     cost_cmd,  # noqa: F401

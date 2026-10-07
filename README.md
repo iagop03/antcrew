@@ -6,40 +6,115 @@
 [![SDK License: Apache 2.0](https://img.shields.io/badge/SDK%20License-Apache%202.0-blue.svg)](LICENSE)
 [![Platform License: ELv2](https://img.shields.io/badge/Platform%20License-ELv2-orange.svg)](platform/LICENSE)
 
-**Multi-agent framework for Python. Typed outputs. Full trace. Works offline.**
+**AntCrew is the manager. Your LLM is the worker.**
 
-Three lines to your first agent team, no API key required:
-
-```python
-from antcrew import QuickStart
-
-result = QuickStart.dev().run("Build a FastAPI auth service")
-print(result.state["prd"].title)           # typed PRD artifact
-print(result.state["code_artifacts"])      # typed code files
-```
-
-Or from the CLI, fully local with Ollama:
+From a GitHub issue to a reviewed, approvable PR — with full audit trail.
 
 ```bash
 pip install antcrew
-antcrew run "Build a FastAPI auth service" --model ollama:llama3
+antcrew issue owner/repo#143
+```
+
+```
+◆ DISCOVERY       Analyzing repository structure and affected modules
+◆ PLAN            12 files · 3 new · 9 modified — estimated complexity: Medium
+  ┌──────────────────────────────────────────────────────┐
+  │  HUMAN REVIEW                                        │
+  │  Approve plan before implementation starts?          │
+  │  [A]pprove  [R]equest changes  [X] Reject            │
+  └──────────────────────────────────────────────────────┘
+◆ IMPLEMENT       BackendDev generating 9 files
+◆ TEST            142 tests · 141 passed · 1 failed → auto-retry
+◆ REVIEW          Reviewer: 2 findings fixed by developer
+  ┌──────────────────────────────────────────────────────┐
+  │  HUMAN REVIEW                                        │
+  │  PR ready. Approve to push?                          │
+  │  [A]pprove  [R]equest changes  [X] Reject            │
+  └──────────────────────────────────────────────────────┘
+◆ PR              github.com/owner/repo/pull/221 opened
+  Cost: $1.84 · Time: 9m 12s · Human interventions: 2
+```
+
+---
+
+## The problem antcrew solves
+
+Claude Code, Codex, and Cursor are excellent at writing code. They are single-agent tools: one context, one decision-maker, one pass.
+
+That works well for simple tasks. It breaks down when a change is complex enough that you do not want one agent to hold all the context and make every call unilaterally:
+
+- The same agent that writes the migration also decides it passes review
+- There is no checkpoint where a human can say "stop — I want to see the plan before you touch anything"
+- Nothing records *why* a decision was made, only *what* was produced
+
+AntCrew adds the management layer on top: discovery, planning, implementation, testing, review, and two human approval gates — all coordinated, all traced.
+
+---
+
+## Human-in-the-loop
+
+The approval gate is the central feature. Every pipeline has at least two checkpoints:
+
+**1 — Plan approval** (before any code is written)
+
+```
+PLAN READY FOR REVIEW
+
+  Scope:     Add subscription support
+  Approach:  New Subscription model + Stripe webhook + service layer
+  Affected:  12 files (3 new, 9 modified, 0 deleted)
+  Migration: Yes — creates subscriptions table
+  Estimated: Medium complexity
+
+  Agents queued:
+    ✓ BackendDev  ✓ QA  ✓ Reviewer  ✓ DocWriter
+
+Approve plan? [A]pprove / [R]equest changes / [X] Reject
+```
+
+**2 — PR approval** (after review, before the branch is pushed)
+
+```
+READY TO PUSH
+
+  142 tests passed (0 failing)
+  Reviewer: no remaining issues
+  Files: 12 changed, +487 / -34 lines
+
+  Generated PR description and change summary attached.
+
+Approve PR? [A]pprove / [R]equest changes / [X] Reject
+```
+
+Every approval is recorded in the TraceLog with reviewer identity and timestamp. In regulated environments, this creates an auditable record of who authorized each change and when.
+
+**Remote review (antcrew-platform)**
+
+For teams where reviewers are not at a terminal, approvals route through antcrew-platform and arrive as Slack messages or web links:
+
+```
+AntCrew is requesting your approval
+
+  WHAT:   Add subscription support to payments-service
+  PLAN:   12 files · Medium complexity · $~1.50 estimated
+  RISKS:  Schema migration (reversible)
+
+  [ APPROVE PLAN ]   [ REQUEST CHANGES ]   [ REJECT ]
 ```
 
 ---
 
 ## Why antcrew
 
-| | antcrew | CrewAI | MetaGPT |
+| | antcrew | Claude Code | CrewAI |
 |---|---|---|---|
-| Typed output contracts | ✓ Pydantic artifacts | ✗ dict | partial |
-| Trace & replay any run | ✓ SQLite TraceLog | ✗ | ✓ |
-| Works 100% offline | ✓ Ollama natively | partial | partial |
-| Lines to first agent | **3** | ~15 | ~20 |
-| Governance hash per agent | ✓ SHA-256 | ✗ | ✗ |
-| CLI (commands) | ✓ 29 commands | limited | basic |
-| Production SaaS layer | ✓ optional | ✗ | ✗ |
-
-The core differentiator: every output is a **typed artifact** (Pydantic class, not a dict) and every decision is recorded to a **local TraceLog** you can replay. Both work offline, for free.
+| Multi-agent coordination | ✓ | ✗ | ✓ |
+| Human approval gates | ✓ tamper-evident log | ✗ | ✗ |
+| Typed output contracts | ✓ Pydantic | ✗ | ✗ |
+| Trace & replay | ✓ SQLite TraceLog | ✗ | ✗ |
+| Works 100% offline | ✓ Ollama | ✓ | partial |
+| Audit log (regulated sectors) | ✓ hash chain | ✗ | ✗ |
+| Issue → PR in one command | ✓ `antcrew issue` | manual | ✗ |
 
 ---
 
@@ -47,172 +122,144 @@ The core differentiator: every output is a **typed artifact** (Pydantic class, n
 
 **Zero setup — simulated LLM, no credentials:**
 
-Runs immediately. Produces typed artifacts with deterministic fake content — good for testing and CI, not for real AI output.
-
 ```bash
 pip install antcrew
 antcrew run --model simulated "Build a REST API for user authentication"
 ```
 
-**Fully local — Ollama (real AI, no API key, no data leaves your machine):**
-
-Requires [Ollama](https://ollama.com) installed (~5 min) and `ollama pull llama3`.
+**Fully local — Ollama (no API key, no data leaves your machine):**
 
 ```bash
-antcrew run --model ollama:llama3 "Build a REST API for user authentication"
+antcrew run --model ollama:llama3 "Add OAuth2 to this repo" --project-dir .
 ```
 
-**Cloud model — real AI, no local setup:**
+**Cloud model:**
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-antcrew run --model claude "Build a REST API for user authentication"
+antcrew issue owner/repo#143
 ```
 
-> **Don't want to configure anything?** Use [antcrew-platform](https://github.com/iagop03/antcrew-platform) — the managed tier provides the LLM. You run agent teams from a web UI without installing Ollama or managing API keys.
-
-From Python:
+**From Python:**
 
 ```python
 from antcrew import DevTeam
-from antcrew.models import OllamaModel, AnthropicModel, SimulatedLLM
 
-# Local — no API key
-team = DevTeam(model=OllamaModel("llama3"))
-
-# Cloud
-team = DevTeam(model=AnthropicModel("claude-sonnet-4-6"))
-
-result = team.run("Build a REST API for user authentication")
-print(result.state["prd"].title)           # PRD object
-print(len(result.state["tickets"]))        # list[Ticket]
-print(result.cost_usd)                     # e.g. 0.43 (0.0 with Ollama)
+team = DevTeam()
+result = team.run("Add a /users/{id} endpoint with tests")
+print(result.state["code_artifacts"])   # typed Pydantic objects
+print(result.usage.total_usd)           # exact cost
 ```
 
-**Inspect the trace after any run:**
+---
+
+## The canonical flow: `antcrew issue`
+
+`antcrew issue` is the main entry point. Give it a GitHub issue; it returns a PR.
 
 ```bash
-antcrew inspect <run-id>
-# Shows: prompt, response, tokens, cost, governance hash — per agent
-antcrew trace replay <run-id>
-# Replays every agent call to detect model drift
+antcrew issue owner/repo#143
+antcrew issue owner/repo#143 --model ollama:llama3   # fully local
+antcrew issue owner/repo#143 --auto-approve          # no HITL gates (CI use)
+```
+
+What it does:
+
+| Phase | What happens |
+|---|---|
+| **Discovery** | Reads the issue, analyzes the repo structure, identifies affected modules |
+| **Plan** | Produces a scoped implementation plan (files, approach, migration needs) |
+| **→ Human gate 1** | Shows plan, waits for approval before writing any code |
+| **Implement** | BackendDev (and FrontendDev if needed) generates the changes |
+| **Test** | Runs existing test suite + generates new tests; auto-retries failures |
+| **Review** | Reviewer agent checks for quality, security, and spec compliance |
+| **→ Human gate 2** | Shows review summary, waits for approval before opening PR |
+| **PR** | Pushes branch and opens PR with generated description |
+
+At the end:
+
+```
+DONE
+
+  PR:     github.com/owner/repo/pull/221
+  Cost:   $1.84
+  Time:   9m 12s
+  Files:  12 changed (+487 / -34)
+  Tests:  142 passed, 0 failing
+  Review: 2 findings, both fixed
+  HITL:   2 approvals (plan + PR)
+
+  Trace:  antcrew inspect ac_20261007_a3f2
 ```
 
 ---
 
 ## Teams
 
-| Team | Agents | Best for |
-|---|---|---|
-| `DevTeam` | BA → PM → BackendDev | Backend features, APIs |
-| `FullStackTeam` | BA → PM → Backend → Frontend → QA → Reviewer → DevOps → DocWriter | Full-stack MVPs |
-| `ResearchTeam` | Researcher → Writer | Technical research, blog posts |
-| `ContentTeam` | Idea → Copywriter → Editor | Marketing content, docs |
-| `CustomTeam` | User-defined steps (code or YAML) | Fully custom pipelines |
-| `Router` | Classifier → dispatches to any team | Smart routing |
-| `LegalReviewTeam` | ClauseExtractor → RiskFlagging → LegalReviewer | Contract review with risk scoring |
-| `CodeMigrationTeam` | Scanner → Planner → Migrator → Verifier | Automated codebase migration |
-| `ReproducibleResearchPipeline` | ResearchTeam + full-trace + governance_hash | Reproducible AI research |
-| `BrandVoiceContentTeam` | ContentTeam + ChromaMemory per-brand | On-brand content at scale |
-| `WhiteLabelWrapper` | Wraps any team with markup billing | Agency / reseller billing |
+For custom pipelines beyond `antcrew issue`:
+
+| Team | Best for |
+|---|---|
+| `DevTeam` | Backend features, APIs, services |
+| `FullStackTeam` | Frontend + backend + tests + docs in one pass |
+| `LegalReviewTeam` | Contract review with risk scoring |
+| `CodeMigrationTeam` | Automated codebase migration (Python, Java, COBOL) |
+| `CustomTeam` | Any pipeline you define in Python or YAML |
 
 ```python
-from antcrew import (
-    DevTeam, FullStackTeam, ResearchTeam, ContentTeam, CustomTeam, Router,
-    LegalReviewTeam, CodeMigrationTeam, ReproducibleResearchPipeline,
-    BrandVoiceContentTeam, BrandVoiceProfile, WhiteLabelWrapper,
-)
+from antcrew import DevTeam, FullStackTeam, LegalReviewTeam
+
+# Backend feature
+result = DevTeam().run("Add rate limiting to /api/v1", project_dir="./src")
+
+# Full-stack
+result = FullStackTeam().run("Add a subscription billing page")
+
+# Contract review
+finding = LegalReviewTeam().run(nda_text).state["legal_finding"]
+print(f"High-risk clauses: {finding.high_risk_count}")
 ```
 
 ---
 
-## Features
+## Audit trail (regulated environments)
 
-- **LLM-agnostic.** Anthropic, OpenAI, Gemini, Groq, Azure, Ollama, LM Studio, LiteLLM (100+ providers). Mix models per agent.
-- **Local-first.** Run entirely on your machine with Ollama — no API keys, no data leaves your network.
-- **Typed artifacts.** PRDs, tickets, code, tests, and docs are Pydantic objects — predictable, auditable, and serializable.
-- **TraceLog.** Every agent call is written to a local SQLite database. `antcrew inspect <id>` and `antcrew trace replay <id>` work offline.
-- **Governance hash.** Each agent configuration produces a deterministic SHA-256 hash — cite in papers, pin in CI.
-- **Human-in-the-loop.** `FlexibleHITL` pauses any checkpoint for local approval (callback) or remote review (via antcrew-platform).
-- **Semantic memory.** ChromaDB or in-memory vector store. Agents reference decisions from past runs.
-- **EvalSuite.** Regression testing for agent outputs. Run in CI with `antcrew eval`.
-- **MCP tools.** Any MCP-compatible tool server works out of the box.
-- **Project sessions.** Tickets, code, and docs accumulate across multiple runs instead of starting fresh.
-- **Real sandbox execution.** Generated tests run in a subprocess or Docker container and results feed back into state.
-- **Retry + resilience.** Exponential-backoff retry on timeouts, rate limits, and transient errors.
+Every agent decision is recorded to a local SQLite TraceLog:
 
----
-
-## Specialized teams
-
-**Legal review:**
-
-```python
-from antcrew import LegalReviewTeam
-
-team = LegalReviewTeam()
-result = team.run(nda_text)
-finding = result.state["legal_finding"]
-print(f"High-risk clauses: {finding.high_risk_count}, approved: {finding.approved}")
+```bash
+antcrew inspect ac_20261007_a3f2      # full trace: prompts, tokens, cost, hashes
+antcrew trace replay ac_20261007_a3f2 # replay call-by-call
+antcrew trace --verify-chain          # verify tamper-evident hash chain
 ```
 
-**Reproducible research — cite and replay:**
+Each TraceLog entry includes:
+- Agent name, model, and prompt hash
+- Output artifact (typed Pydantic object)
+- HITL decisions: reviewer identity + timestamp + approval/rejection
+- SHA-256 chain linking every entry to the previous one
 
-```python
-from antcrew import ReproducibleResearchPipeline
-
-pipeline = ReproducibleResearchPipeline(db_path="experiments.db")
-exp = pipeline.run("What are the failure modes of multi-agent AI systems?")
-print(exp.experiment_id)   # "<team_hash>:<run_id>" — stable identifier
-
-# Replay later to detect model drift
-for call in pipeline.replay_experiment(exp.experiment_id):
-    print(call["agent_name"], "matched:", call["matched"])
-```
-
-**Brand voice content:**
-
-```python
-from antcrew import BrandVoiceContentTeam, BrandVoiceProfile
-
-profile = BrandVoiceProfile(
-    name="Acme Corp",
-    tone="Professional but approachable",
-    standards=["Always end with a CTA", "Use 'you' not 'users'"],
-    examples=["Our API ships same-day — because waiting is so 2019."],
-)
-team = BrandVoiceContentTeam(brand=profile)   # requires pip install antcrew[memory]
-result = team.run("Write a product launch announcement")
-```
-
-**White-label billing:**
-
-```python
-from antcrew import DevTeam, WhiteLabelWrapper
-
-billing = WhiteLabelWrapper(DevTeam(), client_label="acme-corp", markup_pct=200)
-record = billing.run("Build a REST API for a todo app")
-print(f"Billed: ${record.billed_usd:.4f}  Margin: {record.margin_pct:.1f}%")
-```
+This chain can be exported (`GET /compliance/hash-chain`) and verified by an external auditor without accessing the LLM or source code.
 
 ---
 
 ## CLI reference
 
 ```bash
-antcrew run "goal"              # run a team locally
-antcrew run "goal" --model ollama:llama3   # offline, no API key
-antcrew init                    # scaffold a new project interactively
-antcrew inspect <run-id>        # view trace: prompts, tokens, cost, governance hash
-antcrew trace replay <run-id>   # replay all agent calls
-antcrew eval                    # run EvalSuite regression tests
-antcrew describe                # show pipeline data flow (consumes/produces)
-antcrew serve                   # local web dashboard
-antcrew cost                    # usage and cost summary
-antcrew dag                     # visualize agent graph
+antcrew issue owner/repo#143        # canonical: GitHub issue → PR
+antcrew run "goal"                  # run a team locally
+antcrew run "goal" --model ollama:llama3  # offline, no API key
+antcrew init                        # scaffold a new project interactively
+antcrew inspect <run-id>            # view trace: prompts, tokens, cost, hashes
+antcrew trace replay <run-id>       # replay all agent calls
+antcrew trace --verify-chain        # verify hash chain integrity
+antcrew eval                        # run EvalSuite regression tests
+antcrew describe                    # show pipeline data flow
+antcrew serve                       # local web dashboard
+antcrew cost                        # usage and cost summary
+antcrew dag                         # visualize agent graph
 ```
 
-Run `antcrew --help` for the full list of 29 commands.
+Run `antcrew --help` for the full list of commands.
 
 ---
 
@@ -230,26 +277,25 @@ pip install "antcrew[mcp]"       # MCP tool servers
 
 ## Architecture
 
-`pip install antcrew` is the only install you need. The package ships two layers in a single wheel:
+`pip install antcrew` ships two layers in a single wheel:
 
 | Layer | What it does |
 |---|---|
 | `antcrew` | Named-role teams (BA, PM, Dev…) orchestrated with LangGraph. HITL, sessions, memory. |
-| `antcrew_engine` | Goal-directed `EngineLoop` — capabilities selected at runtime until conditions are satisfied. Bundled inside antcrew since v0.35.0. |
-
-All engine capabilities (`Architect`, `CodeGenerator`, `TestRunner`…) are available directly from `antcrew.engine.*` or via `from antcrew_engine import EngineLoop`.
+| `antcrew_engine` | Goal-directed `EngineLoop` — capabilities selected at runtime until conditions are satisfied. Bundled since v0.35.0. |
 
 ---
 
-## When to use antcrew-platform (optional)
+## antcrew-platform (optional SaaS layer)
 
-The SDK runs entirely locally — no cloud account required. **antcrew-platform** is the optional SaaS layer for teams that need:
+The SDK runs entirely locally. **antcrew-platform** is the optional managed layer for teams that need:
 
-- **Multi-workspace** concurrent runs with cost roll-up
 - **Remote HITL** — reviewers approve from Slack or a web link, not a terminal
+- **Multi-workspace** concurrent runs with cost roll-up and billing
 - **Dashboard** — live run stream, eval trends, cost charts
+- **Compliance exports** — ZIP with attestations, DPA templates, hash chain for auditors
 - **GitHub App** — auto-post explainability comments on PRs
-- **Webhook delivery** — push run events to your systems
+- **SSO** — GitHub OAuth2, SAML (Team+ license)
 
 [→ antcrew-platform](https://github.com/iagop03/antcrew-platform)
 
