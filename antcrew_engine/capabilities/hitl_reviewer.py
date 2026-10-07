@@ -163,7 +163,14 @@ class HitlReviewer(BaseExecutor):
         if schema := self._feedback_schema_json():
             review_request["_feedback_schema"] = schema
 
-        verdict_data = self._request_review(review_request)
+        try:
+            verdict_data = self._request_review(review_request)
+        except Exception as _exc:
+            _log.error(
+                "HitlReviewer '%s': request_review raised %r — defaulting to timeout (fail closed)",
+                self._reviewed_art_id, _exc,
+            )
+            verdict_data = {"verdict": "timeout", "feedback": f"review_callback_error: {_exc}"}
         verdict     = verdict_data.get("verdict", "timeout")
         feedback    = (verdict_data.get("feedback") or "").strip()
         reviewer_id = (verdict_data.get("reviewer_id") or "").strip()

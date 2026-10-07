@@ -162,7 +162,7 @@ _FLEXIBLE_VERB_MAP: dict[str, str] = {
     "approve":          "approve",
     "modify":           "edit",
     "skip":             "approve",
-    "request_changes":  "reject",
+    "request_changes":  "request_changes",
     "reject":           "reject",
 }
 

@@ -293,6 +293,12 @@ class InteractiveMixin:
         interrupt_nodes = approval_nodes or all_node_names[1:]
 
         _run_id = new_run_id()
+        _trace_log = getattr(self, "_trace_log", None)
+        _trace_run_id: str = ""
+        if _trace_log is not None:
+            _trace_run_id = _trace_log.begin_run(
+                thread_id=thread_id, request=request, team=type(self).__name__,
+            )
         app = self._supervisor.build(self._build_agent_map(), interrupt_before=interrupt_nodes)
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -429,7 +435,25 @@ class InteractiveMixin:
                             "feedback noted but no change applied.[/dim]"
                         )
 
+            # Persist the human decision to TraceLog (tamper-evident chain)
+            if _trace_log is not None and _trace_run_id:
+                try:
+                    _trace_log.record_hitl(
+                        run_id=_trace_run_id,
+                        step=prev_agent_name,
+                        decision=decision,
+                        reviewer_id=result.get("reviewer_id") or "",
+                        reason=result.get("feedback") or "",
+                    )
+                except Exception as _exc:
+                    log.warning("TraceLog.record_hitl failed in run_interactive: %r", _exc)
+
             if pipeline_stopped:
+                if _trace_log is not None and _trace_run_id:
+                    try:
+                        _trace_log.end_run(_trace_run_id, cost_usd=0.0, status="rejected")
+                    except Exception:
+                        pass
                 bus.emit("pipeline.end",
                          {"team": type(self).__name__, "success": False,
                           "interactive": True, "stopped_after": prev_agent_name,
@@ -441,6 +465,16 @@ class InteractiveMixin:
 
         final_state = app.get_state(config).values
         if not pipeline_stopped:
+            if _trace_log is not None and _trace_run_id:
+                _cost = sum(
+                    getattr(llm, "_total_cost_usd", None)
+                    or getattr(llm, "get_usage_summary", lambda: {})().get("total_cost_usd", 0.0)
+                    for llm in self._unique_llms()
+                )
+                try:
+                    _trace_log.end_run(_trace_run_id, cost_usd=_cost, status="done")
+                except Exception:
+                    pass
             bus.emit("pipeline.end",
                      {"team": type(self).__name__, "success": True, "interactive": True,
                       "model": getattr(getattr(self, "llm", None), "model", None)},
