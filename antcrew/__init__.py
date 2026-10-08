@@ -313,6 +313,10 @@ _LAZY_MAP: dict[str, tuple[str, str]] = {
     # Persistence
     "load_state":          ("antcrew.utils.persistence", "load_state"),
     "save_state":          ("antcrew.utils.persistence", "save_state"),
+    # Evidence
+    "EvidencePackage":     ("antcrew.evidence", "EvidencePackage"),
+    "AgentRecord":         ("antcrew.evidence", "AgentRecord"),
+    "HitlRecord":          ("antcrew.evidence", "HitlRecord"),
 }
 
 
@@ -530,6 +534,10 @@ __all__ = [
     # Persistence
     "save_state",
     "load_state",
+    # Evidence
+    "EvidencePackage",
+    "AgentRecord",
+    "HitlRecord",
     # Memory
     "BaseMemory",
     "ChromaMemory",

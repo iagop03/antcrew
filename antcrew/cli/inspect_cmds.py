@@ -1,4 +1,4 @@
-"""Show, extract, describe, and agents commands."""
+"""Show, extract, describe, agents, and inspect commands."""
 from __future__ import annotations
 
 import json
@@ -9,6 +9,143 @@ import typer
 
 from antcrew.cli._app import _TEAM_CHOICES, app, console
 from antcrew.cli._shared import _print_state_raw
+
+_DEFAULT_TRACE_DB = Path.home() / ".antcrew" / "trace.db"
+
+
+@app.command(name="inspect")
+def inspect_cmd(
+    run_id: str = typer.Argument(..., help="Run ID to inspect (prefix match supported)"),
+    trace: Path = typer.Option(
+        _DEFAULT_TRACE_DB,
+        "--trace", "-t",
+        help="TraceLog SQLite file (default: ~/.antcrew/trace.db)",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Output raw JSON evidence package"),
+) -> None:
+    """Show the evidence summary for a governed execution.
+
+    \b
+    Examples:
+        antcrew inspect ac_20261007_a3f2
+        antcrew inspect ac_20261007   --trace ./my.db
+        antcrew inspect ac_20261007_a3f2 --json
+    """
+    from rich.table import Table
+
+    from antcrew.evidence import EvidencePackage
+    from antcrew.trace import TraceLog
+
+    trace_path = Path(str(trace).replace("~", str(Path.home())))
+    if not trace_path.exists():
+        console.print(
+            f"[red]TraceLog not found:[/] {trace_path}\n"
+            "[dim]Run with [bold]--trace <file.db>[/] or record a run first "
+            "using [bold]--trace ~/.antcrew/trace.db[/bold][/dim]"
+        )
+        raise typer.Exit(1)
+
+    tlog = TraceLog(str(trace_path))
+
+    # Prefix matching: find the first run whose id starts with run_id
+    run = tlog.get_run(run_id)
+    if run is None:
+        all_runs = tlog.list_runs(limit=200)
+        candidates = [r for r in all_runs if r["id"].startswith(run_id)]
+        if not candidates:
+            console.print(f"[red]Run not found:[/] {run_id!r}")
+            tlog.close()
+            raise typer.Exit(1)
+        run = candidates[0]
+        run_id = run["id"]
+
+    pkg = EvidencePackage.from_trace(tlog, run_id)
+    tlog.close()
+
+    if output_json:
+        typer.echo(pkg.to_json())
+        return
+
+    # ── Evidence header ──────────────────────────────────────────────────────
+    from rich.panel import Panel
+
+    status_color = "green" if pkg.status == "done" else ("red" if pkg.status == "error" else "yellow")
+    chain_icon = {"intact": "✓", "empty": "○", "broken": "✗", "unverifiable": "?"}.get(pkg.chain_status, "?")
+    chain_color = {"intact": "green", "empty": "dim", "broken": "red", "unverifiable": "yellow"}.get(pkg.chain_status, "dim")
+
+    cost_str     = f"${pkg.cost_usd:.4f}" if pkg.cost_usd else "—"
+    duration_str = (
+        f"{pkg.duration_seconds:.0f}s"
+        if pkg.duration_seconds >= 1
+        else f"{pkg.duration_seconds * 1000:.0f}ms"
+    ) if pkg.duration_seconds else "—"
+
+    console.print(Panel(
+        f"[bold]{pkg.request_preview or '(no request recorded)'}[/bold]\n\n"
+        f"  Run ID:   [cyan]{pkg.run_id}[/cyan]\n"
+        f"  Team:     [yellow]{pkg.team or '—'}[/yellow]\n"
+        f"  Status:   [{status_color}]{pkg.status}[/{status_color}]\n"
+        f"  Cost:     [cyan]{cost_str}[/cyan]   Duration: [dim]{duration_str}[/dim]\n"
+        f"  HITL:     {pkg.hitl_count} decision(s), {pkg.approved_count} approved\n"
+        f"  Chain:    [{chain_color}]{chain_icon} {pkg.chain_status}[/{chain_color}]"
+        + (f" — {pkg.chain_message}" if pkg.chain_message and pkg.chain_status != "intact" else ""),
+        title=f"[bold]Evidence Package[/bold]",
+        border_style="blue",
+    ))
+
+    # ── Agents table ─────────────────────────────────────────────────────────
+    if pkg.agents:
+        tbl = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 2))
+        tbl.add_column("Agent",    style="cyan", no_wrap=True)
+        tbl.add_column("Model",    style="dim")
+        tbl.add_column("Tokens",   justify="right")
+        tbl.add_column("Cost",     justify="right")
+        tbl.add_column("Duration", justify="right")
+        for a in pkg.agents:
+            tok_str  = f"{a.input_tokens}↑ {a.output_tokens}↓"
+            cost_str = f"${a.cost_usd:.4f}" if a.cost_usd else "—"
+            dur_str  = f"{a.duration_ms/1000:.1f}s" if a.duration_ms >= 1000 else f"{a.duration_ms:.0f}ms"
+            tbl.add_row(a.agent_name, a.model_id or "—", tok_str, cost_str, dur_str)
+        console.print("\n[bold dim]AGENTS[/bold dim]")
+        console.print(tbl)
+
+    # ── HITL decisions table ─────────────────────────────────────────────────
+    if pkg.hitl_decisions:
+        htbl = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 2))
+        htbl.add_column("Step",       style="cyan", no_wrap=True)
+        htbl.add_column("Verdict",    no_wrap=True)
+        htbl.add_column("Reviewer",   style="dim")
+        htbl.add_column("Reason",     max_width=50)
+        htbl.add_column("When",       style="dim", no_wrap=True)
+        htbl.add_column("Hash",       style="dim", no_wrap=True, max_width=12)
+        for d in pkg.hitl_decisions:
+            v = d.verdict
+            v_color = "green" if "approve" in v else ("red" if "reject" in v or "timeout" in v else "yellow")
+            when_str = (d.decided_at or "")[:19].replace("T", " ")
+            htbl.add_row(
+                d.step,
+                f"[{v_color}]{v}[/{v_color}]",
+                d.reviewer_id or "—",
+                d.reason[:50] if d.reason else "—",
+                when_str or "—",
+                (d.row_hash[:10] + "…") if d.row_hash else "—",
+            )
+        console.print("\n[bold dim]HUMAN DECISIONS[/bold dim]")
+        console.print(htbl)
+    else:
+        console.print("\n[dim]No HITL decisions recorded for this run.[/dim]")
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    console.print(
+        f"\n[dim]Generated at {pkg.generated_at[:19].replace('T', ' ')}  "
+        f"·  engine {pkg.engine_version}  "
+        f"·  doc-hash {pkg._document_hash()[:16]}…[/dim]\n"
+    )
+    console.print(
+        "[dim]To replay:      [bold]antcrew trace replay[/bold] --checkpointer ~/.antcrew/threads.db "
+        f"--trace {trace_path}\n"
+        "To export JSON:  [bold]antcrew inspect[/bold] " + run_id[:12] + "… --json[/dim]"
+    )
 
 
 @app.command()
