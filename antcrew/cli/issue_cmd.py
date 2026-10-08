@@ -125,6 +125,10 @@ def issue(
         False, "--json",
         help="Print final summary as JSON instead of rich output.",
     ),
+    no_trace: bool = typer.Option(
+        False, "--no-trace",
+        help="Disable automatic tracing to ~/.antcrew/trace.db.",
+    ),
 ) -> None:
     """Run the canonical Issue → PR workflow.
 
@@ -164,6 +168,20 @@ def issue(
 
     t_start = time.monotonic()
     hitl_count = 0
+
+    # Attach TraceLog by default (opt-out with --no-trace)
+    _trace_log = None
+    _trace_run_id: str = ""
+    if not no_trace:
+        from antcrew.trace import TraceLog as _TraceLog
+        _default_trace = Path.home() / ".antcrew" / "trace.db"
+        _default_trace.parent.mkdir(parents=True, exist_ok=True)
+        _trace_log = _TraceLog(str(_default_trace))
+        _trace_run_id = _trace_log.begin_run(
+            thread_id=f"issue-{owner}-{repo}-{number}",
+            request=f"{owner}/{repo}#{number}",
+            team="issue",
+        )
 
     # ── Phase 1: Discovery ─────────────────────────────────────────────────
     _phase("DISCOVERY", "Fetching issue and analyzing repository structure")
@@ -235,7 +253,22 @@ def issue(
     decision1 = _prompt_hitl(gate1_prompt, auto_approve)
     hitl_count += 1
 
+    if _trace_log is not None and _trace_run_id:
+        try:
+            _trace_log.record_hitl(
+                run_id=_trace_run_id, step="plan_approval",
+                decision=decision1, reviewer_id="", reason="",
+            )
+        except Exception:
+            pass
+
     if decision1 == "reject":
+        if _trace_log is not None and _trace_run_id:
+            try:
+                _trace_log.end_run(_trace_run_id, cost_usd=0.0, status="rejected")
+                _trace_log.close()
+            except Exception:
+                pass
         console.print("\n[red]Plan rejected.[/red] Exiting.")
         raise typer.Exit(1)
     if decision1 == "changes":
@@ -254,11 +287,19 @@ def issue(
     try:
         from antcrew import DevTeam
         team = DevTeam(model=model, project_dir=str(repo_dir))
+        if _trace_log is not None:
+            team._trace_log = _trace_log
         run_request = f"Issue #{number}: {issue_title}\n\n{issue_body}"
         impl_result = team.run(run_request)
-        run_id: str = getattr(impl_result, "run_id", "")
+        run_id: str = getattr(impl_result, "run_id", "") or _trace_run_id
         code_artifacts = impl_result.state.get("code_artifacts", [])
     except Exception as exc:
+        if _trace_log is not None and _trace_run_id:
+            try:
+                _trace_log.end_run(_trace_run_id, cost_usd=0.0, status="error")
+                _trace_log.close()
+            except Exception:
+                pass
         console.print(f"  [red]Implementation failed:[/red] {exc}")
         raise typer.Exit(1) from exc
 
@@ -327,7 +368,22 @@ def issue(
     decision2 = _prompt_hitl(gate2_prompt, auto_approve)
     hitl_count += 1
 
+    if _trace_log is not None and _trace_run_id:
+        try:
+            _trace_log.record_hitl(
+                run_id=_trace_run_id, step="pr_approval",
+                decision=decision2, reviewer_id="", reason="",
+            )
+        except Exception:
+            pass
+
     if decision2 == "reject":
+        if _trace_log is not None and _trace_run_id:
+            try:
+                _trace_log.end_run(_trace_run_id, cost_usd=cost_usd, status="rejected")
+                _trace_log.close()
+            except Exception:
+                pass
         console.print("\n[red]PR rejected.[/red] Branch not pushed.")
         raise typer.Exit(1)
     if decision2 == "changes":
@@ -358,6 +414,15 @@ def issue(
     total_elapsed = time.monotonic() - t_start
     total_files = len(code_artifacts) or plan_files_total
 
+    # Close trace and use trace run_id for inspect hint
+    inspect_run_id = run_id or _trace_run_id
+    if _trace_log is not None and _trace_run_id:
+        try:
+            _trace_log.end_run(_trace_run_id, cost_usd=cost_usd, status="done")
+            _trace_log.close()
+        except Exception:
+            pass
+
     if output_json:
         summary = {
             "pr_url": pr_url,
@@ -385,7 +450,7 @@ def issue(
         + f"\n"
         f"  Review:   {review_findings} finding(s), {review_findings_fixed} fixed\n"
         f"  HITL:     {hitl_count} approval(s)\n"
-        + (f"\n  Trace:    antcrew inspect {run_id}" if run_id else ""),
+        + (f"\n  Trace:    antcrew inspect {inspect_run_id}" if inspect_run_id else ""),
         border_style="green",
     ))
 

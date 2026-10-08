@@ -12,7 +12,153 @@ import typer
 from antcrew.cli._app import app, console
 
 _DEFAULT_DB = Path.home() / ".antcrew" / "platform.db"
+_DEFAULT_TRACE_DB = Path.home() / ".antcrew" / "trace.db"
 _PID_FILE = Path.home() / ".antcrew" / "platform.pid"
+
+
+def _serve_evidence(*, host: str, port: int, trace_path: Path, open_browser: bool) -> None:
+    """Start a lightweight local HTTP evidence browser without needing antcrew-platform."""
+    import http.server
+    import json as _json
+    import threading
+    import urllib.parse
+    import webbrowser
+
+    from antcrew.evidence import EvidencePackage
+    from antcrew.trace import TraceLog
+
+    trace_path = Path(str(trace_path).replace("~", str(Path.home())))
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            pass  # silence default request logging
+
+        def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            path   = parsed.path.rstrip("/")
+
+            if path in ("", "/"):
+                self._serve_index()
+            elif path.startswith("/evidence/"):
+                run_id = path[len("/evidence/"):]
+                self._serve_evidence_page(run_id)
+            elif path == "/api/runs":
+                self._api_runs()
+            elif path.startswith("/api/evidence/"):
+                run_id = path[len("/api/evidence/"):]
+                self._api_evidence(run_id)
+            else:
+                self.send_error(404)
+
+        def _send_html(self, html: str):
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_json(self, data):
+            body = _json.dumps(data, default=str).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _serve_index(self):
+            if not trace_path.exists():
+                self._send_html("<h1>No trace DB found</h1><p>Run antcrew issue or antcrew run first.</p>")
+                return
+            tlog = TraceLog(str(trace_path))
+            runs = tlog.list_runs(limit=50)
+            tlog.close()
+            def _row(r):
+                sc = "#34D399" if r["status"] == "done" else ("#f87171" if r["status"] == "error" else "#FBBF24")
+                cost = f"${r.get('cost_usd') or 0:.4f}"
+                date = (r.get("started_at") or "")[:16].replace("T", " ")
+                rid  = r["id"]
+                return (
+                    f"<tr onclick=\"location='/evidence/{rid}'\" style='cursor:pointer'>"
+                    f"<td style='font-family:monospace;color:#2DD4BF'>{rid[:14]}…</td>"
+                    f"<td>{r['team']}</td>"
+                    f"<td style='color:{sc}'>{r['status']}</td>"
+                    f"<td style='text-align:right'>{cost}</td>"
+                    f"<td style='color:#7A9AB5;font-size:12px'>{date}</td>"
+                    f"<td style='color:#7A9AB5'>{r['request'][:60]}</td>"
+                    f"</tr>"
+                )
+            rows = "".join(_row(r) for r in runs)
+            self._send_html(f"""<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>antcrew evidence browser</title>
+<style>*{{box-sizing:border-box;margin:0;padding:0}}body{{background:#080F1C;color:#E8EDF5;font-family:system-ui,sans-serif;padding:32px 24px}}
+h1{{font-family:Georgia,serif;font-size:20px;margin-bottom:4px}}
+p{{color:#7A9AB5;font-size:13px;margin-bottom:24px}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}
+th{{padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#4E6A85;border-bottom:1px solid #1E2D42}}
+td{{padding:10px 12px;border-bottom:1px solid #0F1929}}tr:hover td{{background:#0F1929}}</style></head>
+<body><h1>antcrew evidence browser</h1>
+<p>{len(runs)} recent run(s) · {trace_path}</p>
+<table><thead><tr><th>Run ID</th><th>Team</th><th>Status</th><th>Cost</th><th>Date</th><th>Request</th></tr></thead>
+<tbody>{rows}</tbody></table>
+<p style="margin-top:16px;font-size:11px">Click a row to view its evidence package.</p>
+</body></html>""")
+
+        def _serve_evidence_page(self, run_id: str):
+            if not trace_path.exists():
+                self.send_error(404); return
+            tlog = TraceLog(str(trace_path))
+            run = tlog.get_run(run_id)
+            if run is None:
+                all_runs = tlog.list_runs(limit=200)
+                candidates = [r for r in all_runs if r["id"].startswith(run_id)]
+                if not candidates:
+                    tlog.close(); self.send_error(404); return
+                run_id = candidates[0]["id"]
+            pkg = EvidencePackage.from_trace(tlog, run_id)
+            tlog.close()
+            self._send_html(pkg.to_html())
+
+        def _api_runs(self):
+            if not trace_path.exists():
+                self._send_json([]); return
+            tlog = TraceLog(str(trace_path))
+            runs = tlog.list_runs(limit=50)
+            tlog.close()
+            self._send_json(runs)
+
+        def _api_evidence(self, run_id: str):
+            if not trace_path.exists():
+                self.send_error(404); return
+            tlog = TraceLog(str(trace_path))
+            pkg = EvidencePackage.from_trace(tlog, run_id)
+            tlog.close()
+            self._send_json(pkg.to_dict())
+
+    url = f"http://{host}:{port}"
+    server = http.server.HTTPServer((host, port), _Handler)
+    console.print(f"\n[bold green]antcrew evidence browser[/bold green]  {url}\n")
+    console.print(f"[dim]Trace DB: {trace_path}[/dim]")
+    console.print("[dim]Press Ctrl+C to stop.[/dim]\n")
+
+    if open_browser:
+        def _open():
+            import time
+            import urllib.request as _ur
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline:
+                try:
+                    _ur.urlopen(f"{url}/", timeout=0.5)  # nosec B310
+                    break
+                except Exception:
+                    time.sleep(0.2)
+            webbrowser.open(url)
+        threading.Thread(target=_open, daemon=True).start()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        console.print("\n[dim]Evidence browser stopped.[/dim]")
 
 
 @app.command()
@@ -59,6 +205,15 @@ def serve(
         False, "--stop",
         help="Stop a background antcrew platform server started with --background.",
     ),
+    evidence: bool = typer.Option(
+        False, "--evidence",
+        help="Start a lightweight local evidence browser (reads ~/.antcrew/trace.db). "
+             "Does not require antcrew-platform to be installed.",
+    ),
+    trace: Optional[Path] = typer.Option(
+        None, "--trace",
+        help="TraceLog DB for --evidence mode (default: ~/.antcrew/trace.db).",
+    ),
 ) -> None:
     """Start antcrew platform locally (SQLite, no auth by default).
 
@@ -84,6 +239,16 @@ def serve(
     antcrew-platform must be importable. Run from the antcrew-platform directory
     or install it: pip install antcrew-platform
     """
+    # --evidence: lightweight local evidence browser (no platform required)
+    if evidence:
+        _serve_evidence(
+            host=host,
+            port=port,
+            trace_path=trace or _DEFAULT_TRACE_DB,
+            open_browser=open_browser or local,
+        )
+        return
+
     if local:
         open_browser = True
         if host not in ("127.0.0.1", "localhost"):

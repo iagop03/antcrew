@@ -205,6 +205,106 @@ class EvidencePackage:
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
 
+    def to_html(self) -> str:
+        """Render a self-contained HTML evidence report suitable for archiving or printing to PDF."""
+        d = self.to_dict()
+
+        chain_color = {"intact": "#34D399", "broken": "#f87171", "empty": "#7A9AB5", "unverifiable": "#FBBF24"}.get(self.chain_status, "#7A9AB5")
+        chain_icon  = {"intact": "✓", "broken": "✗", "empty": "○", "unverifiable": "?"}.get(self.chain_status, "?")
+        status_color = "#34D399" if self.status == "done" else ("#f87171" if self.status == "error" else "#FBBF24")
+
+        def _agents_rows() -> str:
+            if not self.agents:
+                return "<tr><td colspan='5' style='color:#7A9AB5;text-align:center'>No agent calls recorded</td></tr>"
+            rows = []
+            for a in self.agents:
+                dur = f"{a.duration_ms/1000:.1f}s" if a.duration_ms >= 1000 else f"{a.duration_ms:.0f}ms"
+                rows.append(
+                    f"<tr><td>{_esc(a.agent_name)}</td><td style='color:#7A9AB5'>{_esc(a.model_id or '—')}</td>"
+                    f"<td style='text-align:right'>{a.input_tokens}↑ {a.output_tokens}↓</td>"
+                    f"<td style='text-align:right'>${a.cost_usd:.4f}</td>"
+                    f"<td style='text-align:right'>{dur}</td></tr>"
+                )
+            return "\n".join(rows)
+
+        def _decisions_rows() -> str:
+            if not self.hitl_decisions:
+                return "<tr><td colspan='5' style='color:#7A9AB5;text-align:center'>No HITL decisions recorded</td></tr>"
+            rows = []
+            for dec in self.hitl_decisions:
+                v = dec.verdict
+                vc = "#34D399" if "approve" in v else ("#f87171" if "reject" in v or "timeout" in v else "#FBBF24")
+                when = (dec.decided_at or "")[:19].replace("T", " ")
+                rows.append(
+                    f"<tr><td style='font-family:monospace'>{_esc(dec.step)}</td>"
+                    f"<td style='color:{vc};font-weight:600'>{_esc(v)}</td>"
+                    f"<td style='color:#7A9AB5'>{_esc(dec.reviewer_id or '—')}</td>"
+                    f"<td>{_esc(dec.reason[:60] if dec.reason else '—')}</td>"
+                    f"<td style='color:#7A9AB5;font-family:monospace;font-size:11px'>{when}</td></tr>"
+                )
+            return "\n".join(rows)
+
+        doc_hash = self._document_hash()
+        cost_str = f"${self.cost_usd:.4f}" if self.cost_usd else "—"
+        dur_str  = f"{self.duration_seconds:.0f}s" if self.duration_seconds else "—"
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evidence · {_esc(self.run_id[:16])}</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#080F1C;color:#E8EDF5;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;padding:32px 24px;max-width:900px;margin:0 auto}}
+  h1{{font-family:Georgia,serif;font-size:22px;font-weight:700;margin-bottom:4px}}
+  h2{{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#4E6A85;margin:28px 0 12px}}
+  .badge{{display:inline-block;padding:2px 10px;border-radius:2px;font-size:11px;font-weight:600;font-family:monospace}}
+  .kv{{display:grid;grid-template-columns:140px 1fr;gap:8px 16px;margin-bottom:20px}}
+  .kv .k{{color:#4E6A85;font-size:12px}}
+  .kv .v{{font-family:monospace;font-size:12px;word-break:break-all}}
+  table{{width:100%;border-collapse:collapse;font-size:13px}}
+  th{{padding:8px 12px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#4E6A85;border-bottom:1px solid #1E2D42}}
+  td{{padding:9px 12px;border-bottom:1px solid #0F1929}}
+  .footer{{margin-top:32px;padding-top:16px;border-top:1px solid #1E2D42;font-size:11px;color:#354E65;font-family:monospace;word-break:break-all}}
+  @media print{{body{{background:#fff;color:#111}}th{{color:#555}}td{{border-color:#ddd}}h2{{color:#555}}.footer{{color:#888}}}}
+</style>
+</head>
+<body>
+<h1>Evidence Package</h1>
+<p style="color:#7A9AB5;font-size:13px;margin:4px 0 24px">{_esc(self.request_preview or '(no request recorded)')}</p>
+
+<div class="kv">
+  <div class="k">Run ID</div>      <div class="v">{_esc(self.run_id)}</div>
+  <div class="k">Team</div>        <div class="v">{_esc(self.team or '—')}</div>
+  <div class="k">Status</div>      <div class="v"><span style="color:{status_color}">{_esc(self.status)}</span></div>
+  <div class="k">Cost</div>        <div class="v">{cost_str}</div>
+  <div class="k">Duration</div>    <div class="v">{dur_str}</div>
+  <div class="k">HITL decisions</div> <div class="v">{self.hitl_count} ({self.approved_count} approved)</div>
+  <div class="k">Chain integrity</div> <div class="v"><span style="color:{chain_color}">{chain_icon} {_esc(self.chain_status)}</span></div>
+  <div class="k">Engine</div>      <div class="v">{_esc(self.engine_version)}</div>
+  <div class="k">Generated</div>   <div class="v">{_esc(self.generated_at[:19].replace('T',' '))}</div>
+</div>
+
+<h2>Agents</h2>
+<table>
+<thead><tr><th>Agent</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Duration</th></tr></thead>
+<tbody>{_agents_rows()}</tbody>
+</table>
+
+<h2>Human Decisions</h2>
+<table>
+<thead><tr><th>Step</th><th>Verdict</th><th>Reviewer</th><th>Reason</th><th>When</th></tr></thead>
+<tbody>{_decisions_rows()}</tbody>
+</table>
+
+<div class="footer">
+  Document hash: {doc_hash}<br>
+  Chain status: {_esc(self.chain_status)}{(' — ' + _esc(self.chain_message)) if self.chain_message else ''}
+</div>
+</body>
+</html>"""
+
     def _document_hash(self) -> str:
         payload = {
             "run_id":          self.run_id,
@@ -237,3 +337,14 @@ class EvidencePackage:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _esc(s: str) -> str:
+    """HTML-escape a string for safe embedding in evidence reports."""
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )

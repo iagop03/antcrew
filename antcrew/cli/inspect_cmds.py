@@ -148,6 +148,145 @@ def inspect_cmd(
     )
 
 
+@app.command(name="runs")
+def runs_cmd(
+    trace: Path = typer.Option(
+        _DEFAULT_TRACE_DB,
+        "--trace", "-t",
+        help="TraceLog SQLite file (default: ~/.antcrew/trace.db)",
+    ),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max runs to show"),
+    team: Optional[str] = typer.Option(None, "--team", help="Filter by team name"),
+    status: Optional[str] = typer.Option(None, "--status", help="Filter by status (done, error, running…)"),
+) -> None:
+    """List recent governed executions.
+
+    \b
+    Examples:
+        antcrew runs
+        antcrew runs --limit 50
+        antcrew runs --team dev --status done
+    """
+    from rich.table import Table
+
+    from antcrew.trace import TraceLog
+
+    trace_path = Path(str(trace).replace("~", str(Path.home())))
+    if not trace_path.exists():
+        console.print(
+            f"[dim]No runs recorded yet.[/dim]\n"
+            "[dim]Run [bold]antcrew issue[/bold] or [bold]antcrew run[/bold] to create one.[/dim]"
+        )
+        return
+
+    tlog = TraceLog(str(trace_path))
+    runs = tlog.list_runs_filtered(team=team, status=status, limit=limit)
+    tlog.close()
+
+    if not runs:
+        console.print("[dim]No runs match the current filters.[/dim]")
+        return
+
+    tbl = Table(show_header=True, header_style="bold dim", box=None, padding=(0, 2))
+    tbl.add_column("Run ID",  style="cyan",   no_wrap=True, max_width=16)
+    tbl.add_column("Team",    style="yellow", no_wrap=True)
+    tbl.add_column("Status",  no_wrap=True)
+    tbl.add_column("Cost",    justify="right")
+    tbl.add_column("HITL",    justify="right")
+    tbl.add_column("Date",    style="dim",    no_wrap=True)
+    tbl.add_column("Request", max_width=50)
+
+    tlog2 = TraceLog(str(trace_path))
+    for r in runs:
+        status_str = r["status"]
+        status_color = "green" if status_str == "done" else ("red" if status_str == "error" else "yellow")
+        cost_str = f"${r['cost_usd']:.4f}" if r.get("cost_usd") else "—"
+        date_str = (r.get("started_at") or "")[:16].replace("T", " ")
+        hitl_rows = tlog2.get_hitl_decisions(r["id"])
+        hitl_str = str(len(hitl_rows)) if hitl_rows else "—"
+        tbl.add_row(
+            r["id"][:14] + "…",
+            r["team"],
+            f"[{status_color}]{status_str}[/{status_color}]",
+            cost_str,
+            hitl_str,
+            date_str,
+            r["request"][:50],
+        )
+    tlog2.close()
+
+    console.print(f"\n[bold]Recent runs[/bold] [dim]({trace_path})[/dim]\n")
+    console.print(tbl)
+    console.print(
+        f"\n[dim]{len(runs)} run(s) shown  ·  "
+        "[bold]antcrew inspect <run-id>[/bold] for evidence detail[/dim]\n"
+    )
+
+
+@app.command(name="evidence")
+def evidence_cmd(
+    run_id: str = typer.Argument(..., help="Run ID (prefix match supported)"),
+    trace: Path = typer.Option(
+        _DEFAULT_TRACE_DB,
+        "--trace", "-t",
+        help="TraceLog SQLite file (default: ~/.antcrew/trace.db)",
+    ),
+    html: Optional[Path] = typer.Option(
+        None, "--html",
+        help="Export evidence as a self-contained HTML file (e.g. evidence.html)",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Print raw JSON evidence package"),
+    open_browser: bool = typer.Option(False, "--open", "-o", help="Open the HTML report in a browser"),
+) -> None:
+    """Export an evidence package for a governed execution.
+
+    \b
+    Examples:
+        antcrew evidence ac_20261007_a3f2 --html evidence.html --open
+        antcrew evidence ac_20261007_a3f2 --json > evidence.json
+    """
+    from antcrew.evidence import EvidencePackage
+    from antcrew.trace import TraceLog
+
+    trace_path = Path(str(trace).replace("~", str(Path.home())))
+    if not trace_path.exists():
+        console.print(f"[red]TraceLog not found:[/] {trace_path}")
+        raise typer.Exit(1)
+
+    tlog = TraceLog(str(trace_path))
+
+    run = tlog.get_run(run_id)
+    if run is None:
+        all_runs = tlog.list_runs(limit=200)
+        candidates = [r for r in all_runs if r["id"].startswith(run_id)]
+        if not candidates:
+            console.print(f"[red]Run not found:[/] {run_id!r}")
+            tlog.close()
+            raise typer.Exit(1)
+        run_id = candidates[0]["id"]
+
+    pkg = EvidencePackage.from_trace(tlog, run_id)
+    tlog.close()
+
+    if output_json:
+        typer.echo(pkg.to_json())
+        return
+
+    # Export HTML
+    out_path = html or Path(f"evidence_{run_id[:12]}.html")
+    out_path.write_text(pkg.to_html(), encoding="utf-8")
+    console.print(f"[green]✓[/] Evidence report → [cyan]{out_path}[/cyan]")
+    console.print(
+        f"  [dim]run: {run_id[:16]}…  ·  chain: {pkg.chain_status}  ·  "
+        f"{pkg.hitl_count} HITL decision(s)[/dim]"
+    )
+
+    if open_browser or (html is None and not output_json):
+        import webbrowser
+        webbrowser.open(out_path.resolve().as_uri())
+        console.print(f"  [dim]Opening in browser…[/dim]")
+
+
 @app.command()
 def show(
     path: Path = typer.Argument(..., help="Path to a JSON state file saved with --save"),

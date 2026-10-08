@@ -92,7 +92,11 @@ def run(
     trace_db: Optional[Path] = typer.Option(
         None, "--trace",
         help="SQLite file for per-agent call tracing (timing, tokens, cost). "
-             "View with: antcrew trace <file.db>",
+             "Defaults to ~/.antcrew/trace.db. View with: antcrew runs or antcrew inspect <id>",
+    ),
+    no_trace: bool = typer.Option(
+        False, "--no-trace",
+        help="Disable automatic tracing (overrides the ~/.antcrew/trace.db default).",
     ),
     full_trace: bool = typer.Option(
         False, "--full-trace",
@@ -390,7 +394,14 @@ def run(
         if change_ref:
             active_team._change_ref = change_ref
 
-        # --trace flag attaches TraceLog for per-agent call recording
+        # --trace flag attaches TraceLog for per-agent call recording.
+        # Defaults to ~/.antcrew/trace.db unless --no-trace is passed.
+        if no_trace:
+            trace_db = None
+        elif trace_db is None and not compliance:
+            _default_trace = Path.home() / ".antcrew" / "trace.db"
+            _default_trace.parent.mkdir(parents=True, exist_ok=True)
+            trace_db = _default_trace
         if trace_db:
             from antcrew.trace import TraceLog as _TraceLog
             active_team._trace_log = _TraceLog(trace_db, full_trace=full_trace)
@@ -524,18 +535,20 @@ def run(
             f"→ [cyan]{proj_path}[/][/dim]"
         )
 
-    # RunResult metadata footer (thread_id / cost)
+    # RunResult metadata footer (thread_id / cost / inspect hint)
+    _run_id_footer: str = ""
     if hasattr(state, "thread_id"):
         cost_str = f"  cost=[cyan]${state.cost_usd:.4f}[/cyan]" if state.cost_usd else ""
         console.print(
             f"[dim]thread=[cyan]{state.thread_id}[/cyan]{cost_str}[/dim]"
         )
     elif isinstance(state, dict) and state.get("_run_id"):
-        # dict returned by run_interactive() — show run_id so it can be looked up
-        run_id_str = state["_run_id"]
+        _run_id_footer = state["_run_id"]
         cost_raw = state.get("_cost_usd") or 0.0
         cost_str = f"  cost=[cyan]${cost_raw:.4f}[/cyan]" if cost_raw else ""
-        console.print(f"[dim]run=[cyan]{run_id_str}[/cyan]{cost_str}[/dim]")
+        console.print(f"[dim]run=[cyan]{_run_id_footer}[/cyan]{cost_str}[/dim]")
+    if trace_db and _run_id_footer:
+        console.print(f"[dim]inspect: [cyan]antcrew inspect {_run_id_footer[:16]}[/cyan][/dim]")
 
     # Cache stats
     if _llm_ref is not None and hasattr(_llm_ref, "cache") and _llm_ref.cache is not None:
