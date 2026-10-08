@@ -49,7 +49,7 @@ When a single agent holds all the context and makes every decision unilaterally:
 - The same agent that writes the migration also decides it passes review
 - Nothing records *who* authorized a change, *what* was approved, or *why*
 
-AntCrew adds a governance layer: human approval gates, policy checks, typed artifacts, and a tamper-evident record of every decision made during execution.
+AntCrew adds a governance layer: human approval gates, policy checks, typed artifacts, and a tamper-evident record of every event in the execution.
 
 ---
 
@@ -104,7 +104,7 @@ READY TO PUSH
 Approve PR? [A]pprove / [R]equest changes / [X] Reject
 ```
 
-Every approval is written to the TraceLog with reviewer identity, timestamp, and a SHA-256 hash chain. In regulated environments, this creates a verifiable record of who authorized what and when.
+Every approval is written to the TraceLog with reviewer identity, timestamp, and row hash. The TraceLog records every execution event — run start, each agent call, every HITL decision, run end — in a SHA-256 hash chain. Any modification, deletion, or insertion breaks the chain and is detectable.
 
 **Remote approvals (antcrew-platform)**
 
@@ -128,17 +128,19 @@ Every completed execution produces a verifiable evidence package:
 
 ```bash
 antcrew inspect ac_20261007_a3f2      # full trace: agents, decisions, cost, hashes
-antcrew trace replay ac_20261007_a3f2 # replay call-by-call
-antcrew trace --verify-chain          # verify tamper-evident hash chain
+antcrew verify  ac_20261007_a3f2      # verify execution chain integrity
+antcrew evidence ac_20261007_a3f2 --html evidence.html  # export HTML report
+antcrew runs                          # list recent governed executions
 ```
 
 Each evidence record includes:
-- Agent names, models, and prompt hashes
+- Agent names, models, and per-call token counts
 - Typed output artifacts (Pydantic objects)
 - Every HITL decision: reviewer identity + timestamp + verdict
-- SHA-256 chain linking every entry to the previous one
+- SHA-256 execution event chain (run_started → agent_call → hitl_decision → run_ended)
+- Chain root hash — a single fingerprint of the complete execution
 
-The chain can be exported (`GET /compliance/hash-chain`) and verified by an external auditor without accessing the LLM or source code.
+The chain covers every execution event in sequence order. Modifying any field, deleting any event, or inserting an event into the middle breaks the chain. `antcrew verify` checks it without network access or external dependencies.
 
 ---
 
@@ -146,7 +148,7 @@ The chain can be exported (`GET /compliance/hash-chain`) and verified by an exte
 
 | | antcrew | Claude Code | CrewAI |
 |---|---|---|---|
-| Human approval gates | ✓ tamper-evident log | ✗ | ✗ |
+| Human approval gates | ✓ hash-chained record | ✗ | ✗ |
 | Governed execution flow | ✓ | ✗ | ✗ |
 | Typed output contracts | ✓ Pydantic | ✗ | ✗ |
 | Trace & replay | ✓ SQLite TraceLog | ✗ | ✗ |

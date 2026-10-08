@@ -28,6 +28,7 @@ CLI:
 from __future__ import annotations
 
 import hashlib
+import json as _json
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -53,6 +54,25 @@ def _hitl_row_hash(
     all subsequent hashes, making tampering detectable via verify_hitl_chain().
     """
     data = f"{prev_hash}|{run_id}|{step}|{decision}|{reviewer_id}|{reason}|{decided_at}"
+    return hashlib.sha256(data.encode()).hexdigest()
+
+
+def _event_payload_hash(payload: dict) -> str:
+    """SHA-256 of canonical JSON of an event payload."""
+    return hashlib.sha256(_json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _event_row_hash(
+    run_id: str,
+    sequence: int,
+    event_type: str,
+    actor: str,
+    payload_hash: str,
+    previous_hash: str,
+    recorded_at: str,
+) -> str:
+    """SHA-256 of all execution event fields — forms the per-run chain."""
+    data = f"{run_id}|{sequence}|{event_type}|{actor}|{payload_hash}|{previous_hash}|{recorded_at}"
     return hashlib.sha256(data.encode()).hexdigest()
 
 
@@ -112,6 +132,18 @@ CREATE TABLE IF NOT EXISTS release_approvals (
     decided_at      TEXT NOT NULL,
     row_hash        TEXT NOT NULL DEFAULT ''  -- SHA-256 hash chain (same scheme as hitl_decisions)
 );
+
+CREATE TABLE IF NOT EXISTS execution_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT NOT NULL REFERENCES runs(id),
+    sequence      INTEGER NOT NULL,
+    event_type    TEXT NOT NULL,   -- run_started | agent_call | hitl_decision | run_ended
+    actor         TEXT NOT NULL DEFAULT '',
+    payload_hash  TEXT NOT NULL DEFAULT '',
+    previous_hash TEXT NOT NULL DEFAULT '',
+    row_hash      TEXT NOT NULL DEFAULT '',
+    recorded_at   TEXT NOT NULL
+);
 """
 
 
@@ -163,6 +195,21 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 row_hash        TEXT NOT NULL DEFAULT ''
             )
         """)
+    # execution_events table (added in trace v6) — execution-wide hash chain per run
+    if "execution_events" not in tables:
+        conn.execute("""
+            CREATE TABLE execution_events (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id        TEXT NOT NULL REFERENCES runs(id),
+                sequence      INTEGER NOT NULL,
+                event_type    TEXT NOT NULL,
+                actor         TEXT NOT NULL DEFAULT '',
+                payload_hash  TEXT NOT NULL DEFAULT '',
+                previous_hash TEXT NOT NULL DEFAULT '',
+                row_hash      TEXT NOT NULL DEFAULT '',
+                recorded_at   TEXT NOT NULL
+            )
+        """)
     conn.commit()
 
 
@@ -192,13 +239,46 @@ class TraceLog:
     # Write API (called during runs)
     # ------------------------------------------------------------------
 
+    def _record_event(
+        self,
+        run_id: str,
+        event_type: str,
+        actor: str,
+        payload: dict,
+    ) -> None:
+        """Append one event to execution_events with hash chain linkage (no commit — caller commits)."""
+        recorded_at = _now_iso()
+        prev_row = self._conn.execute(
+            "SELECT row_hash FROM execution_events WHERE run_id=? ORDER BY id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        previous_hash = prev_row["row_hash"] if prev_row else _CHAIN_GENESIS
+        seq_row = self._conn.execute(
+            "SELECT COALESCE(MAX(sequence), 0) + 1 FROM execution_events WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+        sequence = int(seq_row[0])
+        ph = _event_payload_hash(payload)
+        rh = _event_row_hash(run_id, sequence, event_type, actor, ph, previous_hash, recorded_at)
+        self._conn.execute(
+            """INSERT INTO execution_events
+               (run_id, sequence, event_type, actor, payload_hash, previous_hash, row_hash, recorded_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (run_id, sequence, event_type, actor, ph, previous_hash, rh, recorded_at),
+        )
+
     def begin_run(self, *, thread_id: str, request: str, team: str, change_ref: str = "") -> str:
         """Insert a new run row and return its UUID."""
         run_id = str(uuid.uuid4())
+        started_at = _now_iso()
         self._conn.execute(
             "INSERT INTO runs(id, thread_id, request, team, started_at, change_ref) VALUES (?,?,?,?,?,?)",
-            (run_id, thread_id, request[:1000], team, _now_iso(), change_ref or ""),
+            (run_id, thread_id, request[:1000], team, started_at, change_ref or ""),
         )
+        self._record_event(run_id, "run_started", "system", {
+            "run_id": run_id, "thread_id": thread_id,
+            "request_snippet": request[:200], "team": team, "started_at": started_at,
+        })
         self._conn.commit()
         return run_id
 
@@ -206,10 +286,15 @@ class TraceLog:
         self, run_id: str, *, cost_usd: float = 0.0, status: str = "done"
     ) -> None:
         """Stamp ended_at, final cost, and status on a run row."""
+        ended_at = _now_iso()
         self._conn.execute(
             "UPDATE runs SET ended_at=?, cost_usd=?, status=? WHERE id=?",
-            (_now_iso(), cost_usd, status, run_id),
+            (ended_at, cost_usd, status, run_id),
         )
+        self._record_event(run_id, "run_ended", "system", {
+            "run_id": run_id, "status": status,
+            "cost_usd": round(cost_usd, 6), "ended_at": ended_at,
+        })
         self._conn.commit()
 
     def record_call(
@@ -239,6 +324,7 @@ class TraceLog:
         """
         _psnip = prompt_snippet or (prompt_full[:300] if prompt_full else "")
         _rsnip = response_snippet or (response_full[:300] if response_full else "")
+        call_started_at = _now_iso()
         cur = self._conn.execute(
             """INSERT INTO agent_calls
                (run_id, agent_name, model_id, provider, started_at, duration_ms,
@@ -247,7 +333,7 @@ class TraceLog:
                 prompt_full, response_full, user_full)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                run_id, agent_name, model_id, provider, _now_iso(), round(duration_ms, 2),
+                run_id, agent_name, model_id, provider, call_started_at, round(duration_ms, 2),
                 input_tokens, output_tokens, round(cost_usd, 6),
                 _psnip[:300], _rsnip[:300],
                 prompt_full if self.full_trace else "",
@@ -255,6 +341,11 @@ class TraceLog:
                 user_full if self.full_trace else "",
             ),
         )
+        self._record_event(run_id, "agent_call", agent_name, {
+            "run_id": run_id, "agent_name": agent_name, "model_id": model_id,
+            "input_tokens": input_tokens, "output_tokens": output_tokens,
+            "cost_usd": round(cost_usd, 6), "duration_ms": round(duration_ms, 2),
+        })
         self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
@@ -294,6 +385,11 @@ class TraceLog:
                VALUES (?,?,?,?,?,?,?)""",
             (run_id, step, decision, reviewer_id or "", reason or "", decided_at, row_hash),
         )
+        self._record_event(run_id, "hitl_decision", reviewer_id or "human", {
+            "run_id": run_id, "step": step, "decision": decision,
+            "reviewer_id": reviewer_id or "", "decided_at": decided_at,
+            "hitl_row_hash": row_hash,
+        })
         self._conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
@@ -590,6 +686,71 @@ class TraceLog:
             "message": f"Chain intact — {len(hashed)}/{total} row(s) verified{note}.",
         }
 
+    def get_execution_events(self, run_id: str) -> list[dict]:
+        """Return all execution_events for a run in sequence order."""
+        rows = self._conn.execute(
+            "SELECT * FROM execution_events WHERE run_id=? ORDER BY sequence",
+            (run_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def verify_execution_chain(self, run_id: str) -> dict:
+        """Verify the SHA-256 hash chain for all execution events of a single run.
+
+        Covers run_started, agent_call, hitl_decision, and run_ended events in
+        sequence order.  Any deletion, insertion, or field modification breaks
+        the chain and is detected here.
+
+        Returns a dict with:
+        * ``valid``      — True (intact), False (broken), None (no events yet)
+        * ``total``      — total events for this run
+        * ``verified``   — events actually verified
+        * ``broken_at``  — sequence number of first broken event, or None
+        * ``chain_root`` — row_hash of the final event (chain fingerprint), or ""
+        * ``message``    — human-readable summary
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM execution_events WHERE run_id=? ORDER BY sequence",
+            (run_id,),
+        ).fetchall()
+
+        total = len(rows)
+        if total == 0:
+            return {
+                "valid": None, "total": 0, "verified": 0,
+                "broken_at": None, "chain_root": "",
+                "message": "No execution events recorded for this run (pre-v6 database).",
+            }
+
+        prev_hash = _CHAIN_GENESIS
+        for row in rows:
+            expected_rh = _event_row_hash(
+                row["run_id"], row["sequence"], row["event_type"], row["actor"],
+                row["payload_hash"], row["previous_hash"], row["recorded_at"],
+            )
+            if expected_rh != row["row_hash"] or row["previous_hash"] != prev_hash:
+                return {
+                    "valid": False,
+                    "total": total,
+                    "verified": row["sequence"] - 1,
+                    "broken_at": row["sequence"],
+                    "chain_root": "",
+                    "message": (
+                        f"Chain broken at sequence {row['sequence']} "
+                        f"(event_type={row['event_type']!r})."
+                    ),
+                }
+            prev_hash = row["row_hash"]
+
+        return {
+            "valid": True,
+            "total": total,
+            "verified": total,
+            "broken_at": None,
+            "chain_root": rows[-1]["row_hash"],
+            "message": f"Chain intact — {total} event(s) verified.",
+        }
+
     def prune(self, days: int, *, dry_run: bool = False) -> int:
         """Delete runs (and their associated records) older than *days* days.
 
@@ -617,16 +778,12 @@ class TraceLog:
             ).fetchone()
             return int(row[0])
 
-        self._conn.execute(
-            "DELETE FROM hitl_decisions WHERE run_id IN "
-            "(SELECT id FROM runs WHERE started_at < ?)",
-            (cutoff,),
-        )
-        self._conn.execute(
-            "DELETE FROM agent_calls WHERE run_id IN "
-            "(SELECT id FROM runs WHERE started_at < ?)",
-            (cutoff,),
-        )
+        for tbl in ("hitl_decisions", "agent_calls", "execution_events"):
+            self._conn.execute(
+                f"DELETE FROM {tbl} WHERE run_id IN "  # nosec B608
+                "(SELECT id FROM runs WHERE started_at < ?)",
+                (cutoff,),
+            )
         cur = self._conn.execute("DELETE FROM runs WHERE started_at < ?", (cutoff,))
         self._conn.commit()
         return cur.rowcount

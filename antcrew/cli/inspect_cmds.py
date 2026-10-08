@@ -287,6 +287,115 @@ def evidence_cmd(
         console.print(f"  [dim]Opening in browser…[/dim]")
 
 
+@app.command(name="verify")
+def verify_cmd(
+    run_id: str = typer.Argument(..., help="Run ID to verify (prefix match supported)"),
+    trace: Path = typer.Option(
+        _DEFAULT_TRACE_DB,
+        "--trace", "-t",
+        help="TraceLog SQLite file (default: ~/.antcrew/trace.db)",
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Output raw JSON verification result"),
+) -> None:
+    """Verify the integrity of an execution's event chain.
+
+    Checks that every event in the run (run_started, agent_call, hitl_decision,
+    run_ended) has a valid SHA-256 hash and that no event was inserted, deleted,
+    or modified after the fact.
+
+    \b
+    Examples:
+        antcrew verify ac_20261007_a3f2
+        antcrew verify ac_20261007 --json
+    """
+    from rich.panel import Panel
+
+    from antcrew.evidence import EvidencePackage
+    from antcrew.trace import TraceLog
+
+    trace_path = Path(str(trace).replace("~", str(Path.home())))
+    if not trace_path.exists():
+        console.print(f"[red]TraceLog not found:[/] {trace_path}")
+        raise typer.Exit(1)
+
+    tlog = TraceLog(str(trace_path))
+
+    run = tlog.get_run(run_id)
+    if run is None:
+        all_runs = tlog.list_runs(limit=200)
+        candidates = [r for r in all_runs if r["id"].startswith(run_id)]
+        if not candidates:
+            console.print(f"[red]Run not found:[/] {run_id!r}")
+            tlog.close()
+            raise typer.Exit(1)
+        run = candidates[0]
+        run_id = run["id"]
+
+    exec_result  = tlog.verify_execution_chain(run_id)
+    hitl_result  = tlog.verify_hitl_chain()
+    pkg          = EvidencePackage.from_trace(tlog, run_id)
+    tlog.close()
+
+    if output_json:
+        import json as _j
+        typer.echo(_j.dumps({
+            "run_id":         run_id,
+            "execution_chain": exec_result,
+            "hitl_chain":      hitl_result,
+            "document_hash":   pkg._document_hash(),
+        }, indent=2))
+        valid_overall = exec_result.get("valid") is not False and hitl_result.get("valid") is not False
+        raise typer.Exit(0 if valid_overall else 1)
+
+    # ── Rich output ───────────────────────────────────────────────────────────
+    exec_valid  = exec_result.get("valid")
+    hitl_valid  = hitl_result.get("valid")
+    overall_ok  = exec_valid is not False and hitl_valid is not False
+
+    def _status(valid) -> str:
+        if valid is True:   return "[green]✓ INTACT[/green]"
+        if valid is False:  return "[red]✗ BROKEN[/red]"
+        return "[yellow]○ EMPTY[/yellow]"
+
+    exec_total  = exec_result.get("total", 0)
+    exec_ver    = exec_result.get("verified", 0)
+    chain_root  = exec_result.get("chain_root", "")
+
+    hitl_total  = hitl_result.get("total", 0)
+    hitl_ver    = hitl_result.get("verified", 0)
+
+    doc_hash    = pkg._document_hash()
+    status_color = "green" if run.get("status") == "done" else ("red" if run.get("status") == "error" else "yellow")
+
+    lines = [
+        f"[bold]{run.get('request', '')[:80] or '(no request recorded)'}[/bold]\n",
+        f"  Run ID:      [cyan]{run_id}[/cyan]",
+        f"  Status:      [{status_color}]{run.get('status', '?')}[/{status_color}]",
+        f"  Team:        [yellow]{run.get('team', '—')}[/yellow]\n",
+        f"  [bold]Execution chain[/bold]   {_status(exec_valid)}",
+        f"  Events:      {exec_ver}/{exec_total} verified",
+    ]
+    if exec_result.get("broken_at"):
+        lines.append(f"  Broken at:   [red]sequence {exec_result['broken_at']}[/red]")
+    if chain_root:
+        lines.append(f"  Chain root:  [dim]{chain_root[:32]}…[/dim]")
+    lines.append("")
+    lines.append(f"  [bold]HITL chain[/bold]       {_status(hitl_valid)}")
+    lines.append(f"  Decisions:   {hitl_ver}/{hitl_total} verified")
+    if hitl_result.get("broken_at"):
+        lines.append(f"  Broken at:   [red]row id {hitl_result['broken_at']}[/red]")
+    lines.append("")
+    lines.append(f"  Document hash: [dim]{doc_hash[:48]}…[/dim]")
+
+    border = "green" if overall_ok else "red"
+    title  = "[bold green]Verification PASSED[/bold green]" if overall_ok else "[bold red]Verification FAILED[/bold red]"
+
+    console.print(Panel("\n".join(lines), title=title, border_style=border))
+
+    if not overall_ok:
+        raise typer.Exit(1)
+
+
 @app.command()
 def show(
     path: Path = typer.Argument(..., help="Path to a JSON state file saved with --save"),

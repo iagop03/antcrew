@@ -323,6 +323,77 @@ class TestTraceLogPersistence:
 
         assert chain["valid"] is True
 
+    def test_execution_chain_intact_after_full_run(self, goal):
+        """verify_execution_chain covers all events: run_started, hitl_decision, run_ended."""
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="chain-t1", request="test chain", team="test")
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "alice"},
+            trace_log=tlog,
+            run_id=run_id,
+        )
+        r.execute(_store_with(), goal)
+        tlog.end_run(run_id, cost_usd=0.01, status="done")
+
+        result = tlog.verify_execution_chain(run_id)
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert result["valid"] is True
+        assert result["total"] >= 3  # run_started + hitl_decision + run_ended
+        assert result["chain_root"] != ""
+        assert result["broken_at"] is None
+
+    def test_execution_chain_detects_tampering(self, goal):
+        """Modifying an event field must break the chain."""
+        import sqlite3 as _sq
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="tamper-t1", request="test tamper", team="test")
+        tlog.end_run(run_id, cost_usd=0.0, status="done")
+        tlog.close()
+
+        # Tamper with the first event
+        conn = _sq.connect(db_path)
+        conn.execute(
+            "UPDATE execution_events SET event_type='tampered' WHERE run_id=? AND sequence=1",
+            (run_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        tlog2 = TraceLog(db_path)
+        result = tlog2.verify_execution_chain(run_id)
+        tlog2.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert result["valid"] is False
+        assert result["broken_at"] == 1
+
+    def test_execution_chain_empty_for_missing_run(self):
+        """verify_execution_chain returns None valid for a nonexistent run."""
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        result = tlog.verify_execution_chain("nonexistent-run-id")
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert result["valid"] is None
+        assert result["total"] == 0
+
 
 # ---------------------------------------------------------------------------
 # EvidencePackage integration
@@ -390,6 +461,35 @@ class TestEvidencePackage:
         d = pkg.to_dict()
         assert "document_hash" in d
         assert d["document_hash"].startswith("sha256:")
+
+    def test_evidence_package_execution_chain_fields(self, goal):
+        """EvidencePackage exposes event_count and chain_root from execution chain."""
+        from antcrew.evidence import EvidencePackage
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="ev3", request="chain test", team="dev")
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "bob"},
+            trace_log=tlog,
+            run_id=run_id,
+        )
+        r.execute(_store_with(), goal)
+        tlog.end_run(run_id, cost_usd=0.02, status="done")
+
+        pkg = EvidencePackage.from_trace(tlog, run_id)
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert pkg.chain_status == "intact"
+        assert pkg.event_count >= 3  # run_started + hitl_decision + run_ended
+        assert pkg.chain_root != ""
+        d = pkg.to_dict()
+        assert d["chain_root"] != ""
+        assert d["event_count"] >= 3
 
 
 # ---------------------------------------------------------------------------

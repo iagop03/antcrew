@@ -60,6 +60,8 @@ class EvidencePackage:
 
     chain_status:  str = "empty"   # intact | broken | empty | unverifiable
     chain_message: str = ""
+    chain_root:    str = ""        # final row_hash of the execution event chain
+    event_count:   int = 0         # total execution events in the chain
 
     generated_at:   str = ""
     engine_version: str = ""
@@ -131,15 +133,26 @@ class EvidencePackage:
             for d in decisions_raw
         ]
 
-        # Hash chain
-        chain_result   = trace_log.verify_hitl_chain()
-        valid          = chain_result.get("valid")
-        chain_message  = chain_result.get("message", "")
+        # Execution-wide hash chain (v6+); fall back to HITL-only chain for older DBs
+        exec_chain = getattr(trace_log, "verify_execution_chain", None)
+        chain_root = ""
+        event_count = 0
+        if exec_chain is not None:
+            exec_result = exec_chain(run_id)
+            valid = exec_result.get("valid")
+            chain_message = exec_result.get("message", "")
+            chain_root = exec_result.get("chain_root", "")
+            event_count = exec_result.get("total", 0)
+        else:
+            exec_result = trace_log.verify_hitl_chain()
+            valid = exec_result.get("valid")
+            chain_message = exec_result.get("message", "")
+
         if valid is True:
             chain_status = "intact"
         elif valid is False:
             chain_status = "broken"
-        elif not decisions:
+        elif not decisions and event_count == 0:
             chain_status = "empty"
         else:
             chain_status = "unverifiable"
@@ -155,6 +168,8 @@ class EvidencePackage:
             duration_seconds=duration_s,
             chain_status=chain_status,
             chain_message=chain_message,
+            chain_root=chain_root,
+            event_count=event_count,
             generated_at=_now_iso(),
             engine_version=_ver,
         )
@@ -197,6 +212,8 @@ class EvidencePackage:
             ],
             "chain_status":     self.chain_status,
             "chain_message":    self.chain_message,
+            "chain_root":       self.chain_root,
+            "event_count":      self.event_count,
             "generated_at":     self.generated_at,
             "engine_version":   self.engine_version,
             "document_hash":    self._document_hash(),
@@ -281,7 +298,7 @@ class EvidencePackage:
   <div class="k">Cost</div>        <div class="v">{cost_str}</div>
   <div class="k">Duration</div>    <div class="v">{dur_str}</div>
   <div class="k">HITL decisions</div> <div class="v">{self.hitl_count} ({self.approved_count} approved)</div>
-  <div class="k">Chain integrity</div> <div class="v"><span style="color:{chain_color}">{chain_icon} {_esc(self.chain_status)}</span></div>
+  <div class="k">Chain integrity</div> <div class="v"><span style="color:{chain_color}">{chain_icon} {_esc(self.chain_status)}</span>{f' — {self.event_count} event(s)' if self.event_count else ''}</div>
   <div class="k">Engine</div>      <div class="v">{_esc(self.engine_version)}</div>
   <div class="k">Generated</div>   <div class="v">{_esc(self.generated_at[:19].replace('T',' '))}</div>
 </div>
@@ -300,7 +317,8 @@ class EvidencePackage:
 
 <div class="footer">
   Document hash: {doc_hash}<br>
-  Chain status: {_esc(self.chain_status)}{(' — ' + _esc(self.chain_message)) if self.chain_message else ''}
+  Chain status: {_esc(self.chain_status)}{(' — ' + _esc(self.chain_message)) if self.chain_message else ''}<br>
+  {f'Chain root: {_esc(self.chain_root)}<br>' if self.chain_root else ''}Events recorded: {self.event_count}
 </div>
 </body>
 </html>"""
@@ -312,6 +330,8 @@ class EvidencePackage:
             "status":          self.status,
             "cost_usd":        self.cost_usd,
             "chain_status":    self.chain_status,
+            "chain_root":      self.chain_root,
+            "event_count":     self.event_count,
             "hitl_decisions":  [
                 {"step": d.step, "verdict": d.verdict,
                  "decided_at": d.decided_at, "row_hash": d.row_hash}
