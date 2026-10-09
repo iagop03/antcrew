@@ -9,6 +9,8 @@ from .architect import Architect
 from .bug_fixer import BugFixer
 from .cobol_analyzer import COBOLAnalyzerExecutor
 from .cobol_generator import COBOLGeneratorExecutor
+from .impact_analysis import ImpactAnalysisExecutor
+from .incident_triage import IncidentTriageExecutor
 from .cobol_refactorer import COBOLRefactorerExecutor
 from .cobol_test_generator import COBOLTestGeneratorExecutor
 from .cobol_validator import COBOLSyntaxValidatorExecutor
@@ -33,6 +35,8 @@ from .test_runner import TestRunner
 __all__ = [
     "COBOLAnalyzerExecutor",
     "COBOLGeneratorExecutor",
+    "ImpactAnalysisExecutor",
+    "IncidentTriageExecutor",
     "COBOLRefactorerExecutor",
     "COBOLSyntaxValidatorExecutor",
     "COBOLTestGeneratorExecutor",

@@ -5,6 +5,7 @@ from __future__ import annotations
 # decorators on the shared Typer instances above.
 from antcrew.cli import (
     augment_cmd,  # noqa: F401
+    cobol_incident_cmd,  # noqa: F401
     configure_cmd,  # noqa: F401
     cost_cmd,  # noqa: F401
     dag_cmd,  # noqa: F401
