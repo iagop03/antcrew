@@ -1,4 +1,4 @@
-"""Security tests: path traversal in write_back() and server API key auth."""
+"""Security tests: path traversal in write_back(), server API key auth, secret redaction."""
 from __future__ import annotations
 
 import pytest
@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from antcrew.cli._app import app
 from antcrew.core.writeback import write_back
+from antcrew.trace import _redact_secrets
 
 runner = CliRunner()
 
@@ -176,3 +177,55 @@ class TestServeCLIAuth:
         monkeypatch.setitem(sys.modules, "uvicorn", MagicMock())
         result = runner.invoke(app, ["serve", "--api-key", "tok123"])
         assert "auth enabled" in result.output
+
+
+# ── TraceLog secret redaction ─────────────────────────────────────────────────
+
+class TestSecretRedaction:
+    def test_openai_key_redacted(self):
+        result = _redact_secrets("sk-proj-abc123def456ghi789jkl012mno")
+        assert "sk-[REDACTED]" in result
+        assert "abc123" not in result
+
+    def test_anthropic_key_redacted(self):
+        result = _redact_secrets("sk-ant-api03-AbcDef12345678901234567")
+        assert "sk-[REDACTED]" in result
+
+    def test_bearer_token_redacted(self):
+        result = _redact_secrets("Authorization: Bearer eyJhbGciOiJIUzI1Ni.abc123")
+        assert "Bearer [REDACTED]" in result
+        assert "eyJhbGciOiJIUzI1Ni" not in result
+
+    def test_password_field_redacted(self):
+        result = _redact_secrets("config: password=hunter2")
+        assert "[REDACTED]" in result
+        assert "hunter2" not in result
+
+    def test_api_key_field_redacted(self):
+        result = _redact_secrets("api_key=my-super-secret")
+        assert "[REDACTED]" in result
+
+    def test_aws_access_key_redacted(self):
+        result = _redact_secrets("key=AKIAIOSFODNN7EXAMPLE")
+        assert "AKIA[REDACTED]" in result
+
+    def test_safe_text_unchanged(self):
+        original = "The agent returned a successful result with 42 tokens."
+        assert _redact_secrets(original) == original
+
+    def test_redact_applied_in_record_call(self, tmp_path):
+        from antcrew.trace import TraceLog
+        db = tmp_path / "trace.db"
+        tlog = TraceLog(str(db))
+        run_id = tlog.begin_run(thread_id="t1", request="test", team="dev")
+        tlog.record_call(
+            run_id=run_id,
+            agent_name="test_agent",
+            duration_ms=10.0,
+            prompt_snippet="sk-ant-api03-secretkey1234567890abc",
+            response_snippet="Bearer token123 was used",
+        )
+        calls = tlog.get_calls(run_id)
+        assert calls[0]["prompt_snippet"] == "sk-[REDACTED]"
+        assert "token123" not in calls[0]["response_snippet"]
+        tlog.close()

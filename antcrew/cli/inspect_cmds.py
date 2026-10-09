@@ -338,13 +338,18 @@ def verify_cmd(
 
     if output_json:
         import json as _j
+        cov = pkg.coverage
+        cov_level = cov.get("level", "empty")
+        chains_ok = exec_result.get("valid") is not False and hitl_result.get("valid") is not False
+        valid_overall = chains_ok and cov_level == "full"
         typer.echo(_j.dumps({
-            "run_id":         run_id,
+            "run_id":          run_id,
             "execution_chain": exec_result,
             "hitl_chain":      hitl_result,
             "document_hash":   pkg._document_hash(),
+            "coverage":        cov,
+            "valid":           valid_overall,
         }, indent=2))
-        valid_overall = exec_result.get("valid") is not False and hitl_result.get("valid") is not False
         raise typer.Exit(0 if valid_overall else 1)
 
     # ── Rich output ───────────────────────────────────────────────────────────

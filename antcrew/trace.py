@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json as _json
+import re as _re
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -36,6 +37,26 @@ from pathlib import Path
 from typing import Optional
 
 _CHAIN_GENESIS = "genesis"
+
+_SECRET_PATTERNS = [
+    # OpenAI / Anthropic API keys
+    (_re.compile(r'sk-[A-Za-z0-9\-_]{20,}'), 'sk-[REDACTED]'),
+    # AWS access keys
+    (_re.compile(r'AKIA[0-9A-Z]{16}'), 'AKIA[REDACTED]'),
+    # Bearer tokens
+    (_re.compile(r'(?i)(Bearer\s+)[A-Za-z0-9\-._~+/]+=*'), r'\1[REDACTED]'),
+    # password= / passwd= / secret= / token= assignments
+    (_re.compile(r'(?i)(password|passwd|secret|token|api_key|apikey)\s*=\s*\S+'), r'\1=[REDACTED]'),
+    # Generic hex secrets 32+ chars (UUIDs/hashes)
+    # Not redacted — too many false positives on IDs.
+]
+
+
+def _redact_secrets(text: str) -> str:
+    """Strip common credential patterns from a snippet before TraceLog storage."""
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def _hitl_row_hash(
@@ -322,8 +343,8 @@ class TraceLog:
         response are stored; otherwise those columns remain empty (snippets are
         always stored). ``user_full`` is required for :meth:`replay`.
         """
-        _psnip = prompt_snippet or (prompt_full[:300] if prompt_full else "")
-        _rsnip = response_snippet or (response_full[:300] if response_full else "")
+        _psnip = _redact_secrets(prompt_snippet or (prompt_full[:300] if prompt_full else ""))
+        _rsnip = _redact_secrets(response_snippet or (response_full[:300] if response_full else ""))
         call_started_at = _now_iso()
         cur = self._conn.execute(
             """INSERT INTO agent_calls
