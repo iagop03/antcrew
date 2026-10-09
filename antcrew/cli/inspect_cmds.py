@@ -89,7 +89,7 @@ def inspect_cmd(
         f"  HITL:     {pkg.hitl_count} decision(s), {pkg.approved_count} approved\n"
         f"  Chain:    [{chain_color}]{chain_icon} {pkg.chain_status}[/{chain_color}]"
         + (f" — {pkg.chain_message}" if pkg.chain_message and pkg.chain_status != "intact" else ""),
-        title=f"[bold]Evidence Package[/bold]",
+        title="[bold]Evidence Package[/bold]",
         border_style="blue",
     ))
 
@@ -174,7 +174,7 @@ def runs_cmd(
     trace_path = Path(str(trace).replace("~", str(Path.home())))
     if not trace_path.exists():
         console.print(
-            f"[dim]No runs recorded yet.[/dim]\n"
+            "[dim]No runs recorded yet.[/dim]\n"
             "[dim]Run [bold]antcrew issue[/bold] or [bold]antcrew run[/bold] to create one.[/dim]"
         )
         return
@@ -284,7 +284,7 @@ def evidence_cmd(
     if open_browser or (html is None and not output_json):
         import webbrowser
         webbrowser.open(out_path.resolve().as_uri())
-        console.print(f"  [dim]Opening in browser…[/dim]")
+        console.print("  [dim]Opening in browser…[/dim]")
 
 
 @app.command(name="verify")
@@ -353,8 +353,10 @@ def verify_cmd(
     overall_ok  = exec_valid is not False and hitl_valid is not False
 
     def _status(valid) -> str:
-        if valid is True:   return "[green]✓ INTACT[/green]"
-        if valid is False:  return "[red]✗ BROKEN[/red]"
+        if valid is True:
+            return "[green]✓ INTACT[/green]"
+        if valid is False:
+            return "[red]✗ BROKEN[/red]"
         return "[yellow]○ EMPTY[/yellow]"
 
     exec_total  = exec_result.get("total", 0)
