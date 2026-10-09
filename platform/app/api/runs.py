@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -1151,6 +1151,37 @@ async def attestation(
     return StreamingResponse(
         iter([content]),
         media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{run_id}/evidence")
+async def evidence_html(
+    run_id: str,
+    session: AsyncSession = Depends(get_session),
+    ctx: WorkspaceContext = Depends(get_workspace_context),
+) -> Any:
+    """Download a self-contained HTML evidence report for a run.
+
+    Renders the attestation as a printable, dark-themed HTML file — suitable
+    for archiving, sharing with compliance officers, or printing to PDF.
+    """
+    from app.api.compliance import _build_attestation, _build_evidence_html
+    from app.models.workspace import Workspace
+
+    run = await get_run(session, run_id)
+    if not run:
+        raise RunNotFoundError(run_id)
+    _assert_run_access(run, ctx)
+
+    ws: Optional[Workspace] = await session.get(Workspace, ctx.workspace_id)
+    ws_name = ws.name if ws else ""
+
+    body = await _build_attestation(run, session)
+    html = _build_evidence_html(body, ws_name=ws_name)
+    filename = f"evidence-{run_id[:12]}.html"
+    return HTMLResponse(
+        html,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

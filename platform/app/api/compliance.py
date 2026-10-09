@@ -171,6 +171,113 @@ async def _build_attestation(run: Any, session: Any) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# HTML evidence report (used by GET /runs/{run_id}/evidence)
+# ---------------------------------------------------------------------------
+
+def _build_evidence_html(attestation: dict, ws_name: str = "") -> str:
+    """Render a self-contained HTML evidence report from a platform attestation dict."""
+    import html as _html_lib
+
+    def _e(s) -> str:
+        return _html_lib.escape(str(s or ""))
+
+    run_id  = attestation.get("run_id", "")
+    team    = attestation.get("team", "—")
+    request = attestation.get("request_preview", "")
+    status  = attestation.get("status", "")
+    cost    = attestation.get("cost_usd") or 0.0
+    agents  = attestation.get("agents") or []
+    doc_hash= attestation.get("document_hash", "")
+    hmac_v  = attestation.get("hmac_sha256", "")
+    gen_at  = (attestation.get("attestation_generated_at") or "")[:19].replace("T", " ")
+    eng_ver = attestation.get("engine_version", "")
+    tl_ref  = attestation.get("tracelog_ref") or {}
+
+    status_color = {"done": "#34D399", "success": "#34D399", "error": "#f87171"}.get(status, "#FBBF24")
+
+    def _agent_rows() -> str:
+        if not agents:
+            return "<tr><td colspan='5' style='color:#4E6A85;text-align:center'>No agent calls recorded</td></tr>"
+        rows = []
+        for a in agents:
+            dur = f"{a.get('duration_s', 0):.1f}s"
+            rows.append(
+                f"<tr>"
+                f"<td>{_e(a.get('agent_name',''))}</td>"
+                f"<td style='color:#4E6A85;font-family:monospace;font-size:11px'>{_e(a.get('governance_hash','')[:16] or '—')}</td>"
+                f"<td style='text-align:right'>{a.get('tokens_in',0)}↑ {a.get('tokens_out',0)}↓</td>"
+                f"<td style='text-align:right'>${a.get('cost_usd',0):.4f}</td>"
+                f"<td style='text-align:right'>{dur}</td>"
+                f"</tr>"
+            )
+        return "\n".join(rows)
+
+    tracelog_section = ""
+    if tl_ref:
+        tracelog_section = f"""
+<h2>TraceLog integrity</h2>
+<div class="kv">
+  <div class="k">Algorithm</div><div class="v">{_e(tl_ref.get('algorithm',''))}</div>
+  <div class="k">Digest</div><div class="v">{_e(tl_ref.get('digest',''))}</div>
+  <div class="k">Entries</div><div class="v">{_e(tl_ref.get('entries','—'))}</div>
+</div>"""
+
+    hmac_section = ""
+    if hmac_v:
+        hmac_section = f"  HMAC-SHA256: {_e(hmac_v)}<br>"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evidence · {_e(run_id[:16])}</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#080F1C;color:#E8EDF5;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px;padding:32px 24px;max-width:900px;margin:0 auto}}
+  h1{{font-size:20px;font-weight:700;margin-bottom:4px;letter-spacing:-.02em}}
+  h2{{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#4E6A85;margin:28px 0 12px}}
+  .kv{{display:grid;grid-template-columns:140px 1fr;gap:8px 16px;margin-bottom:20px}}
+  .kv .k{{color:#4E6A85;font-size:12px}}
+  .kv .v{{font-family:monospace;font-size:12px;word-break:break-all}}
+  table{{width:100%;border-collapse:collapse;font-size:13px}}
+  th{{padding:8px 12px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#4E6A85;border-bottom:1px solid #1E2D42}}
+  td{{padding:9px 12px;border-bottom:1px solid #0F1929}}
+  .footer{{margin-top:32px;padding-top:16px;border-top:1px solid #1E2D42;font-size:11px;color:#354E65;font-family:monospace;word-break:break-all}}
+  @media print{{body{{background:#fff;color:#111}}th{{color:#555}}td{{border-color:#ddd}}.footer{{color:#888}}}}
+</style>
+</head>
+<body>
+<h1>Evidence Package</h1>
+<p style="color:#7A9AB5;font-size:13px;margin:4px 0 24px">{_e(request or '(no request recorded)')}</p>
+
+<div class="kv">
+  <div class="k">Run ID</div>    <div class="v">{_e(run_id)}</div>
+  <div class="k">Workspace</div> <div class="v">{_e(ws_name or '—')}</div>
+  <div class="k">Team</div>      <div class="v">{_e(team)}</div>
+  <div class="k">Status</div>    <div class="v"><span style="color:{status_color}">{_e(status)}</span></div>
+  <div class="k">Cost</div>      <div class="v">${cost:.4f}</div>
+  <div class="k">Engine</div>    <div class="v">{_e(eng_ver)}</div>
+  <div class="k">Generated</div> <div class="v">{_e(gen_at)}</div>
+</div>
+
+<h2>Agents</h2>
+<table>
+<thead><tr><th>Agent</th><th>Governance hash</th><th>Tokens</th><th>Cost</th><th>Duration</th></tr></thead>
+<tbody>{_agent_rows()}</tbody>
+</table>
+
+{tracelog_section}
+
+<div class="footer">
+  Document hash: {_e(doc_hash)}<br>
+  {hmac_section}Platform: antcrew-platform · Engine: {_e(eng_ver)}
+</div>
+</body>
+</html>"""
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 

@@ -67,6 +67,12 @@
                 Attestation ↓
               </a>
             </template>
+            <template x-if="run.status === 'success'">
+              <a :href="`/runs/${run.run_id}/evidence`"
+                 class="text-xs px-2 py-0.5 rounded border border-teal-800 text-teal-400 hover:bg-teal-950 transition">
+                Evidence ↓
+              </a>
+            </template>
             <a :href="`/static/studio.html?run_id=${run.run_id}`" target="_blank"
                class="text-xs px-2 py-0.5 rounded border border-violet-800 text-violet-400 hover:bg-violet-950 transition">
               Studio ↗

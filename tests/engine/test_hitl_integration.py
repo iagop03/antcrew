@@ -493,6 +493,150 @@ class TestEvidencePackage:
 
 
 # ---------------------------------------------------------------------------
+# Governance guarantees — failure and edge-case contract
+# ---------------------------------------------------------------------------
+
+class TestGovernanceGuarantees:
+    """Explicit tests that the gate contract holds under failure conditions.
+
+    These complement the happy-path coverage above with scenarios the analysis
+    flagged as critical: callback errors must not approve, reject must not leak
+    approval artifacts, duplicate decisions must both be recorded.
+    """
+
+    def test_callback_error_never_produces_approval(self, goal):
+        """A callback exception must result in fail-closed, never in an approval."""
+        def _exploding(_):
+            raise ConnectionError("review service unreachable")
+
+        r = _reviewer(_exploding)
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert approved == [], "Callback exception must never produce an approval artifact"
+
+        # Fail-closed: the verdict in the feedback artifact must be timeout, not approved
+        feedback_artifacts = [a for a in result.delta.created if a.content.get("verdict")]
+        assert feedback_artifacts, "Callback exception must produce a feedback artifact"
+        assert all(a.content["verdict"] != "approved" for a in feedback_artifacts), (
+            "Callback exception must never produce an approved verdict"
+        )
+
+    def test_reject_never_produces_approval_artifact(self, goal):
+        """A reject verdict must produce zero artifacts with approved=True."""
+        r = _reviewer(lambda _: {"verdict": "reject", "feedback": "too risky"})
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert approved == [], "Reject must never create an approved artifact"
+
+    def test_timeout_never_produces_approval_artifact(self, goal):
+        """A timeout verdict (fail-closed) must produce zero artifacts with approved=True."""
+        r = _reviewer(lambda _: {"verdict": "timeout"})
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert approved == [], "Timeout must never create an approved artifact"
+
+    def test_duplicate_decisions_both_recorded(self, goal):
+        """Calling the reviewer twice on the same run_id records two independent decisions.
+
+        Covers restart/replay: if the gate fires again after a process restart, both calls
+        must be persisted — no silent dedup that could mask a replay attack or hide a second
+        approval from an unauthorized reviewer.
+        """
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="dup-t1", request="dup test", team="test")
+
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "alice"},
+            trace_log=tlog,
+            run_id=run_id,
+        )
+        r.execute(_store_with(), goal)      # first gate
+        r.execute(_store_with(), goal)      # second gate (simulates restart)
+
+        tlog.end_run(run_id, cost_usd=0.0, status="done")
+        decisions = tlog.get_hitl_decisions(run_id)
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert len(decisions) == 2, (
+            "Both gate invocations must be recorded independently — "
+            "silent dedup would mask replay attacks"
+        )
+
+    def test_reject_without_reviewer_id_still_persisted(self, goal):
+        """An anonymous rejection (no reviewer_id) is still written to TraceLog.
+
+        Missing reviewer_id degrades auditability but must not silently swallow
+        the decision or fail the persistence path.
+        """
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="anon-t1", request="anon test", team="test")
+
+        r = _reviewer(
+            lambda _: {"verdict": "reject", "feedback": "not acceptable"},
+            trace_log=tlog,
+            run_id=run_id,
+        )
+        r.execute(_store_with(), goal)
+        tlog.end_run(run_id, cost_usd=0.0, status="rejected")
+
+        decisions = tlog.get_hitl_decisions(run_id)
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert len(decisions) == 1
+        assert decisions[0]["decision"] == "reject"
+        assert decisions[0]["reviewer_id"] == ""   # empty, but recorded
+
+    def test_coverage_manifest_populated_after_run(self, goal):
+        """EvidencePackage.coverage reflects which event types were recorded."""
+        from antcrew.evidence import EvidencePackage
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="cov-t1", request="coverage test", team="test")
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "alice"},
+            trace_log=tlog,
+            run_id=run_id,
+        )
+        r.execute(_store_with(), goal)
+        tlog.end_run(run_id, cost_usd=0.0, status="done")
+
+        pkg = EvidencePackage.from_trace(tlog, run_id)
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        cov = pkg.coverage
+        assert cov["level"] == "full", f"Expected full coverage, got: {cov}"
+        assert cov["has_run_start"] is True
+        assert cov["has_run_end"] is True
+        assert cov["has_hitl_decisions"] is True
+        assert "run_started" in cov["event_types"]
+        assert "run_ended" in cov["event_types"]
+        assert "hitl_decision" in cov["event_types"]
+        # coverage is also in to_dict()
+        d = pkg.to_dict()
+        assert d["coverage"]["level"] == "full"
+
+
+# ---------------------------------------------------------------------------
 # hitl_decision_from_flexible bridge
 # ---------------------------------------------------------------------------
 

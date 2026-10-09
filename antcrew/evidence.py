@@ -62,6 +62,7 @@ class EvidencePackage:
     chain_message: str = ""
     chain_root:    str = ""        # final row_hash of the execution event chain
     event_count:   int = 0         # total execution events in the chain
+    coverage:      dict = field(default_factory=dict)  # event-type coverage manifest
 
     generated_at:   str = ""
     engine_version: str = ""
@@ -157,6 +158,35 @@ class EvidencePackage:
         else:
             chain_status = "unverifiable"
 
+        # Coverage manifest — which event types were recorded in the execution chain
+        get_events_fn = getattr(trace_log, "get_execution_events", None)
+        raw_events = get_events_fn(run_id) if get_events_fn is not None else []
+        event_type_counts: dict[str, int] = {}
+        for ev in raw_events:
+            t = ev.get("event_type", "unknown")
+            event_type_counts[t] = event_type_counts.get(t, 0) + 1
+
+        has_start = "run_started" in event_type_counts
+        has_end   = "run_ended"   in event_type_counts
+        has_hitl  = "hitl_decision" in event_type_counts
+        has_agent = "agent_call"  in event_type_counts
+
+        if not event_type_counts:
+            cov_level = "empty"
+        elif has_start and has_end:
+            cov_level = "full"
+        else:
+            cov_level = "partial"
+
+        coverage = {
+            "level":              cov_level,
+            "event_types":        event_type_counts,
+            "has_run_start":      has_start,
+            "has_run_end":        has_end,
+            "has_hitl_decisions": has_hitl,
+            "has_agent_calls":    has_agent,
+        }
+
         return cls(
             run_id=run_id,
             team=run.get("team", ""),
@@ -170,6 +200,7 @@ class EvidencePackage:
             chain_message=chain_message,
             chain_root=chain_root,
             event_count=event_count,
+            coverage=coverage,
             generated_at=_now_iso(),
             engine_version=_ver,
         )
@@ -214,6 +245,7 @@ class EvidencePackage:
             "chain_message":    self.chain_message,
             "chain_root":       self.chain_root,
             "event_count":      self.event_count,
+            "coverage":         self.coverage,
             "generated_at":     self.generated_at,
             "engine_version":   self.engine_version,
             "document_hash":    self._document_hash(),
@@ -299,6 +331,7 @@ class EvidencePackage:
   <div class="k">Duration</div>    <div class="v">{dur_str}</div>
   <div class="k">HITL decisions</div> <div class="v">{self.hitl_count} ({self.approved_count} approved)</div>
   <div class="k">Chain integrity</div> <div class="v"><span style="color:{chain_color}">{chain_icon} {_esc(self.chain_status)}</span>{f' — {self.event_count} event(s)' if self.event_count else ''}</div>
+  <div class="k">Coverage</div>      <div class="v">{_esc(self.coverage.get('level', '—'))}{(' — ' + ', '.join(f'{k}×{v}' for k, v in self.coverage.get('event_types', {}).items())) if self.coverage.get('event_types') else ''}</div>
   <div class="k">Engine</div>      <div class="v">{_esc(self.engine_version)}</div>
   <div class="k">Generated</div>   <div class="v">{_esc(self.generated_at[:19].replace('T',' '))}</div>
 </div>
@@ -332,6 +365,7 @@ class EvidencePackage:
             "chain_status":    self.chain_status,
             "chain_root":      self.chain_root,
             "event_count":     self.event_count,
+            "coverage_level":  self.coverage.get("level", ""),
             "hitl_decisions":  [
                 {"step": d.step, "verdict": d.verdict,
                  "decided_at": d.decided_at, "row_hash": d.row_hash}
