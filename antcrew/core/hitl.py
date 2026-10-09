@@ -66,6 +66,7 @@ class FlexibleHITL:
         checkpoints: list[str] | None = None,
         trace_log: Optional["TraceLog"] = None,
         run_id: str = "",
+        replay_decisions: bool = False,
     ) -> None:
         self._callback = callback
         self._auto_approve = auto_approve
@@ -73,6 +74,7 @@ class FlexibleHITL:
         self._history: list[tuple[str, HITLDecision]] = []
         self._trace_log = trace_log
         self._run_id = run_id
+        self._replay_decisions = replay_decisions
 
     def register(self, callback: ApprovalCallback) -> None:
         """Replace the approval callback at runtime."""
@@ -97,6 +99,35 @@ class FlexibleHITL:
         """
         if self._checkpoints is not None and checkpoint not in self._checkpoints:
             return True
+
+        # Restart recovery: if replay_decisions is set and a TraceLog decision
+        # already exists for this checkpoint, reuse it without calling the callback.
+        _effective_run_id = run_id or self._run_id
+        if self._replay_decisions and self._trace_log is not None and _effective_run_id:
+            try:
+                past = self._trace_log.get_hitl_decisions(_effective_run_id)
+                for row in past:
+                    if row.get("step") == checkpoint:
+                        raw_action = row.get("decision", "reject")
+                        try:
+                            action = HITLAction(raw_action)
+                        except ValueError:
+                            action = HITLAction.REJECT
+                        decision = HITLDecision(
+                            action=action,
+                            reason=row.get("reason", "replayed_from_tracelog"),
+                            reviewer_id=row.get("reviewer_id", ""),
+                        )
+                        logger.info(
+                            "HITL gate '%s' replayed cached decision '%s' for run %r",
+                            checkpoint, raw_action, _effective_run_id,
+                        )
+                        self._history.append((checkpoint, decision))
+                        if decision.action == HITLAction.MODIFY and decision.modified_state:
+                            state.update(decision.modified_state)
+                        return decision.approved
+            except Exception as exc:
+                logger.warning("HITL replay lookup failed: %r — proceeding to callback", exc)
 
         if self._auto_approve:
             decision = HITLDecision(action=HITLAction.APPROVE, reason="auto")
@@ -125,7 +156,7 @@ class FlexibleHITL:
             state.update(decision.modified_state)
 
         # Persist to TraceLog when available
-        _effective_run_id = run_id or self._run_id
+        _effective_run_id = run_id or self._run_id  # noqa: F841 (already computed above for replay)
         if self._trace_log is not None and _effective_run_id:
             try:
                 self._trace_log.record_hitl(

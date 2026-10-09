@@ -55,6 +55,7 @@ def _reviewer(
     max_rejections: int = 3,
     trace_log=None,
     run_id: str = "",
+    allowed_reviewers=None,
 ) -> HitlReviewer:
     return HitlReviewer(
         reviewed_capability=capability,
@@ -63,6 +64,7 @@ def _reviewer(
         max_rejections=max_rejections,
         trace_log=trace_log,
         run_id=run_id,
+        allowed_reviewers=allowed_reviewers,
     )
 
 
@@ -634,6 +636,327 @@ class TestGovernanceGuarantees:
         # coverage is also in to_dict()
         d = pkg.to_dict()
         assert d["coverage"]["level"] == "full"
+
+
+# ---------------------------------------------------------------------------
+# Unauthorized reviewer — HitlReviewer.allowed_reviewers enforcement
+# ---------------------------------------------------------------------------
+
+class TestUnauthorizedReviewer:
+    """HitlReviewer must reject decisions from reviewers not in allowed_reviewers."""
+
+    def test_unauthorized_reviewer_is_rejected(self, goal):
+        """A reviewer not in allowed_reviewers cannot produce an approval."""
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "eve@evil.com"},
+            allowed_reviewers={"alice@company.com"},
+        )
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert approved == [], "Reviewer not in allowed_reviewers must not approve"
+
+    def test_authorized_reviewer_is_accepted(self, goal):
+        """A reviewer in allowed_reviewers can approve normally."""
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "alice@company.com"},
+            allowed_reviewers={"alice@company.com", "bob@company.com"},
+        )
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert len(approved) == 1, "Authorized reviewer must produce an approval artifact"
+
+    def test_empty_allowed_reviewers_rejects_all(self, goal):
+        """allowed_reviewers=set() means no reviewer is authorized."""
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "anyone@example.com"},
+            allowed_reviewers=set(),
+        )
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert approved == [], "Empty allowed_reviewers set must reject every reviewer"
+
+    def test_no_restriction_accepts_any_reviewer(self, goal):
+        """When allowed_reviewers is None (default), any reviewer_id is accepted."""
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "anyone@anywhere.io"},
+        )
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert len(approved) == 1, "No restriction: any reviewer_id should approve"
+
+    def test_unauthorized_reviewer_feedback_names_reviewer(self, goal):
+        """The rejection feedback must include the unauthorized reviewer_id for audit."""
+        r = _reviewer(
+            lambda _: {"verdict": "approve", "reviewer_id": "outsider@evil.io"},
+            allowed_reviewers={"alice@company.com"},
+        )
+        result = r.execute(_store_with(), goal)
+
+        feedback = [a for a in result.delta.created if "unauthorized_reviewer" in a.content.get("feedback", "")]
+        assert feedback, "Feedback artifact must mention unauthorized_reviewer"
+
+
+# ---------------------------------------------------------------------------
+# Persistence failure — TraceLog write error must not affect gate enforcement
+# ---------------------------------------------------------------------------
+
+class TestPersistenceFailure:
+    """A TraceLog write failure must never change the gate verdict."""
+
+    def _reviewer_with_broken_trace(self, callback, verdict):
+        """HitlReviewer wired to a TraceLog whose record_hitl always raises."""
+        from unittest.mock import MagicMock
+        broken_tlog = MagicMock()
+        broken_tlog.record_hitl.side_effect = OSError("disk full")
+
+        return _reviewer(callback, trace_log=broken_tlog, run_id="run-persist-fail")
+
+    def test_tracelog_failure_does_not_block_approve(self, goal):
+        """If TraceLog.record_hitl raises, the approve verdict still goes through."""
+        r = self._reviewer_with_broken_trace(
+            lambda _: {"verdict": "approve", "reviewer_id": "alice"},
+            "approve",
+        )
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert len(approved) == 1, (
+            "TraceLog write failure must not block an approve — observability "
+            "failure must not become a DoS on the gate"
+        )
+
+    def test_tracelog_failure_does_not_convert_reject_to_approve(self, goal):
+        """If TraceLog.record_hitl raises on a reject, the reject still stands."""
+        r = self._reviewer_with_broken_trace(
+            lambda _: {"verdict": "reject", "feedback": "not acceptable"},
+            "reject",
+        )
+        result = r.execute(_store_with(), goal)
+
+        approved = [a for a in result.delta.created if a.content.get("approved") is True]
+        assert approved == [], (
+            "TraceLog write failure on a reject must never produce an approval"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Restart recovery — FlexibleHITL replays cached decisions from TraceLog
+# ---------------------------------------------------------------------------
+
+class TestRestartRecovery:
+    """FlexibleHITL with replay_decisions=True must reuse TraceLog decisions on restart."""
+
+    def test_gate_uses_cached_decision_on_restart(self):
+        """After a restart the gate must replay the stored decision without re-asking."""
+        import tempfile
+        from pathlib import Path
+        from antcrew.core.hitl import FlexibleHITL, HITLAction, HITLDecision
+        from antcrew.core.state import TeamState
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="restart-t1", request="restart test", team="test")
+
+        call_count = [0]
+
+        def _callback(checkpoint, state):
+            call_count[0] += 1
+            return HITLDecision(action=HITLAction.APPROVE, reviewer_id="alice", reason="lgtm")
+
+        # First run — callback fires once and records decision
+        hitl1 = FlexibleHITL(callback=_callback, trace_log=tlog, run_id=run_id, replay_decisions=True)
+        state = TeamState()
+        hitl1.gate("plan_review", state)
+        assert call_count[0] == 1
+
+        # Simulate restart: new FlexibleHITL instance, same run_id, replay_decisions=True
+        hitl2 = FlexibleHITL(callback=_callback, trace_log=tlog, run_id=run_id, replay_decisions=True)
+        state2 = TeamState()
+        result = hitl2.gate("plan_review", state2)
+
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert call_count[0] == 1, (
+            "Callback must NOT fire again after restart — decision must be replayed from TraceLog"
+        )
+        assert result is True, "Replayed approve decision must return True"
+
+    def test_restart_without_replay_calls_callback_again(self):
+        """Without replay_decisions=True the gate calls the callback on every execution."""
+        import tempfile
+        from pathlib import Path
+        from antcrew.core.hitl import FlexibleHITL, HITLAction, HITLDecision
+        from antcrew.core.state import TeamState
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="no-replay-t1", request="no replay", team="test")
+
+        call_count = [0]
+
+        def _callback(checkpoint, state):
+            call_count[0] += 1
+            return HITLDecision(action=HITLAction.APPROVE, reviewer_id="alice")
+
+        hitl1 = FlexibleHITL(callback=_callback, trace_log=tlog, run_id=run_id)
+        hitl1.gate("plan_review", TeamState())
+
+        hitl2 = FlexibleHITL(callback=_callback, trace_log=tlog, run_id=run_id)
+        hitl2.gate("plan_review", TeamState())
+
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert call_count[0] == 2, "Without replay_decisions, each gate invocation calls the callback"
+
+    def test_replayed_reject_still_rejects(self):
+        """A cached reject replayed after restart must still return False."""
+        import tempfile
+        from pathlib import Path
+        from antcrew.core.hitl import FlexibleHITL, HITLAction, HITLDecision
+        from antcrew.core.state import TeamState
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="reject-replay-t1", request="reject replay", team="test")
+
+        hitl1 = FlexibleHITL(
+            callback=lambda cp, s: HITLDecision(action=HITLAction.REJECT, reason="too risky"),
+            trace_log=tlog, run_id=run_id, replay_decisions=True,
+        )
+        hitl1.gate("plan_review", TeamState())
+
+        callback_fired = [False]
+        def _should_not_fire(cp, s):
+            callback_fired[0] = True
+            return HITLDecision(action=HITLAction.APPROVE)
+
+        hitl2 = FlexibleHITL(callback=_should_not_fire, trace_log=tlog, run_id=run_id, replay_decisions=True)
+        result = hitl2.gate("plan_review", TeamState())
+
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert not callback_fired[0], "Callback must not fire when replaying from TraceLog"
+        assert result is False, "Replayed reject must return False"
+
+
+# ---------------------------------------------------------------------------
+# Chain integrity — insertion and reordering must be detected
+# ---------------------------------------------------------------------------
+
+class TestChainIntegrity:
+    """verify_execution_chain must detect insertions and reordering, not only field edits."""
+
+    def _populated_tlog(self, db_path):
+        from antcrew.trace import TraceLog
+        tlog = TraceLog(db_path)
+        run_id = tlog.begin_run(thread_id="chain-t1", request="chain test", team="test")
+        tlog.record_call(run_id=run_id, agent_name="agent_a", model_id="test", duration_ms=10, input_tokens=10, output_tokens=20, cost_usd=0.01)
+        tlog.record_call(run_id=run_id, agent_name="agent_b", model_id="test", duration_ms=10, input_tokens=10, output_tokens=20, cost_usd=0.01)
+        tlog.end_run(run_id, cost_usd=0.02, status="done")
+        return tlog, run_id
+
+    def test_chain_intact_on_unmodified_db(self):
+        """verify_execution_chain returns valid=True on an untouched database."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog, run_id = self._populated_tlog(db_path)
+        result = tlog.verify_execution_chain(run_id)
+        tlog.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert result["valid"] is True
+
+    def test_chain_detects_injected_event(self):
+        """Inserting an extra row with a fabricated hash breaks the chain."""
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog, run_id = self._populated_tlog(db_path)
+        tlog.close()
+
+        # Directly inject a row between sequence 2 and 3, renumbering sequence 3→4
+        con = sqlite3.connect(db_path)
+        con.execute(
+            "UPDATE execution_events SET sequence = 4 WHERE run_id=? AND sequence=3",
+            (run_id,),
+        )
+        con.execute(
+            """INSERT INTO execution_events
+               (run_id, sequence, event_type, actor, payload_hash, previous_hash, row_hash, recorded_at)
+               VALUES (?, 3, 'agent_call', 'injected', 'fakehash', 'fakeprev', 'fakerow', datetime('now'))""",
+            (run_id,),
+        )
+        con.commit()
+        con.close()
+
+        tlog2 = TraceLog(db_path)
+        result = tlog2.verify_execution_chain(run_id)
+        tlog2.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert result["valid"] is False, "Injected row must break the chain"
+
+    def test_chain_detects_reordered_events(self):
+        """Swapping the sequence numbers of two events breaks the chain."""
+        import sqlite3
+        import tempfile
+        from pathlib import Path
+        from antcrew.trace import TraceLog
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+
+        tlog, run_id = self._populated_tlog(db_path)
+        tlog.close()
+
+        con = sqlite3.connect(db_path)
+        # Swap sequences 2 and 3 (agent_a call and agent_b call)
+        con.execute(
+            "UPDATE execution_events SET sequence = 99 WHERE run_id=? AND sequence=2",
+            (run_id,),
+        )
+        con.execute(
+            "UPDATE execution_events SET sequence = 2 WHERE run_id=? AND sequence=3",
+            (run_id,),
+        )
+        con.execute(
+            "UPDATE execution_events SET sequence = 3 WHERE run_id=? AND sequence=99",
+            (run_id,),
+        )
+        con.commit()
+        con.close()
+
+        tlog2 = TraceLog(db_path)
+        result = tlog2.verify_execution_chain(run_id)
+        tlog2.close()
+        Path(db_path).unlink(missing_ok=True)
+
+        assert result["valid"] is False, "Reordered events must break the chain"
 
 
 # ---------------------------------------------------------------------------

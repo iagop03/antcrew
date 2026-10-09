@@ -94,18 +94,20 @@ class HitlReviewer(BaseExecutor):
         max_rejections: int = 3,
         trace_log: "Optional[TraceLog]" = None,
         run_id: str = "",
+        allowed_reviewers: "Optional[set[str]]" = None,
     ) -> None:
         super().__init__(llm=None)
-        self._reviewed_art_id = ArtifactId(artifact_id or reviewed_capability)
-        self._approval_art_id = ArtifactId(f"{reviewed_capability}_approval")
-        self._feedback_art_id = ArtifactId(f"{reviewed_capability}_feedback")
-        self._request_review  = request_review
-        self.channel          = channel
-        self._feedback_schema = feedback_schema
-        self._max_rejections  = max_rejections
-        self._reject_count    = 0
-        self._trace_log       = trace_log
-        self._run_id          = run_id
+        self._reviewed_art_id   = ArtifactId(artifact_id or reviewed_capability)
+        self._approval_art_id   = ArtifactId(f"{reviewed_capability}_approval")
+        self._feedback_art_id   = ArtifactId(f"{reviewed_capability}_feedback")
+        self._request_review    = request_review
+        self.channel            = channel
+        self._feedback_schema   = feedback_schema
+        self._max_rejections    = max_rejections
+        self._reject_count      = 0
+        self._trace_log         = trace_log
+        self._run_id            = run_id
+        self._allowed_reviewers = allowed_reviewers
 
         exists_cond   = ConditionId(triggers_condition or f"{reviewed_capability}_exists")
         approved_cond = ConditionId(f"{reviewed_capability}_approved")
@@ -174,6 +176,18 @@ class HitlReviewer(BaseExecutor):
         verdict     = verdict_data.get("verdict", "timeout")
         feedback    = (verdict_data.get("feedback") or "").strip()
         reviewer_id = (verdict_data.get("reviewer_id") or "").strip()
+
+        # Enforce allowed_reviewers: an unrecognised reviewer cannot approve.
+        if (
+            self._allowed_reviewers is not None
+            and reviewer_id not in self._allowed_reviewers
+        ):
+            _log.warning(
+                "HitlReviewer '%s': reviewer %r not in allowed_reviewers — overriding to reject",
+                self._reviewed_art_id, reviewer_id,
+            )
+            verdict  = "reject"
+            feedback = f"unauthorized_reviewer: {reviewer_id!r}"
 
         if self._trace_log is not None and self._run_id:
             try:

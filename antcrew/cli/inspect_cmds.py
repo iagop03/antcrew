@@ -398,6 +398,76 @@ def verify_cmd(
         raise typer.Exit(1)
 
 
+@app.command(name="verify-package")
+def verify_package_cmd(
+    package: Path = typer.Argument(..., help="Path to an exported EvidencePackage JSON file"),
+    output_json: bool = typer.Option(False, "--json", help="Output raw JSON result"),
+) -> None:
+    """Verify an exported EvidencePackage JSON independently of the live TraceLog.
+
+    Checks that the document_hash recorded in the package matches the SHA-256
+    of the package body.  Use this to verify a package handed to an auditor
+    or stored in a third-party system, without needing the original database.
+
+    \b
+    Examples:
+        antcrew verify-package evidence-a3f4b9c1.json
+        antcrew verify-package evidence-a3f4b9c1.json --json
+    """
+    import hashlib
+    import json as _j
+
+    from rich.panel import Panel
+
+    if not package.exists():
+        console.print(f"[red]File not found:[/] {package}")
+        raise typer.Exit(1)
+
+    try:
+        raw = package.read_text(encoding="utf-8")
+        doc = _j.loads(raw)
+    except Exception as exc:
+        console.print(f"[red]Failed to parse package:[/] {exc}")
+        raise typer.Exit(1)
+
+    claimed_hash = doc.get("document_hash", "")
+    body = {k: v for k, v in doc.items() if k not in ("document_hash", "hmac_sha256")}
+    computed_hash = "sha256:" + hashlib.sha256(
+        _j.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+    valid = claimed_hash == computed_hash
+    run_id = doc.get("run_id", "unknown")
+
+    if output_json:
+        typer.echo(_j.dumps({
+            "valid": valid,
+            "run_id": run_id,
+            "claimed_hash": claimed_hash,
+            "computed_hash": computed_hash,
+        }, indent=2))
+        raise typer.Exit(0 if valid else 1)
+
+    if valid:
+        console.print(Panel(
+            f"  Run ID:        [cyan]{run_id}[/cyan]\n"
+            f"  Document hash: [dim]{claimed_hash[:48]}…[/dim]\n\n"
+            "  Hash verified against package body.",
+            title="[bold green]Package VALID[/bold green]",
+            border_style="green",
+        ))
+    else:
+        console.print(Panel(
+            f"  Run ID:        [cyan]{run_id}[/cyan]\n"
+            f"  Claimed:   [red]{claimed_hash[:48]}…[/red]\n"
+            f"  Computed:  [yellow]{computed_hash[:48]}…[/yellow]\n\n"
+            "  The package has been modified after export.",
+            title="[bold red]Package INVALID[/bold red]",
+            border_style="red",
+        ))
+        raise typer.Exit(1)
+
+
 @app.command()
 def show(
     path: Path = typer.Argument(..., help="Path to a JSON state file saved with --save"),
