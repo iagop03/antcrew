@@ -19,7 +19,6 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
 
 
 @dataclass
@@ -256,8 +255,6 @@ class EvidencePackage:
 
     def to_html(self) -> str:
         """Render a self-contained HTML evidence report suitable for archiving or printing to PDF."""
-        d = self.to_dict()
-
         chain_color = {"intact": "#34D399", "broken": "#f87171", "empty": "#7A9AB5", "unverifiable": "#FBBF24"}.get(self.chain_status, "#7A9AB5")
         chain_icon  = {"intact": "✓", "broken": "✗", "empty": "○", "unverifiable": "?"}.get(self.chain_status, "?")
         status_color = "#34D399" if self.status == "done" else ("#f87171" if self.status == "error" else "#FBBF24")

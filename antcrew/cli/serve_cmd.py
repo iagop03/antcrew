@@ -106,14 +106,17 @@ td{{padding:10px 12px;border-bottom:1px solid #0F1929}}tr:hover td{{background:#
 
         def _serve_evidence_page(self, run_id: str):
             if not trace_path.exists():
-                self.send_error(404); return
+                self.send_error(404)
+                return
             tlog = TraceLog(str(trace_path))
             run = tlog.get_run(run_id)
             if run is None:
                 all_runs = tlog.list_runs(limit=200)
                 candidates = [r for r in all_runs if r["id"].startswith(run_id)]
                 if not candidates:
-                    tlog.close(); self.send_error(404); return
+                    tlog.close()
+                    self.send_error(404)
+                    return
                 run_id = candidates[0]["id"]
             pkg = EvidencePackage.from_trace(tlog, run_id)
             tlog.close()
@@ -121,7 +124,8 @@ td{{padding:10px 12px;border-bottom:1px solid #0F1929}}tr:hover td{{background:#
 
         def _api_runs(self):
             if not trace_path.exists():
-                self._send_json([]); return
+                self._send_json([])
+                return
             tlog = TraceLog(str(trace_path))
             runs = tlog.list_runs(limit=50)
             tlog.close()
@@ -129,7 +133,8 @@ td{{padding:10px 12px;border-bottom:1px solid #0F1929}}tr:hover td{{background:#
 
         def _api_evidence(self, run_id: str):
             if not trace_path.exists():
-                self.send_error(404); return
+                self.send_error(404)
+                return
             tlog = TraceLog(str(trace_path))
             pkg = EvidencePackage.from_trace(tlog, run_id)
             tlog.close()
