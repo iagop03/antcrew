@@ -389,8 +389,25 @@ def verify_cmd(
     lines.append("")
     lines.append(f"  Document hash: [dim]{doc_hash[:48]}…[/dim]")
 
-    border = "green" if overall_ok else "red"
-    title  = "[bold green]Verification PASSED[/bold green]" if overall_ok else "[bold red]Verification FAILED[/bold red]"
+    # Coverage warning: a chain can be intact but incomplete (e.g. run_ended missing).
+    # An intact but partial chain must not be presented as a complete verified execution.
+    cov = pkg.coverage
+    cov_level = cov.get("level", "empty")
+    if exec_valid is True and cov_level != "full":
+        lines.append("")
+        lines.append(
+            f"  [yellow]⚠ Coverage: {cov_level}[/yellow] — "
+            + ("run_ended missing" if not cov.get("has_run_end") else "")
+            + ("run_started missing" if not cov.get("has_run_start") else "")
+            + " — chain is intact but execution record is incomplete"
+        )
+        overall_ok = False  # incomplete chain is not a passing verification
+
+    border = "green" if overall_ok else ("yellow" if cov_level == "partial" else "red")
+    title  = "[bold green]Verification PASSED[/bold green]" if overall_ok else (
+        "[bold yellow]Verification INCOMPLETE[/bold yellow]" if cov_level == "partial"
+        else "[bold red]Verification FAILED[/bold red]"
+    )
 
     console.print(Panel("\n".join(lines), title=title, border_style=border))
 

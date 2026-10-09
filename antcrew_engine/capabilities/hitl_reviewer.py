@@ -33,8 +33,10 @@ feedback_schema:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import uuid
 from typing import TYPE_CHECKING, Any, Callable, Optional, Type
 
 if TYPE_CHECKING:
@@ -107,7 +109,8 @@ class HitlReviewer(BaseExecutor):
         self._reject_count      = 0
         self._trace_log         = trace_log
         self._run_id            = run_id
-        self._allowed_reviewers = allowed_reviewers
+        self._allowed_reviewers      = allowed_reviewers
+        self._processed_review_ids: set[str] = set()
 
         exists_cond   = ConditionId(triggers_condition or f"{reviewed_capability}_exists")
         approved_cond = ConditionId(f"{reviewed_capability}_approved")
@@ -165,6 +168,14 @@ class HitlReviewer(BaseExecutor):
         if schema := self._feedback_schema_json():
             review_request["_feedback_schema"] = schema
 
+        # Bind approval to this exact content snapshot.  The channel echoes _content_hash
+        # back in the decision; a mismatch means the decision was made on stale content.
+        content_hash = hashlib.sha256(
+            json.dumps(review_request, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        review_request["_content_hash"] = content_hash
+        review_request["_review_id"]    = str(uuid.uuid4())
+
         try:
             verdict_data = self._request_review(review_request)
         except Exception as _exc:
@@ -176,6 +187,30 @@ class HitlReviewer(BaseExecutor):
         verdict     = verdict_data.get("verdict", "timeout")
         feedback    = (verdict_data.get("feedback") or "").strip()
         reviewer_id = (verdict_data.get("reviewer_id") or "").strip()
+
+        # Reject stale approvals: if the channel echoes back a content_hash that doesn't
+        # match the one we sent, the decision was made on different content.
+        if echoed_hash := verdict_data.get("_content_hash"):
+            if echoed_hash != content_hash:
+                _log.warning(
+                    "HitlReviewer '%s': content_hash mismatch — rejecting stale decision "
+                    "(expected=%s… got=%s…)",
+                    self._reviewed_art_id, content_hash[:8], echoed_hash[:8],
+                )
+                verdict  = "reject"
+                feedback = "stale_approval: content changed since review was requested"
+
+        # Idempotency: reject duplicate decisions (same _review_id seen more than once).
+        if decision_review_id := verdict_data.get("_review_id"):
+            if decision_review_id in self._processed_review_ids:
+                _log.warning(
+                    "HitlReviewer '%s': duplicate _review_id %r — ignoring duplicate decision",
+                    self._reviewed_art_id, decision_review_id,
+                )
+                verdict  = "timeout"
+                feedback = "duplicate_decision: review_id already processed"
+            else:
+                self._processed_review_ids.add(decision_review_id)
 
         # Enforce allowed_reviewers: an unrecognised reviewer cannot approve.
         if (

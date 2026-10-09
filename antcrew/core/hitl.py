@@ -130,7 +130,9 @@ class FlexibleHITL:
                 logger.warning("HITL replay lookup failed: %r — proceeding to callback", exc)
 
         if self._auto_approve:
-            decision = HITLDecision(action=HITLAction.APPROVE, reason="auto")
+            # Use a system reviewer_id so auto-approves appear in TraceLog as auditable events,
+            # not as gaps — "system:auto_approve" signals automation, not human absence.
+            decision = HITLDecision(action=HITLAction.APPROVE, reason="auto", reviewer_id="system:auto_approve")
         elif self._callback is None:
             logger.error(
                 "HITL gate '%s': no callback configured and auto_approve=False — defaulting to REJECT",
