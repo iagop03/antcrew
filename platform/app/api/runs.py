@@ -72,15 +72,14 @@ async def upload_run(
 ):
     """Store a local CLI run result on the platform dashboard.
 
-    Called by ``antcrew run --push-to <platform-url>`` after a successful local run.
+    Called by ``antcrew run --push-to <platform-url>`` or
+    ``antcrew cobol-incident --push-to <platform-url>`` after a successful local run.
     The run appears in the dashboard immediately with status ``success``.
     Tickets in ``state.tickets`` are upserted via the normal ticket pipeline.
+    Team name is accepted as-is — upload is for pre-computed results, not live execution.
     """
-    from app.services.runner import AVAILABLE_TEAMS
     from app.services.runs import upsert_tickets_from_run
 
-    if body.team not in AVAILABLE_TEAMS:
-        raise HTTPException(422, f"Unknown team {body.team!r}. Available: {AVAILABLE_TEAMS}")
     if not body.request.strip():
         raise HTTPException(422, "request must not be empty")
 
