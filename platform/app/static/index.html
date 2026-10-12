@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/static/design.css">
 <script src="/static/i18n.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="/static/alpine.min.js" defer></script>
 <link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
 <style>[x-cloak]{display:none}</style>
     <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
@@ -361,6 +361,13 @@
 
 
 <script>
+// Safe localStorage wrapper — falls back gracefully when storage is blocked
+var _ls = {
+  getItem:    function (k)    { try { return localStorage.getItem(k); }    catch (_) { return null; } },
+  setItem:    function (k, v) { try { localStorage.setItem(k, v); }        catch (_) {} },
+  removeItem: function (k)    { try { localStorage.removeItem(k); }        catch (_) {} },
+};
+
 function dashFeed() {
   return {
     workspace: null,
@@ -382,28 +389,35 @@ function dashFeed() {
     mfaMsg: '',
     mfaError: false,
     apiHeaders(extra = {}) {
-      const k = localStorage.getItem('antcrew_api_key');
+      const k = _ls.getItem('antcrew_api_key');
       const h = { 'Content-Type': 'application/json', ...extra };
       if (k) h['X-Api-Key'] = k;
       return h;
     },
 
     async init() {
-      // Auth guard: session-cookie users must be authenticated; API-key users pass through
-      const apiKey = localStorage.getItem('antcrew_api_key');
+      // Auth guard: session-cookie users must be authenticated; API-key users pass through.
+      // Open mode (local dev, no credentials configured) is detected by probing /runs/stats.
+      const apiKey = _ls.getItem('antcrew_api_key');
       if (!apiKey) {
         try {
           const r = await fetch('/auth/me', { credentials: 'same-origin' });
-          if (!r.ok) { window.location.replace('/'); return; }
-          const me = await r.json();
-          if (!me.workspace_id) { window.location.replace('/onboard'); return; }
-          if (!me.email_verified) { window.location.replace('/login'); return; }
-          // Show MFA setup modal for users who haven't enabled it yet
-          if (!me.mfa_enabled) {
-            const skip = localStorage.getItem('mfa_skip_until');
-            if (!skip || Date.now() > parseInt(skip, 10)) this.showMfaModal = true;
+          if (!r.ok) {
+            // Not authenticated via session — check if server is in open mode
+            const probe = await fetch('/runs/stats');
+            if (!probe.ok) { window.location.replace('/login'); return; }
+            // Open mode: server accepts requests without credentials, proceed
+          } else {
+            const me = await r.json();
+            if (!me.workspace_id) { window.location.replace('/onboard'); return; }
+            if (!me.email_verified) { window.location.replace('/login'); return; }
+            // Show MFA setup modal for users who haven't enabled it yet
+            if (!me.mfa_enabled) {
+              const skip = _ls.getItem('mfa_skip_until');
+              if (!skip || Date.now() > parseInt(skip, 10)) this.showMfaModal = true;
+            }
           }
-        } catch { window.location.replace('/'); return; }
+        } catch { window.location.replace('/login'); return; }
       }
       await Promise.all([this.loadWorkspace(), this.loadStats(), this.loadFeed()]);
       this.connectWs();
@@ -491,7 +505,7 @@ function dashFeed() {
 
     connectWs() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const k = localStorage.getItem('antcrew_api_key') || '';
+      const k = _ls.getItem('antcrew_api_key') || '';
       this.ws = new WebSocket(`${proto}://${location.host}/ws/events`);
       this.ws.onopen = () => {
         this.wsConnected = true; this._wsBackoff = 1000;
@@ -645,7 +659,7 @@ function dashFeed() {
     },
 
     skipMfa() {
-      localStorage.setItem('mfa_skip_until', Date.now() + 7 * 24 * 60 * 60 * 1000);
+      _ls.setItem('mfa_skip_until', Date.now() + 7 * 24 * 60 * 60 * 1000);
       this.showMfaModal = false;
     },
   };

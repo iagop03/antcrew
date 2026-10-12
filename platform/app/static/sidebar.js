@@ -2,6 +2,15 @@
 (function () {
   'use strict';
 
+  // Safe localStorage wrapper — falls back to in-memory when storage is blocked
+  // (Chrome "Block all cookies", incognito with strict settings, sandboxed iframes)
+  var _mem = {};
+  var _ls = {
+    getItem:    function (k)    { try { return localStorage.getItem(k); }    catch (_) { return _mem[k] !== undefined ? _mem[k] : null; } },
+    setItem:    function (k, v) { try { localStorage.setItem(k, v); }        catch (_) { _mem[k] = String(v); } },
+    removeItem: function (k)    { try { localStorage.removeItem(k); }        catch (_) { delete _mem[k]; } },
+  };
+
   var EXP = 220, COL = 52;
   var SK = 'ac_sidebar_collapsed';
   var GK = 'ac_cfg_open';
@@ -55,11 +64,11 @@
   }
 
   // ── State ─────────────────────────────────────────────────────────────────
-  var collapsed = localStorage.getItem(SK) === '1';
+  var collapsed = _ls.getItem(SK) === '1';
   var anyCfgActive = NAV.some(function (i) { return i.cfg && isActive(i); });
-  var cfgOpen = anyCfgActive || localStorage.getItem(GK) !== '0';
+  var cfgOpen = anyCfgActive || _ls.getItem(GK) !== '0';
   var _ADM_PATHS = ['/admin', '/accounting', '/analytics', '/campaigns', '/users', '/workspaces_admin'];
-  var admOpen = _ADM_PATHS.indexOf(location.pathname) !== -1 || localStorage.getItem(AK) !== '0';
+  var admOpen = _ADM_PATHS.indexOf(location.pathname) !== -1 || _ls.getItem(AK) !== '0';
 
   // ── Inject CSS ────────────────────────────────────────────────────────────
   var style = document.createElement('style');
@@ -320,7 +329,7 @@
   // ── Admin group state ──────────────────────────────────────────────────────
   function applyAdmState(open) {
     admOpen = open;
-    localStorage.setItem(AK, open ? '1' : '0');
+    _ls.setItem(AK, open ? '1' : '0');
     var chev = document.getElementById('ac-adm-chev');
     var tog = document.getElementById('ac-adm-tog');
     var items = sb.querySelectorAll('.ac-adm-item');
@@ -339,7 +348,7 @@
   // ── Configurar group state ─────────────────────────────────────────────────
   function applyCfgState(open) {
     cfgOpen = open;
-    localStorage.setItem(GK, open ? '1' : '0');
+    _ls.setItem(GK, open ? '1' : '0');
     var chev = document.getElementById('ac-cfg-chev');
     var tog = document.getElementById('ac-cfg-tog');
     var items = sb.querySelectorAll('.ac-cfg-item');
@@ -363,7 +372,7 @@
   // ── Collapse / expand ─────────────────────────────────────────────────────
   function applyState(c) {
     collapsed = c;
-    localStorage.setItem(SK, c ? '1' : '0');
+    _ls.setItem(SK, c ? '1' : '0');
     sb.style.width = (c ? COL : EXP) + 'px';
     document.body.style.paddingLeft = (c ? COL : EXP) + 'px';
     sb.classList.toggle('ac-collapsed', c);
@@ -449,7 +458,7 @@
   document.getElementById('ac-sb-logout').addEventListener('click', function () {
     fetch('/auth/token', { method: 'DELETE', credentials: 'same-origin' })
       .then(function () {
-        localStorage.removeItem('antcrew_api_key');
+        _ls.removeItem('antcrew_api_key');
         try { sessionStorage.removeItem('ac_me_v1'); } catch (_) {}
         window.location.replace('/login');
       });
@@ -477,7 +486,7 @@
   });
 
   // ── Data fetches ──────────────────────────────────────────────────────────
-  var apiKey = localStorage.getItem('antcrew_api_key');
+  var apiKey = _ls.getItem('antcrew_api_key');
   var hdrs = { 'Content-Type': 'application/json' };
   if (apiKey) hdrs['X-Api-Key'] = apiKey;
 
@@ -597,10 +606,10 @@
 
   // Re-apply i18n after sidebar injects data-i18n elements
   if (window.__i18n) {
-    window.__i18n.applyAll();
+    window.__i18n.applyI18n();
   } else {
-    document.addEventListener('i18nReady', function () {
-      if (window.__i18n) window.__i18n.applyAll();
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.__i18n) window.__i18n.applyI18n();
     });
   }
 })();

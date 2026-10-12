@@ -755,11 +755,11 @@
   var STORAGE_KEY = 'ac_lang';
 
   function getLang() {
-    return localStorage.getItem(STORAGE_KEY) || 'en';
+    try { return localStorage.getItem(STORAGE_KEY) || 'en'; } catch (_) { return 'en'; }
   }
 
   function setLang(lang) {
-    localStorage.setItem(STORAGE_KEY, lang);
+    try { localStorage.setItem(STORAGE_KEY, lang); } catch (_) {}
     window.location.reload();
   }
 

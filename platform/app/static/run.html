@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/tailwind.css">
 <link rel="stylesheet" href="/static/design.css">
 <script src="/static/i18n.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="/static/alpine.min.js" defer></script>
     <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}</script>
   <link rel="stylesheet" href="/static/tabler-icons/tabler-icons.min.css">
 </head>
@@ -1070,6 +1070,12 @@
 </div>
 
 <script>
+var _ls = {
+  getItem:    function (k)    { try { return localStorage.getItem(k); }    catch (_) { return null; } },
+  setItem:    function (k, v) { try { localStorage.setItem(k, v); }        catch (_) {} },
+  removeItem: function (k)    { try { localStorage.removeItem(k); }        catch (_) {} },
+};
+
 function runDetail() {
   return {
     runId: null,
@@ -1337,7 +1343,7 @@ function runDetail() {
     },
 
     apiHeaders(extra = {}) {
-      const k = localStorage.getItem('antcrew_api_key');
+      const k = _ls.getItem('antcrew_api_key');
       const h = { 'Content-Type': 'application/json', ...extra };
       if (k) h['X-Api-Key'] = k;
       return h;
@@ -1363,7 +1369,7 @@ function runDetail() {
 
     connectWs() {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const k = localStorage.getItem('antcrew_api_key') || '';
+      const k = _ls.getItem('antcrew_api_key') || '';
       // Use first-message auth so the API key never appears in server access logs.
       // The server waits up to 10 s for {"auth": "<key>"} before closing the connection.
       this.ws = new WebSocket(`${proto}://${location.host}/ws/events?run_id=${this.runId}`);
