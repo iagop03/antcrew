@@ -3,8 +3,7 @@
 [![CI](https://github.com/iagop03/antcrew/actions/workflows/ci.yml/badge.svg)](https://github.com/iagop03/antcrew/actions)
 [![PyPI](https://img.shields.io/pypi/v/antcrew)](https://pypi.org/project/antcrew/)
 [![Python](https://img.shields.io/pypi/pyversions/antcrew)](https://pypi.org/project/antcrew/)
-[![SDK License: Apache 2.0](https://img.shields.io/badge/SDK%20License-Apache%202.0-blue.svg)](LICENSE)
-[![Platform License: ELv2](https://img.shields.io/badge/Platform%20License-ELv2-orange.svg)](platform/LICENSE)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-yellow.svg)](LICENSE)
 
 **AI agents do the work. AntCrew governs it.**
 
@@ -34,6 +33,70 @@ antcrew issue owner/repo#143
 ◆ PR              github.com/owner/repo/pull/221 opened
   Cost: $1.84 · Time: 9m 12s · Human approvals: 2
 ```
+
+---
+
+## COBOL incident analysis
+
+Banks and insurers run millions of lines of COBOL in production. When an incident hits — a wrong date calculation, a SQLCODE -803, a silent truncation — the usual process is: hunt for the affected program, manually trace which callers depend on it, escalate to a specialist who may or may not be available.
+
+`antcrew cobol-incident` does that analysis in two minutes with a human-approved, auditable trail:
+
+```bash
+pip install antcrew
+antcrew cobol-incident \
+  "DB2 SQLCODE -803 en MOVPOL — duplicados en tabla MOVIMIENTOS durante rehabilitación de pólizas" \
+  --cobol-dir ./cobol/src \
+  --output-dir ./evidence
+```
+
+```
+━━━━━━━━━━━━ AntCrew COBOL Incident Analysis ━━━━━━━━━━━━
+Incident: DB2 SQLCODE -803 en MOVPOL — duplicados en tabla MOVIMIENTOS...
+COBOL dir: ./cobol/src
+
+┌──────────┬────────────┬────────────┬────────────┐
+│ Programs │ CALL edges │ COPY edges │ DB2 tables │
+├──────────┼────────────┼────────────┼────────────┤
+│    5     │     6      │     6      │     5      │
+└──────────┴────────────┴────────────┴────────────┘
+
+━━━━━━━━━ Step 1: Incident Triage ━━━━━━━━━
+Candidate programs: MOVPOL, REHPOL
+Risk area: DB2 duplicate key on MOVIMIENTOS insert — likely missing idempotency check
+
+┌──────────────────────────────────────────────────────┐
+│  HUMAN REVIEW — Triage Result                        │
+│  Candidates: MOVPOL, REHPOL                          │
+│  Risk: DB2 duplicate key on MOVIMIENTOS insert       │
+│  ¿Aprobar checkpoint 'triage_review'? [y/n]:         │
+└──────────────────────────────────────────────────────┘
+
+━━━━━━━━━ Step 2: Impact Analysis ━━━━━━━━━
+Risk level: HIGH — DB2 writes + 3 transitive callers
+Transitive callers: CALPRM, POLCAR, REHPOL
+DB2 tables: MOVIMIENTOS(INSERT), POLIZAS(SELECT), POLIZAS(UPDATE)
+
+━━━━━━━━━ Step 3: Structural COBOL Analysis ━━━━━━━━━
+╭─ Analysis Summary ──────────────────────────────────╮
+│ REHPOL calls MOVPOL without checking duplicate keys. │
+│ WS-MESES-AJUSTE wraps at 12 months via MOD —        │
+│ policies vencidas > 12 months get wrong adjustment.  │
+╰──────────────────────────────────────────────────────╯
+
+┌──────────────────────────────────────────────────────┐
+│  HUMAN REVIEW — Approve evidence export?             │
+│  Risk: HIGH | Callers: 3 | DB2 tables: 3             │
+│  ¿Aprobar checkpoint 'analysis_review'? [y/n]:       │
+└──────────────────────────────────────────────────────┘
+
+Evidence package written: ./evidence/evidence.json
+Verify with: antcrew verify ac_20261010_b9e1
+
+Done.  Risk: HIGH | Programs: MOVPOL, REHPOL | HITL decisions: 2
+```
+
+The evidence package is a JSON file with the triage, impact analysis, structural findings, and every HITL decision — hash-chained and verifiable with `antcrew verify`.
 
 ---
 
@@ -263,12 +326,13 @@ print(f"High-risk clauses: {finding.high_risk_count}")
 
 ```bash
 antcrew issue owner/repo#143        # governed: GitHub issue → reviewed PR
+antcrew cobol-incident "desc" --cobol-dir ./src  # COBOL incident: triage → impact → HITL → evidence
 antcrew run "goal"                  # run a pipeline locally
 antcrew run "goal" --model ollama:llama3  # offline, no API key
 antcrew init                        # scaffold a new project interactively
 antcrew inspect <run-id>            # view trace: agents, decisions, cost, hashes
+antcrew verify <run-id>             # verify hash chain integrity
 antcrew trace replay <run-id>       # replay all agent calls
-antcrew trace --verify-chain        # verify hash chain integrity
 antcrew eval                        # run EvalSuite regression tests
 antcrew describe                    # show pipeline data flow
 antcrew serve                       # local web dashboard
@@ -318,6 +382,8 @@ The SDK runs entirely locally. **antcrew-platform** is the optional managed laye
 
 ## License
 
-**antcrew SDK** (`antcrew/`, `antcrew_engine/`) — [Apache License 2.0](LICENSE). Free to use, modify, and distribute, including in commercial products.
+[Business Source License 1.1](LICENSE) — source available, free for internal use.
 
-**antcrew-platform** (`platform/`) — [Elastic License 2.0](platform/LICENSE). Free for self-hosted use within your own organization. Providing it as a hosted/managed service to third parties requires a commercial agreement.
+Internal use (running antcrew agents and pipelines within your own organization) is free. Providing antcrew as a hosted or managed service to third parties requires a commercial license. Converts to Apache 2.0 on 2030-01-01.
+
+Contact iago.pueyo99@gmail.com for commercial licensing.
