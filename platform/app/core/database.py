@@ -61,6 +61,18 @@ _pool_kwargs: dict = (
 )
 engine = create_async_engine(DB_URL, echo=False, connect_args=_connect_args, **_pool_kwargs)
 
+# SQLite: enable WAL mode so concurrent readers don't block writers, and set a
+# busy timeout so threads wait instead of failing immediately on a locked DB.
+if DB_URL.startswith("sqlite"):
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn, _connection_record):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
+
 _PROJECT_ROOT = Path(__file__).parent.parent.parent  # app/core/database.py → project root
 
 # Stable advisory-lock key for serialising concurrent Alembic runs across replicas.
