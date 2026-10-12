@@ -5,6 +5,7 @@ Only contains ``build_llm()``.  Use ``antcrew.config`` for the full loader
 """
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from antcrew_engine.models.base import BaseLLM
@@ -76,50 +77,43 @@ def build_llm(model_str: str, *, prompt_caching: bool = False, api_key: Optional
     if s.startswith("moonshot:"):
         from antcrew_engine.models.openai_model import OpenAIModel
         kw = {"base_url": base_url or "https://api.moonshot.cn/v1"}
-        if api_key:
-            kw["api_key"] = api_key
+        kw["api_key"] = api_key or os.environ.get("MOONSHOT_API_KEY", "")
         return OpenAIModel(s.split(":", 1)[1], **kw)
 
     if s.startswith("deepseek:"):
         from antcrew_engine.models.openai_model import OpenAIModel
         kw = {"base_url": base_url or "https://api.deepseek.com/v1"}
-        if api_key:
-            kw["api_key"] = api_key
+        kw["api_key"] = api_key or os.environ.get("DEEPSEEK_API_KEY", "")
         return OpenAIModel(s.split(":", 1)[1], **kw)
 
     if s.startswith("mistral:"):
         from antcrew_engine.models.openai_model import OpenAIModel
         kw = {"base_url": base_url or "https://api.mistral.ai/v1"}
-        if api_key:
-            kw["api_key"] = api_key
+        kw["api_key"] = api_key or os.environ.get("MISTRAL_API_KEY", "")
         return OpenAIModel(s.split(":", 1)[1], **kw)
 
     if s.startswith("xai:"):
         from antcrew_engine.models.openai_model import OpenAIModel
         kw = {"base_url": base_url or "https://api.x.ai/v1"}
-        if api_key:
-            kw["api_key"] = api_key
+        kw["api_key"] = api_key or os.environ.get("XAI_API_KEY", "")
         return OpenAIModel(s.split(":", 1)[1], **kw)
 
     if s.startswith("together:"):
         from antcrew_engine.models.openai_model import OpenAIModel
         kw = {"base_url": base_url or "https://api.together.xyz/v1"}
-        if api_key:
-            kw["api_key"] = api_key
+        kw["api_key"] = api_key or os.environ.get("TOGETHER_API_KEY", "")
         return OpenAIModel(s.split(":", 1)[1], **kw)
 
     if s.startswith("fireworks:"):
         from antcrew_engine.models.openai_model import OpenAIModel
         kw = {"base_url": base_url or "https://api.fireworks.ai/inference/v1"}
-        if api_key:
-            kw["api_key"] = api_key
+        kw["api_key"] = api_key or os.environ.get("FIREWORKS_API_KEY", "")
         return OpenAIModel(s.split(":", 1)[1], **kw)
 
     if s.startswith("cerebras:"):
         from antcrew_engine.models.openai_model import OpenAIModel
         kw = {"base_url": base_url or "https://api.cerebras.ai/v1"}
-        if api_key:
-            kw["api_key"] = api_key
+        kw["api_key"] = api_key or os.environ.get("CEREBRAS_API_KEY", "")
         return OpenAIModel(s.split(":", 1)[1], **kw)
 
     if s.startswith("lmstudio:"):
