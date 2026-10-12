@@ -306,7 +306,13 @@ footer { border-top: 1px solid var(--border); padding: 28px 32px; }
     var ref = document.referrer;
     if (!ref || new URL(ref).hostname !== location.hostname) {
       fetch('/auth/me', { credentials: 'same-origin' })
-        .then(function (r) { if (r.ok) window.location.replace('/dashboard'); })
+        .then(function (r) {
+          if (r.ok) { window.location.replace('/dashboard'); return; }
+          // Not authenticated — check if server is in open mode (no auth configured)
+          return fetch('/runs/stats').then(function (s) {
+            if (s.ok) window.location.replace('/dashboard');
+          });
+        })
         .catch(function () {});
     }
   } catch (_) {}
@@ -323,8 +329,9 @@ footer { border-top: 1px solid var(--border); padding: 28px 32px; }
       <li><a href="https://github.com/iagop03/antcrew" rel="noopener noreferrer">GitHub</a></li>
     </ul>
     <div class="nav-end" style="display:flex;align-items:center;gap:10px;">
-      <a href="/login" class="btn-ghost">Log in</a>
-      <a href="/onboard" class="btn-cta">Get started</a>
+      <a href="/dashboard" id="nav-dashboard" class="btn-cta" style="display:none">Open Dashboard →</a>
+      <a href="/login" id="nav-login" class="btn-ghost">Log in</a>
+      <a href="/onboard" id="nav-getstarted" class="btn-cta">Get started</a>
     </div>
   </div>
 </nav>
@@ -630,6 +637,22 @@ footer { border-top: 1px solid var(--border); padding: 28px 32px; }
 
   var startT = setTimeout(function () { runAnimation(false); }, 700);
   timers.push(startT);
+})();
+</script>
+
+<script>
+// Detect open mode and update nav accordingly
+(function () {
+  fetch('/runs/stats').then(function (r) {
+    if (!r.ok) return;
+    // Open mode: show Dashboard button, hide auth buttons
+    var dash = document.getElementById('nav-dashboard');
+    var login = document.getElementById('nav-login');
+    var gs = document.getElementById('nav-getstarted');
+    if (dash) dash.style.display = 'inline-flex';
+    if (login) login.style.display = 'none';
+    if (gs) gs.style.display = 'none';
+  }).catch(function () {});
 })();
 </script>
 
