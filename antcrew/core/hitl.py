@@ -64,13 +64,17 @@ class FlexibleHITL:
         *,
         auto_approve: bool = False,
         checkpoints: list[str] | None = None,
+        strict: bool = False,
         trace_log: Optional["TraceLog"] = None,
         run_id: str = "",
         replay_decisions: bool = False,
     ) -> None:
+        if strict and checkpoints is None:
+            raise ValueError("FlexibleHITL(strict=True) requires checkpoints to be specified")
         self._callback = callback
         self._auto_approve = auto_approve
         self._checkpoints = set(checkpoints) if checkpoints else None
+        self._strict = strict
         self._history: list[tuple[str, HITLDecision]] = []
         self._trace_log = trace_log
         self._run_id = run_id
@@ -98,7 +102,13 @@ class FlexibleHITL:
         defaults to REJECT, never APPROVE. Fail closed.
         """
         if self._checkpoints is not None and checkpoint not in self._checkpoints:
-            return True
+            if self._strict:
+                logger.error(
+                    "HITL gate '%s': unexpected checkpoint (not in registered list) — strict=True, REJECT",
+                    checkpoint,
+                )
+                return False  # fail closed — unknown checkpoints must not silently pass
+            return True  # legacy: unlisted checkpoints pass through
 
         # Restart recovery: if replay_decisions is set and a TraceLog decision
         # already exists for this checkpoint, reuse it without calling the callback.
