@@ -26,6 +26,8 @@ Examples::
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -72,6 +74,16 @@ def cobol_incident_cmd(
         "--trace",
         help="TraceLog SQLite path. Defaults to ~/.antcrew/trace.db.",
     ),
+    push_to: Optional[str] = typer.Option(
+        None,
+        "--push-to",
+        help="Platform URL to upload the run (e.g. http://localhost:8080). Uploads to /runs/upload.",
+    ),
+    api_key: Optional[str] = typer.Option(
+        None,
+        "--api-key",
+        help="Platform API key for --push-to (or set ANTCREW_API_KEY env var).",
+    ),
 ) -> None:
     """Analyze a COBOL production incident with LLM triage, impact analysis, and HITL governance.
 
@@ -85,6 +97,8 @@ def cobol_incident_cmd(
 
     out_dir = output_dir or Path("cobol_evidence")
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    start_time = time.time()
 
     # ── 2. Build COBOLIndex ────────────────────────────────────────────────────
     console.rule("[bold cyan]AntCrew COBOL Incident Analysis[/bold cyan]")
@@ -137,7 +151,7 @@ def cobol_incident_cmd(
         answer = console.input(
             f"[bold yellow]¿Aprobar checkpoint '{checkpoint}'? [y/n]: [/bold yellow]"
         ).strip().lower()
-        if answer == "y":
+        if answer in ("y", "yes", "s", "si", "sí"):
             return HITLDecision(action=HITLAction.APPROVE, reviewer_id="terminal")
         return HITLDecision(
             action=HITLAction.REJECT,
@@ -224,7 +238,10 @@ def cobol_incident_cmd(
     console.print(f"Risk level: [{risk_color}]{risk.upper()}[/{risk_color}] — {impact.get('risk_reason', '')}")
 
     if impact.get("affected_callers"):
-        console.print(f"Transitive callers: {', '.join(impact['affected_callers'])}")
+        # filter out internal doc_ids (e.g. COBOL_SOURCE__X) that leak from DocumentationManager
+        callers = [c for c in impact["affected_callers"] if "__" not in c]
+        if callers:
+            console.print(f"Transitive callers: {', '.join(callers)}")
     if impact.get("db2_tables_touched"):
         tables = [f"{t['table']}({t['op']})" for t in impact["db2_tables_touched"]]
         console.print(f"DB2 tables: {', '.join(tables)}")
@@ -237,15 +254,11 @@ def cobol_incident_cmd(
 
     doc_mgr = DocumentationManager()
     for prog_name in triage.get("candidate_programs", []):
-        cbl_files = list(cobol_dir.glob(f"{prog_name}.*"))
+        cbl_files = list(cobol_dir.rglob(f"{prog_name}.*"))
         for f in cbl_files:
             if f.suffix.lower() in (".cbl", ".cob", ".cobol", ".cpy"):
-                doc_mgr.add_document(
-                    doc_id=f.stem,
-                    content=f.read_text(encoding="utf-8", errors="replace"),
-                    doc_type="cobol_source" if f.suffix.lower() != ".cpy" else "copybook",
-                    source_file=str(f),
-                )
+                doc_type = "copybook" if f.suffix.lower() == ".cpy" else "cobol_source"
+                doc_mgr.upload_document(str(f), doc_type)
 
     analyzer = COBOLAnalyzerExecutor(llm=llm)
     analyzer.set_documentation(doc_mgr)
@@ -299,12 +312,29 @@ def cobol_incident_cmd(
     )
 
     tlog.end_run(run_id, status="done")
+    duration_s = time.time() - start_time
 
     console.print(f"[green]Evidence package written:[/green] {evidence_path}")
     console.print(
         f"[dim]Verify with:[/dim] antcrew verify {run_id}"
         + (f" --trace {trace_db}" if trace_db else "")
     )
+
+    # ── 13. Push to platform ──────────────────────────────────────────────────
+    if push_to:
+        _push_to_platform(
+            push_to=push_to.rstrip("/"),
+            api_key=api_key or os.environ.get("ANTCREW_API_KEY", ""),
+            incident=incident,
+            run_id=run_id,
+            risk=risk,
+            triage=triage,
+            impact=impact,
+            analysis=analysis,
+            hitl_decisions=evidence["hitl_decisions"],
+            duration_s=duration_s,
+        )
+
     console.print()
     console.print(
         f"[bold green]Done.[/bold green] "
@@ -312,6 +342,61 @@ def cobol_incident_cmd(
         f"Programs: {', '.join(triage.get('candidate_programs', []))} | "
         f"HITL decisions: {len(evidence['hitl_decisions'])}"
     )
+
+
+# ── Platform push ─────────────────────────────────────────────────────────────
+
+def _push_to_platform(
+    *,
+    push_to: str,
+    api_key: str,
+    incident: str,
+    run_id: str,
+    risk: str,
+    triage: dict,
+    impact: dict,
+    analysis: dict,
+    hitl_decisions: list,
+    duration_s: float,
+) -> None:
+    """POST the evidence to the platform's /runs/upload endpoint."""
+    import urllib.request
+
+    url = f"{push_to}/runs/upload"
+    payload = {
+        "team": "cobol-incident",
+        "request": incident,
+        "thread_id": run_id,
+        "cost_usd": 0.0,
+        "duration_s": round(duration_s, 2),
+        "state": {
+            "risk_level": risk,
+            "candidate_programs": triage.get("candidate_programs", []),
+            "risk_area": triage.get("risk_area", ""),
+            "affected_callers": impact.get("affected_callers", []),
+            "db2_tables_touched": impact.get("db2_tables_touched", []),
+            "analysis_summary": analysis.get("summary", ""),
+            "root_cause_lines": analysis.get("root_cause_lines", []),
+            "hitl_decisions": hitl_decisions,
+        },
+    }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            **({"X-Api-Key": api_key} if api_key else {}),
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+            run_url = f"{push_to}/run/{result['run_id']}"
+            console.print(f"[green]Pushed to platform:[/green] {run_url}")
+    except Exception as exc:
+        console.print(f"[yellow]Push to platform failed:[/yellow] {exc}")
 
 
 # ── Rich helpers ──────────────────────────────────────────────────────────────
