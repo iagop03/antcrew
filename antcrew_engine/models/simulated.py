@@ -246,8 +246,55 @@ _EDIT_FIXTURE = {
 }
 
 
+_COBOL_TRIAGE_FIXTURE = {
+    "candidate_programs": ["REHPOL", "MOVPOL", "CALRUT", "VALDAT"],
+    "affected_tables": ["POLIZAS", "MOVIMIENTOS"],
+    "risk_area": "Date calculation in policy rehabilitation",
+    "reasoning": (
+        "REHPOL is the rehabilitation program; it calculates the late-payment surcharge "
+        "using FUNCTION MOD(HV-POL-MESES-VENC, 12) which wraps to zero every 12 months, "
+        "causing an incorrect surcharge for policies overdue more than 12 months. "
+        "MOVPOL registers the resulting movement with the wrong amount. "
+        "VALDAT and CALRUT are the date/calculation utilities called in the surcharge path."
+    ),
+}
+
+_COBOL_ANALYZER_FIXTURE = {
+    "program": "REHPOL",
+    "summary": (
+        "REHPOL rehabilitates lapsed policies. The surcharge calculation uses "
+        "FUNCTION MOD(HV-POL-MESES-VENC, 12) instead of the raw month count, causing the "
+        "penalty to reset to zero for any multiple of 12 months overdue."
+    ),
+    "root_cause_lines": [
+        {
+            "line": 95,
+            "code": "COMPUTE WS-MESES-AJUSTE = FUNCTION MOD(HV-POL-MESES-VENC, 12)",
+            "explanation": "MOD wraps at 12: 13 months → 1, 24 months → 0. Should use HV-POL-MESES-VENC directly.",
+        }
+    ],
+    "call_chain": ["REHPOL", "MOVPOL", "VALDAT"],
+    "db2_writes": [
+        {"table": "POLIZAS",     "op": "UPDATE"},
+        {"table": "MOVIMIENTOS", "op": "INSERT"},
+    ],
+    "fix_suggestion": (
+        "Replace FUNCTION MOD(HV-POL-MESES-VENC, 12) with HV-POL-MESES-VENC directly. "
+        "The surcharge should be proportional to all overdue months, not their remainder mod 12."
+    ),
+}
+
+
 def _pick_fixture(system: str) -> str:
     s = system.lower()
+
+    # COBOL incident pipeline -- checked first (unique discriminators)
+    if "mainframe cobol expert" in s and "incident triage" in s:
+        return json.dumps(_COBOL_TRIAGE_FIXTURE)
+    if "cobol program analyzer" in s or (
+        "cobol" in s and "root_cause_lines" in s
+    ):
+        return json.dumps(_COBOL_ANALYZER_FIXTURE)
 
     # engine capabilities -- unique phrases, checked before generic matchers
     if 'software requirements analyst' in s:
