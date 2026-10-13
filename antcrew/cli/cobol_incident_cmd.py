@@ -84,6 +84,11 @@ def cobol_incident_cmd(
         "--api-key",
         help="Platform API key for --push-to (or set ANTCREW_API_KEY env var).",
     ),
+    workspace: Optional[str] = typer.Option(
+        None,
+        "--workspace", "-w",
+        help="Workspace name or ID to associate the run with on the platform (requires --push-to).",
+    ),
 ) -> None:
     """Analyze a COBOL production incident with LLM triage, impact analysis, and HITL governance.
 
@@ -333,6 +338,7 @@ def cobol_incident_cmd(
             analysis=analysis,
             hitl_decisions=evidence["hitl_decisions"],
             duration_s=duration_s,
+            workspace=workspace,
         )
 
     console.print()
@@ -358,6 +364,7 @@ def _push_to_platform(
     analysis: dict,
     hitl_decisions: list,
     duration_s: float,
+    workspace: Optional[str] = None,
 ) -> None:
     """POST the evidence to the platform's /runs/upload endpoint."""
     import urllib.request
@@ -380,6 +387,8 @@ def _push_to_platform(
             "hitl_decisions": hitl_decisions,
         },
     }
+    if workspace:
+        payload["workspace"] = workspace
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         url,

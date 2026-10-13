@@ -54,6 +54,7 @@ class RunUpload(BaseModel):
     cost_usd: float = 0.0
     duration_s: Optional[float] = None
     state: Optional[dict] = None
+    workspace: Optional[str] = None
 
 
 def _assert_run_access(run: Run, ctx: WorkspaceContext) -> None:
@@ -83,6 +84,26 @@ async def upload_run(
     if not body.request.strip():
         raise HTTPException(422, "request must not be empty")
 
+    # Resolve optional workspace name/ID from the upload payload.
+    # Lets CLI callers associate a run without needing a workspace-scoped API key.
+    workspace_id = ctx.workspace_id
+    if body.workspace and workspace_id is None:
+        from sqlmodel import select as _select
+        from app.models.workspace import Workspace as _Workspace
+        ws = (await session.exec(
+            _select(_Workspace).where(
+                (_Workspace.name == body.workspace) | (_Workspace.id == body.workspace)
+            ).limit(1)
+        )).first()
+        if ws:
+            workspace_id = ws.id
+        else:
+            # Create a new workspace on-the-fly when the name doesn't exist yet
+            ws = _Workspace(name=body.workspace, created_by=ctx.created_by or "cli")
+            session.add(ws)
+            await session.flush()
+            workspace_id = ws.id
+
     run = Run(
         run_id=str(uuid.uuid4()),
         thread_id=body.thread_id,
@@ -92,7 +113,7 @@ async def upload_run(
         cost_usd=body.cost_usd,
         duration_s=body.duration_s,
         state=body.state,
-        workspace_id=ctx.workspace_id,
+        workspace_id=workspace_id,
         created_by=ctx.created_by,
         finished_at=datetime.now(timezone.utc),
     )
