@@ -172,10 +172,12 @@ def cobol_incident_cmd(
     )
 
     # ── 6. Artifact store ─────────────────────────────────────────────────────
-    from antcrew_engine.engine.store import MemoryStore
     from antcrew_engine.engine.goal import (
-        Constraints, DesiredProjectState, Goal,
+        Constraints,
+        DesiredProjectState,
+        Goal,
     )
+    from antcrew_engine.engine.store import MemoryStore
 
     store = MemoryStore()
     goal = Goal(
@@ -400,7 +402,7 @@ def _push_to_platform(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             result = json.loads(resp.read())
             run_url = f"{push_to}/run/{result['run_id']}"
             console.print(f"[green]Pushed to platform:[/green] {run_url}")
