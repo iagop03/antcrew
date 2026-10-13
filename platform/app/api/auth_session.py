@@ -1020,11 +1020,22 @@ async def me(
     request: Request,
     session=Depends(get_session),
 ):
-    """Return current session info from cookie, or 401 if no valid session."""
+    """Return current session info from cookie, or 401 if no valid session.
+
+    In open mode (no auth configured), returns 200 with authenticated=False and
+    open_mode=True instead of 401, so browsers don't log a failed request.
+    """
     from app.models.run import User
 
     token = request.cookies.get(COOKIE_NAME)
     if not token:
+        # Check if we are in open mode before raising 401
+        if not os.environ.get("PLATFORM_API_KEY", "").strip():
+            from sqlmodel import select as _select
+            from app.models.auth import ApiKey as _ApiKey
+            has_keys = bool((await session.exec(_select(_ApiKey).limit(1))).first())
+            if not has_keys:
+                return {"authenticated": False, "open_mode": True}
         raise HTTPException(401, "Not authenticated")
 
     result = await _resolve_session(token, session)
