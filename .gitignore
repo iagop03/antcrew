@@ -212,6 +212,10 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Runtime-generated demo/workspace artifacts
+platform/cobol_evidence/
+platform/documentation/
+
 # PyPI configuration file
 .pypirc
 
