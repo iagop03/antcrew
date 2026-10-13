@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from sqlmodel import select
 
 from app.core.auth import WorkspaceContext, get_workspace_context
+from app.core.config import VERSION
 from app.core.database import get_session
 from app.core.license_gate import require_feature
 from app.models.compliance import ApprovedAgentHash
@@ -134,7 +135,7 @@ async def _build_attestation(run: Any, session: Any) -> dict:
         "created_at": run.created_at.isoformat() if run.created_at else None,
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "agents": agents_info,
-        "platform_version": "antcrew-platform",
+        "platform_version": VERSION,
         "engine_version": _engine_version,
         "attestation_generated_at": datetime.now(timezone.utc).isoformat(),
     }
