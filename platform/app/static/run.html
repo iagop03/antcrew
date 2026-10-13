@@ -198,7 +198,13 @@
 
         <div class="space-y-1" x-show="!loadingEvents">
           <template x-if="events.length === 0 && !loadingEvents">
-            <p class="text-gray-500 text-sm py-4">No events yet.</p>
+            <div class="py-6 text-center">
+              <p class="text-gray-500 text-sm" x-show="run && run.status === 'success'">
+                No live events — this run was uploaded from the CLI.<br>
+                <span class="text-gray-600 text-xs">Re-run inside antcrew Cloud to capture real-time events.</span>
+              </p>
+              <p class="text-gray-500 text-sm" x-show="!run || run.status !== 'success'">No events yet.</p>
+            </div>
           </template>
           <template x-for="ev in events" :key="(ev.id || '') + '-' + ev.event_type + '-' + ev.timestamp">
             <div class="flex gap-3 text-sm">
@@ -234,7 +240,13 @@
 
         <div class="space-y-1" x-show="!loadingActivity">
           <template x-if="activity.length === 0 && !loadingActivity">
-            <p class="text-gray-500 text-sm py-4">No activity yet.</p>
+            <div class="py-6 text-center">
+              <p class="text-gray-500 text-sm" x-show="run && run.status === 'success'">
+                No live activity — this run was uploaded from the CLI.<br>
+                <span class="text-gray-600 text-xs">HITL decisions are visible in the Governance tab.</span>
+              </p>
+              <p class="text-gray-500 text-sm" x-show="!run || run.status !== 'success'">No activity yet.</p>
+            </div>
           </template>
           <template x-for="(item, idx) in activity" :key="idx">
             <div class="flex gap-3 text-sm">
@@ -267,7 +279,13 @@
       <!-- ── Trace tab ── -->
       <div x-show="activeTab === 'trace'">
         <template x-if="capabilityRuns.length === 0">
-          <p class="text-gray-500 text-sm py-4">No hay trazas aún — el run aún no ha iniciado agentes.</p>
+          <div class="py-6 text-center">
+            <p class="text-gray-500 text-sm" x-show="run && run.status === 'success'">
+              No trace data — this run was uploaded from the CLI.<br>
+              <span class="text-gray-600 text-xs">Trace is captured when runs execute live inside antcrew Cloud.</span>
+            </p>
+            <p class="text-gray-500 text-sm" x-show="!run || run.status !== 'success'">No trace yet — the run has not started agents.</p>
+          </div>
         </template>
         <div class="space-y-2">
           <template x-for="(cap, idx) in capabilityRuns" :key="cap.name + idx">
@@ -321,9 +339,15 @@
         </template>
 
         <template x-if="!loadingAgentEvents && agentEvents.length === 0">
-          <p class="text-gray-500 text-sm py-4">
-            No agent data yet — events are persisted after the run completes.
-          </p>
+          <div class="py-6 text-center">
+            <p class="text-gray-500 text-sm" x-show="run && run.status === 'success'">
+              No agent waterfall — this run was uploaded from the CLI.<br>
+              <span class="text-gray-600 text-xs">Per-agent timing and token usage are captured in live runs only.</span>
+            </p>
+            <p class="text-gray-500 text-sm" x-show="!run || run.status !== 'success'">
+              No agent data yet — events are persisted after the run completes.
+            </p>
+          </div>
         </template>
 
         <template x-if="agentEvents.length > 0">
