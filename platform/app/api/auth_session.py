@@ -1015,6 +1015,42 @@ async def accept_invite(
     }
 
 
+@router.get("/mode")
+async def auth_mode(session=Depends(get_session)):
+    """Return what auth methods are configured on this instance.
+
+    Always public — used by the landing page to adapt its CTAs without
+    exposing any user data.  Possible response:
+      {"open": true, "methods": []}
+      {"open": false, "methods": ["email"]}
+      {"open": false, "methods": ["email", "sso_github"]}
+    """
+    from sqlmodel import select as _select
+    from app.models.auth import ApiKey as _ApiKey
+
+    is_open = False
+    if not os.environ.get("PLATFORM_API_KEY", "").strip():
+        try:
+            has_keys = bool((await session.exec(
+                _select(_ApiKey).where(_ApiKey.revoked_at == None).limit(1)  # noqa: E711
+            )).first())
+            is_open = not has_keys
+        except Exception:
+            pass
+
+    if is_open:
+        return {"open": True, "methods": []}
+
+    methods: list[str] = ["email"]
+    if (
+        os.environ.get("GITHUB_OAUTH_CLIENT_ID", "").strip()
+        and os.environ.get("GITHUB_OAUTH_CLIENT_SECRET", "").strip()
+    ):
+        methods.append("sso_github")
+
+    return {"open": False, "methods": methods}
+
+
 @router.get("/me")
 async def me(
     request: Request,
@@ -1033,7 +1069,9 @@ async def me(
         if not os.environ.get("PLATFORM_API_KEY", "").strip():
             from sqlmodel import select as _select
             from app.models.auth import ApiKey as _ApiKey
-            has_keys = bool((await session.exec(_select(_ApiKey).limit(1))).first())
+            has_keys = bool((await session.exec(
+                _select(_ApiKey).where(_ApiKey.revoked_at == None).limit(1)  # noqa: E711
+            )).first())
             if not has_keys:
                 return {"authenticated": False, "open_mode": True}
         raise HTTPException(401, "Not authenticated")
