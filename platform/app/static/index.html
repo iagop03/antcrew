@@ -409,12 +409,14 @@ function dashFeed() {
             // Open mode: server accepts requests without credentials, proceed
           } else {
             const me = await r.json();
-            if (!me.workspace_id) { window.location.replace('/onboard'); return; }
-            if (!me.email_verified) { window.location.replace('/login'); return; }
-            // Show MFA setup modal for users who haven't enabled it yet
-            if (!me.mfa_enabled) {
-              const skip = _ls.getItem('mfa_skip_until');
-              if (!skip || Date.now() > parseInt(skip, 10)) this.showMfaModal = true;
+            if (!me.open_mode) {
+              if (!me.workspace_id) { window.location.replace('/onboard'); return; }
+              if (!me.email_verified) { window.location.replace('/login'); return; }
+              // Show MFA setup modal for users who haven't enabled it yet
+              if (!me.mfa_enabled) {
+                const skip = _ls.getItem('mfa_skip_until');
+                if (!skip || Date.now() > parseInt(skip, 10)) this.showMfaModal = true;
+              }
             }
           }
         } catch { window.location.replace('/login'); return; }
